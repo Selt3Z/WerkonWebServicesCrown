@@ -392,3 +392,8 @@ WerkonWebServicesRatchet/.docker-cli/
 /avtoservisy*
 /*.json
 /docs
+
+Crown.Api/.docker-cli/docker
+Crown.Api/.docker-cli/docker-compose
+Crown.Api/.docker-cli/.prepared
+desktop.ini
