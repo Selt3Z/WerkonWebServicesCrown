@@ -1,0 +1,38 @@
+---
+description: Infinite scroll pagination convention for all DB-backed lists (API and Blazor pages)
+globs: WerkonWebServicesRatchet/Features/**/*.cs,WerkonWebServicesRatchet.Web/Components/Pages/**/*.razor,WerkonWebServicesRatchet.Web/Services/RatchetApiClient.cs
+alwaysApply: false
+---
+
+# List pagination: infinite scroll only
+
+Every DB-backed list endpoint and list page MUST use chunked loading with infinite scroll. No page number buttons, no prev/next.
+
+## API (WerkonWebServicesRatchet)
+
+- List endpoints accept `[FromQuery] int? skip, [FromQuery] int? take`.
+- Normalize with `QueryPagingExtensions.NormalizePaging(skip, take)`.
+- Return `PagedResponse<T>` (`Contracts/Common/PagedResponse.cs`) with `Items` and `HasMore`.
+- Build the query with a stable ORDER BY (add `.ThenBy(x => x.Id)` tiebreaker), then call `.ToPagedResponseAsync(skip, take, ct)` from `Infrastructure/Persistence/QueryPagingExtensions.cs`. It fetches `take + 1` rows to compute `HasMore` without a COUNT query.
+
+Example: `ClientsController.GetAll`, `AuditLogController.Get`.
+
+## Web client (RatchetApiClient)
+
+- List methods take `int skip = 0, int take = 30` and return `PagedResult<T>` (`Models/PagedResult.cs`).
+- For dropdowns that need "all" items, call the same method with a large `take` (server clamps to `MaxTake = 500`).
+
+## Blazor pages
+
+- State: `List<T> Items`, `bool HasMore`, `bool IsLoadingMore`, `const int PageSize`.
+- Initial load / search: reset list, `skip: 0`. Search must always reset to the first chunk.
+- `LoadMoreAsync()`: guard `if (IsLoadingMore || !HasMore) return;`, then fetch with `skip: Items.Count` and `AddRange`.
+- After the table render the shared component:
+
+```razor
+<InfiniteScroll HasMore="HasMore" IsLoading="IsLoadingMore" OnLoadMore="LoadMoreAsync" />
+```
+
+`Components/Shared/InfiniteScroll.razor` uses IntersectionObserver via `wwwroot/ratchet-infinite-scroll.js` (already wired in `App.razor`).
+
+Reference implementations: `ClientsPage.razor`, `CatalogServicesPage.razor`, `UsersPage.razor`, `HistoryPage.razor`.

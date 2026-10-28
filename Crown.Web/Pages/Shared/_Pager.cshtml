@@ -1,0 +1,23 @@
+@model PagerModel
+@if (Model.Page > 1 || Model.HasMore)
+{
+    <nav class="crown-pager" aria-label="Страницы">
+        @if (Model.Page > 1)
+        {
+            <a class="btn btn-outline-secondary btn-sm" href="@Model.UrlFor(Model.Page - 1)">&larr; Назад</a>
+        }
+        else
+        {
+            <span class="btn btn-outline-secondary btn-sm disabled">&larr; Назад</span>
+        }
+        <span class="crown-pager-page">Страница @Model.Page</span>
+        @if (Model.HasMore)
+        {
+            <a class="btn btn-outline-secondary btn-sm" href="@Model.UrlFor(Model.Page + 1)">Вперёд &rarr;</a>
+        }
+        else
+        {
+            <span class="btn btn-outline-secondary btn-sm disabled">Вперёд &rarr;</span>
+        }
+    </nav>
+}

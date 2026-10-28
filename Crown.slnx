@@ -1,0 +1,4 @@
+﻿<Solution>
+  <Project Path="Crown.Api/Crown.Api.csproj" />
+  <Project Path="Crown.Web/Crown.Web.csproj" />
+</Solution>

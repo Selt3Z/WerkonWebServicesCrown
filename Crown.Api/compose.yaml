@@ -1,0 +1,20 @@
+# Dev-only database for running API/Web from the IDE.
+# For the full containerized stack use docker-compose.yml in the repository root.
+# Passwords: ../.env (same as appsettings.Development.json)
+services:
+  postgres:
+    image: postgres:17
+    container_name: crown_postgres
+    env_file:
+      - ../.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crown_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in ../.env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - crown_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  crown_postgres_data:

@@ -1,0 +1,80 @@
+@page "/"
+@model IndexModel
+@inject AppTime Time
+@{
+    ViewData["Title"] = "Заявки";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Заявки</h1>
+    <a class="btn btn-save" href="/requests/new">Подать заявку</a>
+</div>
+
+<form method="get" class="crown-search">
+    <input class="form-control" type="search" name="q" value="@Model.Q" placeholder="Быстрый поиск: №, инициатор, телефон, текст, служба" />
+    <button class="btn btn-primary" type="submit">Найти</button>
+    @if (!string.IsNullOrWhiteSpace(Model.Q))
+    {
+        <a class="btn btn-outline-secondary" href="/">Сбросить</a>
+    }
+</form>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<div class="crown-table-wrap crown-requests-wrap">
+    <table class="table crown-table crown-requests-table">
+        <thead>
+        <tr>
+            <th class="col-num">#</th>
+            <th class="col-status">Состояние</th>
+            <th class="col-op" title="Оператор/диспетчер ознакомился с заявкой (только индикатор)">Опер.</th>
+            <th class="col-init">Инициатор</th>
+            <th class="col-date">Дата подачи</th>
+            <th class="col-date">Реакция</th>
+            <th class="col-date">Дата исполнения</th>
+            <th class="col-dept">Исполнитель</th>
+            <th class="col-phone">Тел.</th>
+            <th class="col-body">Заявка</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var r in Model.Items)
+        {
+            <tr class="table-row-action" data-href="/requests/@r.Id" tabindex="0" role="link" aria-label="Заявка № @r.Id">
+                <td class="col-num crown-id">@r.Id</td>
+                <td class="@UiHelpers.StatusClass(r.Status) crown-status-cell">@r.StatusLabel</td>
+                <td class="col-op">
+                    <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
+                          title="@(r.Acknowledged ? "Опер.: ознакомлен" : "Опер.: не отмечено")"
+                          aria-label="@(r.Acknowledged ? "Оператор ознакомлен" : "Оператор ещё не ознакомился")"></span>
+                </td>
+                <td class="col-init">@r.InitiatorName</td>
+                <td class="col-date">@Time.Format(r.SubmittedAt)</td>
+                <td class="col-date">@Time.Format(r.ReactionAt)</td>
+                <td class="col-date">
+                    @if (r.CompletedAt is not null)
+                    {
+                        @Time.Format(r.CompletedAt)
+                    }
+                    else
+                    {
+                        <span class="text-muted" title="Срок исполнения">до @Time.Format(r.DueAt)</span>
+                    }
+                </td>
+                <td class="col-dept">@r.DepartmentName</td>
+                <td class="col-phone">@r.Phone</td>
+                <td class="col-body">@r.BodyPreview</td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+        {
+            <tr><td colspan="10" class="text-muted text-center">Заявок нет.</td></tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />

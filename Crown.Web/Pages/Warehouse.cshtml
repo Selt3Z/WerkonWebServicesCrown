@@ -1,0 +1,71 @@
+@page "/warehouse"
+@model WarehouseModel
+@{
+    ViewData["Title"] = "Склад";
+}
+
+<h1 class="section-title">Склад</h1>
+
+<form method="get" class="crown-filters">
+    <input class="form-control" type="search" name="q" value="@Model.Q" placeholder="Название или код" />
+    <select class="form-select" name="category">
+        <option value="">Все категории</option>
+        @foreach (var c in Model.Categories)
+        {
+            <option value="@c" selected="@(c == Model.Category)">@c</option>
+        }
+    </select>
+    <label class="crown-check"><input type="checkbox" class="form-check-input" name="inStock" value="true" checked="@Model.InStock" /> В наличии</label>
+    <label class="crown-check"><input type="checkbox" class="form-check-input" name="shortage" value="true" checked="@Model.Shortage" /> Дефицит</label>
+    <label class="crown-check"><input type="checkbox" class="form-check-input" name="archived" value="true" checked="@Model.Archived" /> Архивные</label>
+    <button class="btn btn-primary" type="submit">Применить</button>
+    <a class="btn btn-outline-secondary" href="/warehouse">Сбросить</a>
+</form>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-warning">@Model.Error</div>
+}
+
+<div class="crown-table-wrap">
+    <table class="table crown-table">
+        <thead>
+        <tr>
+            <th>Код</th>
+            <th>Название</th>
+            <th>Категория</th>
+            <th class="num">Остаток</th>
+            <th class="num">Мин.</th>
+            <th>Ед.</th>
+            <th class="num">Цена</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var p in Model.Items)
+        {
+            var shortage = p.MinQuantityOnHand > 0 && p.QuantityOnHand < p.MinQuantityOnHand;
+            <tr class="@(p.IsArchived ? "crown-row-archived" : null)">
+                <td class="nowrap">@p.Code</td>
+                <td>
+                    @p.Name
+                    @if (p.IsArchived)
+                    {
+                        <span class="badge text-bg-secondary">архив</span>
+                    }
+                </td>
+                <td>@p.Category</td>
+                <td class="num @(shortage ? "crown-shortage" : null)">@p.QuantityOnHand.ToString("0.###")</td>
+                <td class="num">@p.MinQuantityOnHand.ToString("0.###")</td>
+                <td>@p.DefaultUnit</td>
+                <td class="num nowrap">@p.DefaultUnitPrice.ToString("N2")</td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+        {
+            <tr><td colspan="7" class="text-muted text-center">Позиций нет.</td></tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />

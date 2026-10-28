@@ -1,0 +1,19 @@
+@Crown_HostAddress = http://localhost:5277
+
+GET {{Crown_HostAddress}}/health
+Accept: application/json
+
+###
+
+POST {{Crown_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "userName": "admin",
+  "password": "Admin123!"
+}
+
+###
+
+GET {{Crown_HostAddress}}/api/warehouse-parts
+Accept: application/json

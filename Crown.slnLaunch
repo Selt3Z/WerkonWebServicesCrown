@@ -1,0 +1,17 @@
+﻿[
+  {
+    "Name": "API + Web",
+    "Projects": [
+      {
+        "Path": "Crown.Api\\Crown.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "Crown.Web\\Crown.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      }
+    ]
+  }
+]

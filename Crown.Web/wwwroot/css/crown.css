@@ -1,0 +1,253 @@
+/* Стили Crown поверх дизайн-системы app.css / shell.css (унаследованы от Ratchet). */
+
+/* ---------- Иконки меню, которых нет в Ratchet ---------- */
+.bi-plus-circle-nav-menu {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z'/%3E%3Cpath d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z'/%3E%3C/svg%3E");
+}
+
+/* ---------- Общие ---------- */
+.nowrap { white-space: nowrap; }
+.num { text-align: right; }
+.crown-req { color: #c53030; }
+
+.crown-page-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+
+.crown-page-head .section-title { margin: 0; }
+
+.crown-search,
+.crown-filters {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 0.9rem;
+}
+
+.crown-search .form-control { flex: 1 1 280px; max-width: 520px; }
+.crown-filters .form-control,
+.crown-filters .form-select { flex: 1 1 160px; max-width: 240px; }
+.crown-check { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; }
+
+/* ---------- Кнопка «СОХРАНИТЬ» — заметная, пурпурная ---------- */
+.btn-save {
+    background: #d6007f;
+    border-color: #b00068;
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.btn-save:hover,
+.btn-save:focus {
+    background: #b00068;
+    border-color: #8f0054;
+    color: #fff;
+}
+
+.btn-lg.btn-save { min-width: 200px; padding: 0.8rem 1.6rem; }
+
+/* ---------- Таблицы ---------- */
+.crown-table-wrap { overflow-x: visible; }
+
+.crown-table th { white-space: nowrap; font-size: 0.82rem; }
+.crown-table td { vertical-align: middle; font-size: 0.88rem; }
+
+/* Заявки: без горизонтального скролла — таблица в ширину контента, длинный текст режется. */
+.crown-requests-wrap { overflow-x: hidden; }
+.crown-requests-table {
+    table-layout: fixed;
+    width: 100%;
+}
+.crown-requests-table .col-num { width: 3.2rem; text-align: right; }
+.crown-requests-table .col-status { width: 9.5rem; }
+.crown-requests-table .col-op { width: 2.8rem; text-align: center; }
+.crown-requests-table .col-init { width: 9rem; }
+.crown-requests-table .col-date { width: 7.2rem; }
+.crown-requests-table .col-dept { width: 7.5rem; }
+.crown-requests-table .col-phone { width: 7.5rem; }
+.crown-requests-table .col-body { width: auto; }
+.crown-requests-table .col-init,
+.crown-requests-table .col-dept,
+.crown-requests-table .col-phone,
+.crown-requests-table .col-body,
+.crown-requests-table .col-date {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.crown-requests-table .crown-id {
+    color: var(--r-brand, #1d4ed8);
+    font-weight: 600;
+}
+.crown-requests-table form { margin: 0; }
+
+.crown-op-panel { margin-bottom: 0.75rem; padding: 0.75rem 1rem; }
+.crown-op-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+.crown-op-label { font-weight: 600; margin-right: 0.25rem; }
+.crown-op-form { margin: 0; display: inline; }
+
+.crown-row-archived td { opacity: 0.6; }
+.crown-shortage { color: #c53030; font-weight: 700; }
+
+/* ---------- Цвета статусов заявки ---------- */
+.st-submitted { background: #dbeafe; color: #1e40af; }
+.st-progress { background: #fef3c7; color: #92400e; }
+.st-rejected { background: #fee2e2; color: #991b1b; }
+.st-returned { background: #ede9fe; color: #5b21b6; }
+.st-completed { background: #dcfce7; color: #166534; }
+.st-cancelled { background: #e5e7eb; color: #4b5563; }
+
+.crown-status-cell { font-weight: 600; white-space: nowrap; }
+
+.crown-status-pill {
+    display: inline-block;
+    padding: 0.25rem 0.8rem;
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+/* ---------- Пагинация ---------- */
+.crown-pager {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+}
+
+.crown-pager-page { font-size: 0.88rem; color: var(--r-text-muted); }
+
+/* ---------- Формы ---------- */
+.crown-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0 1.25rem;
+}
+
+.crown-form-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.form-panel { margin-bottom: 1rem; }
+
+/* ---------- Карточка заявки ---------- */
+.crown-dl {
+    display: grid;
+    grid-template-columns: minmax(150px, 220px) 1fr;
+    gap: 0.4rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.crown-dl dt { font-weight: 600; color: var(--r-text-secondary); }
+.crown-dl dd { margin: 0; }
+
+.crown-body {
+    white-space: pre-wrap;
+    padding: 0.6rem 0.8rem;
+    background: var(--r-surface-muted);
+    border: 1px solid var(--r-border);
+    border-radius: var(--r-radius-sm);
+    min-height: 3rem;
+}
+
+.crown-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+/* Крупные кнопки действий по заявке */
+.btn-act {
+    flex: 1 1 200px;
+    min-height: 3.6rem;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #fff;
+    border: 1px solid transparent;
+}
+
+.btn-act:hover,
+.btn-act:focus { color: #fff; filter: brightness(0.92); }
+
+.btn-act-accept { background: #1a7f4e; }
+.btn-act-reject { background: #c53030; }
+.btn-act-return { background: #b45309; }
+.btn-act-reschedule { background: #2765A8; }
+.btn-act-cancel { background: #6b7280; }
+
+.crown-upload {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.crown-upload .form-control { flex: 1 1 280px; max-width: 480px; }
+
+/* ---------- Состояние системы ---------- */
+.crown-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.crown-flag {
+    display: inline-block;
+    padding: 0.1rem 0.6rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.crown-flag.ok { background: #dcfce7; color: #166534; }
+.crown-flag.bad { background: #fee2e2; color: #991b1b; }
+
+/* ---------- Заглушка «Скоро» ---------- */
+.crown-stub { text-align: center; padding: 3rem 1rem; }
+.crown-stub-icon {
+    width: 4rem;
+    height: 4rem;
+    /* Иконка в меню белая — на светлом фоне заглушки инвертируем. */
+    filter: brightness(0) opacity(0.35);
+}
+.crown-stub-text { font-size: 1.8rem; font-weight: 700; margin: 0.75rem 0 0.25rem; }
+
+/* ---------- Логин ---------- */
+.crown-login-icon { width: 72px; height: 72px; object-fit: contain; }
+.crown-login-full {
+    display: block;
+    width: min(220px, 70vw);
+    height: auto;
+    margin: 0 auto;
+    object-fit: contain;
+}
+.crown-login-title { margin-top: 0.5rem; font-size: 1.6rem; font-weight: 700; color: var(--r-brand); }
+.crown-login-vendor {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--r-text-muted);
+}
+
+@media (max-width: 640.98px) {
+    .crown-dl { grid-template-columns: 1fr; }
+    .crown-dl dt { margin-top: 0.4rem; }
+}

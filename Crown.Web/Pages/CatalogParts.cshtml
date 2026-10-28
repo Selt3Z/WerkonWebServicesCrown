@@ -1,0 +1,64 @@
+@page "/catalog-parts"
+@model CatalogPartsModel
+@{
+    ViewData["Title"] = "Каталог запчастей";
+}
+
+<h1 class="section-title">Каталог запчастей</h1>
+
+<form method="get" class="crown-filters">
+    <input class="form-control" type="search" name="q" value="@Model.Q" placeholder="Название или код" />
+    <select class="form-select" name="category">
+        <option value="">Все категории</option>
+        @foreach (var c in Model.Categories)
+        {
+            <option value="@c" selected="@(c == Model.Category)">@c</option>
+        }
+    </select>
+    <select class="form-select" name="state">
+        <option value="" selected="@string.IsNullOrEmpty(Model.State)">Все</option>
+        <option value="active" selected="@(Model.State == "active")">Активные</option>
+        <option value="inactive" selected="@(Model.State == "inactive")">Неактивные</option>
+    </select>
+    <button class="btn btn-primary" type="submit">Применить</button>
+    <a class="btn btn-outline-secondary" href="/catalog-parts">Сбросить</a>
+</form>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<div class="crown-table-wrap">
+    <table class="table crown-table">
+        <thead>
+        <tr>
+            <th>Код</th>
+            <th>Название</th>
+            <th>Категория</th>
+            <th>Ед.</th>
+            <th class="num">Цена</th>
+            <th>Статус</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var p in Model.Items)
+        {
+            <tr class="@(p.IsActive ? null : "crown-row-archived")">
+                <td class="nowrap">@p.Code</td>
+                <td>@p.Name</td>
+                <td>@p.Category</td>
+                <td>@p.DefaultUnit</td>
+                <td class="num nowrap">@p.DefaultUnitPrice.ToString("N2")</td>
+                <td>@(p.IsActive ? "Активна" : "Неактивна")</td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+        {
+            <tr><td colspan="6" class="text-muted text-center">Позиций нет.</td></tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />

@@ -1,0 +1,169 @@
+# Full self-hosted stack: PostgreSQL, API, Web, Caddy reverse proxy, scheduled backups.
+# Copy .env.example to .env and set secrets before running: docker compose up -d --build
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: crown_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crown_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - crown_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - crown
+
+  api:
+    build:
+      context: .
+      dockerfile: Crown.Api/Dockerfile
+    container_name: crown_api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DisableHttpsRedirection: "true"
+      ConnectionStrings__DefaultConnection: ${ConnectionStrings__DefaultConnection:?Set ConnectionStrings__DefaultConnection in .env}
+      Seed__AdminUserName: ${Seed__AdminUserName:-admin}
+      Seed__AdminPassword: ${Seed__AdminPassword:?Set Seed__AdminPassword in .env}
+      Seed__AdminDisplayName: ${Seed__AdminDisplayName:-Administrator}
+      AppTimeZone: ${AppTimeZone:-Europe/Moscow}
+      CurrencyCode: ${CurrencyCode:-RUB}
+      # Вложения заявок — на именованном томе, переживают пересоздание контейнера.
+      Attachments__RootPath: /data/attachments
+      Backup__StatusFilePath: /backups/status.json
+      Backup__BackupsDirectory: /backups
+      Backup__IntervalSeconds: ${BACKUP_INTERVAL_SECONDS:-86400}
+      Backup__DailyAt: ${BACKUP_DAILY_AT:-03:00}
+      Backup__TimeZoneId: ${AppTimeZone:-Europe/Moscow}
+      Backup__DailyRetentionDays: ${DAILY_RETENTION_DAYS:-7}
+      Backup__WeeklyRetentionWeeks: ${WEEKLY_RETENTION_WEEKS:-4}
+      Backup__ContainerName: crown_backup
+      Backup__ResticRepository: ${RESTIC_REPOSITORY:-}
+      System__PublicHostname: ${APP_HOSTNAME:-crown.local}
+      System__AdvertiseAddresses: ${LAN_ADDRESSES:-}
+      # Обновление из UI отключено (UPDATE_ENABLED=false): стек обновляют вручную на хосте.
+      Update__Enabled: ${UPDATE_ENABLED:-false}
+      HostOps__RepositoryPath: /update/repo
+      HostOps__ApiContainerName: crown_api
+      HostOps__WebContainerName: crown_web
+      HostOps__HostPowerEnabled: ${UPDATE_HOST_POWER_ENABLED:-true}
+      HostOps__NetplanEnabled: ${UPDATE_NETPLAN_ENABLED:-true}
+      HostOps__NetplanFilePath: ${UPDATE_NETPLAN_FILE:-/etc/netplan/00-installer-config.yaml}
+      Support__WebhookUrl: ${SUPPORT_WEBHOOK_URL:-}
+      Support__TelegramChatId: ${SUPPORT_TELEGRAM_CHAT_ID:-}
+      GIT_TERMINAL_PROMPT: "0"
+    volumes:
+      # ./backups — общий каталог с сервисом backup.
+      - ${BACKUPS_HOST_PATH:-./backups}:/backups
+      - crown_attachments:/data/attachments
+      # Каталог проекта (compose-файл) для docker compose из API; по умолчанию — текущий.
+      - ${UPDATE_REPO_PATH:-.}:/update/repo
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    networks:
+      - crown
+
+  web:
+    build:
+      context: .
+      dockerfile: Crown.Web/Dockerfile
+    container_name: crown_web
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      CrownApiBaseUrl: http://api:8080/
+      AppTimeZone: ${AppTimeZone:-Europe/Moscow}
+      DataProtection__KeysPath: /dp-keys
+    volumes:
+      - crown_web_dp_keys:/dp-keys
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - crown
+
+  proxy:
+    image: caddy:2-alpine
+    container_name: crown_proxy
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      CADDY_ADDRESS: ${CADDY_ADDRESS:-crown.local}
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-auto_https off}
+    volumes:
+      # Caddyfile из рабочей копии проекта (/api/* -> api, остальное -> web; cookie Crown.Auth общая).
+      - ${UPDATE_REPO_PATH:-.}/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - crown_caddy_data:/data
+      - crown_caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks:
+      - crown
+
+  backup:
+    build:
+      context: ./docker/backup
+      dockerfile: Dockerfile
+    container_name: crown_backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-crown_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_DAILY_AT: ${BACKUP_DAILY_AT:-03:00}
+      TZ: ${AppTimeZone:-Europe/Moscow}
+      DAILY_RETENTION_DAYS: ${DAILY_RETENTION_DAYS:-7}
+      WEEKLY_RETENTION_WEEKS: ${WEEKLY_RETENTION_WEEKS:-4}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      RESTIC_HOST_TAG: ${RESTIC_HOST_TAG:-crown-server}
+      RESTIC_KEEP_DAILY: ${RESTIC_KEEP_DAILY:-7}
+      RESTIC_KEEP_WEEKLY: ${RESTIC_KEEP_WEEKLY:-4}
+    volumes:
+      - ${BACKUPS_HOST_PATH:-./backups}:/backups
+      - ${RESTIC_HOST_PATH:-${BACKUPS_HOST_PATH:-./backups}/restic-repo}:/restic-repo
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - crown
+
+volumes:
+  crown_postgres_data:
+  crown_attachments:
+  crown_caddy_data:
+  crown_caddy_config:
+  crown_web_dp_keys:
+
+networks:
+  crown:
+    driver: bridge

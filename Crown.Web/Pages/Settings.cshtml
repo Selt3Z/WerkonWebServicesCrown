@@ -1,0 +1,50 @@
+@page "/settings"
+@model SettingsModel
+@{
+    ViewData["Title"] = "Настройки";
+}
+
+<h1 class="section-title">Настройки</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" class="form-panel crown-form">
+    <div class="crown-form-grid">
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.ListPageSize">Размер страницы в списках</label>
+            <input class="form-control" type="number" min="10" max="200" asp-for="Input.ListPageSize" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.AuditRetentionDays">Хранить журнал, дней</label>
+            <input class="form-control" type="number" min="1" asp-for="Input.AuditRetentionDays" />
+        </div>
+    </div>
+
+    <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" asp-for="Input.WarehouseEnabled" />
+        <label class="form-check-label" asp-for="Input.WarehouseEnabled">Складской учёт включён</label>
+    </div>
+    <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" asp-for="Input.HideArchivedByDefault" />
+        <label class="form-check-label" asp-for="Input.HideArchivedByDefault">Скрывать архивные записи по умолчанию</label>
+    </div>
+    <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" asp-for="Input.DispatcherCanHardDelete" />
+        <label class="form-check-label" asp-for="Input.DispatcherCanHardDelete">Диспетчер может удалять записи безвозвратно</label>
+    </div>
+
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+    </div>
+</form>
+
+<form method="post" asp-page-handler="TimeZone" class="form-panel crown-form">
+    <h2 class="section-subtitle">Часовой пояс</h2>
+    <div class="crown-filters">
+        <input class="form-control" name="timeZoneId" value="@Model.Input.TimeZoneId" placeholder="Europe/Moscow" />
+        <button type="submit" class="btn btn-primary">Применить</button>
+    </div>
+</form>

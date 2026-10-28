@@ -1,0 +1,58 @@
+@page "/requests/new"
+@model Crown.Web.Pages.Requests.NewModel
+@{
+    ViewData["Title"] = "Подать заявку";
+}
+
+<h1 class="section-title">Подать заявку</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" enctype="multipart/form-data" class="crown-form form-panel">
+    <div class="crown-form-grid">
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.Phone">Телефон <span class="crown-req">*</span></label>
+            <input class="form-control" type="tel" asp-for="Input.Phone" required autocomplete="tel" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.DueAt">Срок исполнения <span class="crown-req">*</span></label>
+            <input class="form-control" type="datetime-local" asp-for="Input.DueAt" required />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.InitiatorName">Инициатор <span class="crown-req">*</span></label>
+            <input class="form-control" asp-for="Input.InitiatorName" required />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.ServiceDepartmentId">Исполнитель (служба) <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.ServiceDepartmentId" required>
+                <option value="">— выберите —</option>
+                @foreach (var d in Model.Departments)
+                {
+                    <option value="@d.Id">@d.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.Body">Заявка <span class="crown-req">*</span></label>
+        <textarea class="form-control" asp-for="Input.Body" rows="8" required></textarea>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="Files">Вложения</label>
+        <input class="form-control" type="file" id="Files" name="Files" multiple />
+        <div class="form-text">Файлы до 20 МБ каждый. Можно добавить позже на странице заявки.</div>
+    </div>
+
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
+        <a class="btn btn-outline-secondary btn-lg" href="/">Отмена</a>
+    </div>
+</form>

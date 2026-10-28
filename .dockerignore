@@ -1,0 +1,15 @@
+**/.git
+**/.vs
+**/.cursor
+**/.env
+**/bin
+**/obj
+**/out
+**/*.user
+**/*.suo
+**/node_modules
+**/backups
+**/TestResults
+**/.localhistory
+**/AGENTS.md
+**/AGENT_TASK_STYLE.md

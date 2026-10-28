@@ -1,0 +1,50 @@
+@page "/users"
+@model UserListModel
+@inject AppTime Time
+@{
+    ViewData["Title"] = "Пользователи";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Пользователи</h1>
+    <a class="btn btn-primary" href="/users/edit">Добавить пользователя</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<div class="crown-table-wrap">
+    <table class="table crown-table">
+        <thead>
+        <tr>
+            <th>Логин</th>
+            <th>Имя</th>
+            <th>Роль</th>
+            <th>Статус</th>
+            <th>Активность</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var u in Model.Items)
+        {
+            <tr class="@(u.IsActive ? null : "crown-row-archived")">
+                <td>@u.UserName</td>
+                <td>@u.DisplayName</td>
+                <td>@AppRoles.Display(u.Role)</td>
+                <td>@(u.IsActive ? "Активен" : "Отключён")</td>
+                <td class="nowrap">@Time.FormatUtc(u.LastActivityAtUtc)</td>
+                <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="/users/edit/@u.Id">Изменить</a></td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+        {
+            <tr><td colspan="6" class="text-muted text-center">Пользователей нет.</td></tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />

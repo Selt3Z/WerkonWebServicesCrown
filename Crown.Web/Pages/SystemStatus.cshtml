@@ -1,0 +1,104 @@
+@page "/system"
+@model SystemStatusModel
+@{
+    ViewData["Title"] = "Состояние системы";
+    var s = Model.Status;
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Состояние системы</h1>
+    <a class="btn btn-outline-secondary" href="/system">Обновить</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (s is not null)
+{
+    <div class="crown-cards">
+        <section class="form-panel">
+            <h2 class="section-subtitle">Приложение</h2>
+            <dl class="crown-dl">
+                <dt>Версия API</dt><dd>@s.ApplicationVersion</dd>
+                <dt>Сервер</dt><dd>@s.MachineName</dd>
+                <dt>Адрес</dt><dd>@s.PublicHostname</dd>
+                <dt>Время сервера</dt><dd>@s.ServerLocalTime (@s.AppTimeZoneId)</dd>
+                <dt>Записей в журнале</dt><dd>@s.AuditLogEntryCount</dd>
+            </dl>
+        </section>
+
+        <section class="form-panel">
+            <h2 class="section-subtitle">База данных</h2>
+            <dl class="crown-dl">
+                <dt>Подключение</dt>
+                <dd><span class="crown-flag @(s.DatabaseHealthy ? "ok" : "bad")">@(s.DatabaseHealthy ? "OK" : "Недоступна")</span></dd>
+                <dt>Схема</dt>
+                <dd><span class="crown-flag @(s.DatabaseSchemaUpToDate ? "ok" : "bad")">@(s.DatabaseSchemaUpToDate ? "Актуальна" : $"Не применено миграций: {s.PendingMigrationCount}")</span></dd>
+                <dt>Последняя миграция</dt><dd>@s.LastAppliedMigration</dd>
+            </dl>
+        </section>
+
+        <section class="form-panel">
+            <h2 class="section-subtitle">Резервное копирование</h2>
+            <dl class="crown-dl">
+                <dt>Настроено</dt><dd>@(s.Backup.IsConfigured ? "Да" : "Нет")</dd>
+                <dt>Сегодня</dt>
+                <dd><span class="crown-flag @(s.Backup.BackupOkToday ? "ok" : "bad")">@(s.Backup.BackupOkToday ? "Есть копия" : "Копии нет")</span></dd>
+                <dt>Последний запуск</dt><dd>@s.Backup.LastRunUtc</dd>
+                <dt>Статус</dt><dd>@s.Backup.LastStatus @s.Backup.LastMessage</dd>
+                @if (s.Backup.LastBackupSizeBytes is { } size)
+                {
+                    <dt>Размер</dt><dd>@UiHelpers.FormatBytes(size)</dd>
+                }
+                @if (!string.IsNullOrEmpty(s.Backup.DailyAt))
+                {
+                    <dt>Ежедневно в</dt><dd>@s.Backup.DailyAt</dd>
+                }
+            </dl>
+            <form method="post" asp-page-handler="Backup">
+                <button type="submit" class="btn btn-primary" data-confirm="Создать резервную копию сейчас?"
+                        disabled="@s.Backup.IsRunning">Создать копию сейчас</button>
+            </form>
+        </section>
+    </div>
+
+    @if (s.Health.Disks.Count > 0)
+    {
+        <section class="form-panel">
+            <h2 class="section-subtitle">Диски</h2>
+            <table class="table crown-table">
+                <thead><tr><th>Том</th><th>Точка монтирования</th><th class="num">Занято</th><th class="num">Свободно</th><th class="num">Всего</th></tr></thead>
+                <tbody>
+                @foreach (var d in s.Health.Disks)
+                {
+                    <tr>
+                        <td>@d.Name</td>
+                        <td>@d.Mount</td>
+                        <td class="num @(d.UsedPercent >= 90 ? "crown-shortage" : null)">@d.UsedPercent%</td>
+                        <td class="num nowrap">@UiHelpers.FormatBytes(d.FreeBytes)</td>
+                        <td class="num nowrap">@UiHelpers.FormatBytes(d.TotalBytes)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @if (s.Health.Containers.Count > 0)
+    {
+        <section class="form-panel">
+            <h2 class="section-subtitle">Контейнеры</h2>
+            <table class="table crown-table">
+                <thead><tr><th>Служба</th><th>Состояние</th><th>Статус</th><th>Health</th></tr></thead>
+                <tbody>
+                @foreach (var c in s.Health.Containers)
+                {
+                    <tr><td>@c.Name</td><td>@c.State</td><td>@c.Status</td><td>@c.Health</td></tr>
+                }
+                </tbody>
+            </table>
+        </section>
+    }
+}
