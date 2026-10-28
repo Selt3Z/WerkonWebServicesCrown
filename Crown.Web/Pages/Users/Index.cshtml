@@ -1,6 +1,5 @@
 @page "/users"
 @model UserListModel
-@inject AppTime Time
 @{
     ViewData["Title"] = "Пользователи";
 }
@@ -24,27 +23,21 @@
             <th>Роль</th>
             <th>Статус</th>
             <th>Активность</th>
-            <th></th>
         </tr>
         </thead>
-        <tbody>
-        @foreach (var u in Model.Items)
-        {
-            <tr class="@(u.IsActive ? null : "crown-row-archived")">
-                <td>@u.UserName</td>
-                <td>@u.DisplayName</td>
-                <td>@AppRoles.Display(u.Role)</td>
-                <td>@(u.IsActive ? "Активен" : "Отключён")</td>
-                <td class="nowrap">@Time.FormatUtc(u.LastActivityAtUtc)</td>
-                <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="/users/edit/@u.Id">Изменить</a></td>
-            </tr>
-        }
+        <tbody data-infinite-scroll
+               data-more-url="@UiHelpers.BuildUrl("/users", ("handler", "More"))"
+               data-skip="@Model.Items.Count"
+               data-has-more="@(Model.HasMore ? "true" : "false")">
         @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
         {
-            <tr><td colspan="6" class="text-muted text-center">Пользователей нет.</td></tr>
+            <tr class="crown-empty-row"><td colspan="5" class="text-muted text-center">Пользователей нет.</td></tr>
+        }
+        else
+        {
+            <partial name="_UserRows" model="Model.Items" />
         }
         </tbody>
     </table>
 </div>
-
-<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />
+<div class="infinite-scroll-sentinel" hidden></div>

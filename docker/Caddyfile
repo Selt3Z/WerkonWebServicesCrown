@@ -2,8 +2,8 @@
 	{$CADDY_GLOBAL_OPTIONS}
 }
 
-# crown.local — прод/LAN; 127.0.0.1 и localhost — локальная отладка без hosts
-http://{$CADDY_ADDRESS:crown.local}, http://127.0.0.1, http://localhost {
+# Любой Host на :80 (IP, zs-mns.local, crown.local) — иначе Caddy отдаёт пустой 200
+:80 {
 	@api path /api/*
 	handle @api {
 		reverse_proxy api:8080

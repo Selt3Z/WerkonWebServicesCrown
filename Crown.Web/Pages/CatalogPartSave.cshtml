@@ -1,0 +1,64 @@
+@page "/catalog-parts/edit/{id:guid?}"
+@model CatalogPartSaveModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Редактирование запчасти" : "Новая запчасть";
+}
+
+<h1 class="section-title">@(Model.IsEdit ? "Редактирование запчасти" : "Новая запчасть")</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" class="crown-form form-panel">
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.Name">Название <span class="crown-req">*</span></label>
+        <input class="form-control" asp-for="Input.Name" required />
+    </div>
+
+    <div class="crown-form-grid">
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.Code">Код</label>
+            <input class="form-control" asp-for="Input.Code" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.Category">Категория</label>
+            <input class="form-control" asp-for="Input.Category" list="cat-categories" />
+            <datalist id="cat-categories">
+                @foreach (var c in Model.Categories)
+                {
+                    <option value="@c"></option>
+                }
+            </datalist>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.DefaultUnitPrice">Цена</label>
+            <input class="form-control" type="number" step="0.01" min="0" asp-for="Input.DefaultUnitPrice" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.DefaultUnit">Ед. изм.</label>
+            <select class="form-select" asp-for="Input.DefaultUnit">
+                @foreach (var u in MeasurementUnitOptions.All)
+                {
+                    <option value="@u">@u</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.Description">Описание</label>
+        <textarea class="form-control" asp-for="Input.Description" rows="4"></textarea>
+    </div>
+
+    <div class="mb-3 form-check">
+        <input class="form-check-input" type="checkbox" asp-for="Input.IsActive" />
+        <label class="form-check-label" asp-for="Input.IsActive">Активна</label>
+    </div>
+
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
+        <a class="btn btn-outline-secondary btn-lg" href="/catalog-parts">Отмена</a>
+    </div>
+</form>

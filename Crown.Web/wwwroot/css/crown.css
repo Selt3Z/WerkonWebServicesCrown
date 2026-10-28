@@ -5,6 +5,39 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z'/%3E%3Cpath d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z'/%3E%3C/svg%3E");
 }
 
+/* Clipboard как у «Заявки», вместо галочки — плюс (кнопка подачи в шапке). */
+.bi-clipboard-plus-nav-menu {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8 7a.5.5 0 0 1 .5.5V9H10a.5.5 0 0 1 0 1H8.5v1.5a.5.5 0 0 1-1 0V10H6a.5.5 0 0 1 0-1h1.5V7.5A.5.5 0 0 1 8 7z'/%3E%3Cpath d='M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z'/%3E%3Cpath d='M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z'/%3E%3C/svg%3E");
+}
+
+/* Нейтральная иконка каталога (журнал/список). */
+.bi-journal-text-nav-menu {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' viewBox='0 0 16 16'%3E%3Cpath d='M5 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5zm0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5z'/%3E%3Cpath d='M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z'/%3E%3Cpath d='M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z'/%3E%3C/svg%3E");
+}
+
+/* background-icon внутри btn-logout (как stroke SVG по размеру) */
+.btn-logout > .bi.btn-logout-icon {
+    display: inline-block;
+    width: 1.15rem;
+    height: 1.15rem;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    flex-shrink: 0;
+}
+
+.crown-sort-link {
+    color: inherit;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.crown-sort-link:hover,
+.crown-sort-link.is-active {
+    color: var(--r-accent, #0d6efd);
+    text-decoration: underline;
+}
+
 /* ---------- Общие ---------- */
 .nowrap { white-space: nowrap; }
 .num { text-align: right; }
@@ -88,7 +121,28 @@
 }
 .crown-requests-table form { margin: 0; }
 
-.crown-op-panel { margin-bottom: 0.75rem; padding: 0.75rem 1rem; }
+/* Поиск в фильтрах — тянется, подпись inline как у остальных. */
+.list-filters .filter-field-search {
+    flex: 1 1 14rem;
+    min-width: 12rem;
+}
+
+.list-filters .filter-field-search .form-control {
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+    min-width: 10rem;
+}
+
+/* Ознак. без form-panel — без «гигантской» рамки вокруг кнопки. */
+.crown-op-panel {
+    margin-bottom: 0.75rem;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    max-width: none;
+}
 .crown-op-row {
     display: flex;
     align-items: center;
@@ -101,24 +155,87 @@
 .crown-row-archived td { opacity: 0.6; }
 .crown-shortage { color: #c53030; font-weight: 700; }
 
-/* ---------- Цвета статусов заявки ---------- */
-.st-submitted { background: #dbeafe; color: #1e40af; }
-.st-progress { background: #fef3c7; color: #92400e; }
-.st-rejected { background: #fee2e2; color: #991b1b; }
-.st-returned { background: #ede9fe; color: #5b21b6; }
-.st-completed { background: #dcfce7; color: #166534; }
-.st-cancelled { background: #e5e7eb; color: #4b5563; }
+/* ---------- Цвета статусов заявки (единые для таблицы и карточки) ---------- */
+/* подана — синий, в работе — зелёный, отклонена — красный, возвращена — оранжевый, выполнена/отменена — серый */
+.st-submitted { background: #dbeafe; color: #1e40af; border-color: #3b82f6; }
+.st-progress { background: #dcfce7; color: #166534; border-color: #22c55e; }
+.st-rejected { background: #fee2e2; color: #991b1b; border-color: #ef4444; }
+.st-returned { background: #ffedd5; color: #9a3412; border-color: #f97316; }
+.st-completed { background: #e5e7eb; color: #4b5563; border-color: #9ca3af; }
+.st-cancelled { background: #e5e7eb; color: #4b5563; border-color: #9ca3af; }
 
-.crown-status-cell { font-weight: 600; white-space: nowrap; }
+.crown-status-cell { white-space: nowrap; }
 
+/* Как visit-status-badge в Ratchet — компактный pill. */
 .crown-status-pill {
-    display: inline-block;
-    padding: 0.25rem 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.55rem;
     border-radius: 999px;
+    border: 1px solid currentColor;
     font-weight: 700;
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
-/* ---------- Пагинация ---------- */
+.crown-id-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+/* Значок предупреждения как в Ratchet (жалоба). */
+.crown-warn-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    background: #dc3545;
+    color: #fff;
+    font-size: 0.63rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    flex-shrink: 0;
+}
+
+.crown-complaint-panel {
+    margin-top: 1rem;
+    padding: 0.85rem 1rem;
+    background: #fadbd8;
+    border: 1px solid #e6b0aa;
+    border-radius: var(--r-radius-sm);
+}
+
+.crown-complaint-meta {
+    font-style: italic;
+    color: #7b241c;
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+}
+
+.crown-complaint-form {
+    margin-top: 1rem;
+    padding: 0.85rem 1rem;
+    background: #fadbd8;
+    border: 1px solid #e6b0aa;
+    border-radius: var(--r-radius-sm);
+}
+
+.crown-complaint-form .form-control {
+    background: #fdf2f1;
+}
+
+.crown-complaint-confirm {
+    margin: 0.75rem 0;
+    font-size: 0.9rem;
+}
+
+/* ---------- Пагинация / infinite scroll ---------- */
 .crown-pager {
     display: flex;
     align-items: center;
@@ -127,6 +244,14 @@
 }
 
 .crown-pager-page { font-size: 0.88rem; color: var(--r-text-muted); }
+
+.infinite-scroll-sentinel {
+    text-align: center;
+    padding: 0.75rem 0;
+    min-height: 1.5rem;
+    color: var(--r-text-muted);
+    font-size: 0.85rem;
+}
 
 /* ---------- Формы ---------- */
 .crown-form-grid {
@@ -155,6 +280,13 @@
 .crown-dl dt { font-weight: 600; color: var(--r-text-secondary); }
 .crown-dl dd { margin: 0; }
 
+/* Карточки «Состояние системы»: уже подписи → шире значения. */
+.crown-cards .crown-dl {
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: 0.65rem;
+    align-items: start;
+}
+
 .crown-body {
     white-space: pre-wrap;
     padding: 0.6rem 0.8rem;
@@ -164,32 +296,96 @@
     min-height: 3rem;
 }
 
+/* Кнопки карточки заявки — как action-кнопки карточки визита/сделки в Ratchet (обычные btn, не гиганты). */
 .crown-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: 0.5rem;
     margin-top: 1rem;
+    align-items: center;
 }
 
-/* Крупные кнопки действий по заявке */
 .btn-act {
-    flex: 1 1 200px;
-    min-height: 3.6rem;
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    color: #fff;
-    border: 1px solid transparent;
+    flex: 0 0 auto;
+    min-height: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 
-.btn-act:hover,
-.btn-act:focus { color: #fff; filter: brightness(0.92); }
+.btn-act-accept {
+    color: #fff;
+    background: var(--r-success, #1a7f4e);
+    border-color: var(--r-success, #1a7f4e);
+}
+.btn-act-accept:hover,
+.btn-act-accept:focus {
+    color: #fff;
+    filter: brightness(0.92);
+}
 
-.btn-act-accept { background: #1a7f4e; }
-.btn-act-reject { background: #c53030; }
-.btn-act-return { background: #b45309; }
-.btn-act-reschedule { background: #2765A8; }
-.btn-act-cancel { background: #6b7280; }
+.btn-act-reject {
+    color: #c53030;
+    background: transparent;
+    border: 1px solid #c53030;
+}
+.btn-act-reject:hover,
+.btn-act-reject:focus {
+    color: #fff;
+    background: #c53030;
+}
+
+.btn-act-return {
+    color: #b45309;
+    background: transparent;
+    border: 1px solid #b45309;
+}
+.btn-act-return:hover,
+.btn-act-return:focus {
+    color: #fff;
+    background: #b45309;
+}
+
+.btn-act-reschedule {
+    color: #2765A8;
+    background: transparent;
+    border: 1px solid #2765A8;
+}
+.btn-act-reschedule:hover,
+.btn-act-reschedule:focus {
+    color: #fff;
+    background: #2765A8;
+}
+
+.btn-act-cancel {
+    color: #6b7280;
+    background: transparent;
+    border: 1px solid #9ca3af;
+}
+.btn-act-cancel:hover,
+.btn-act-cancel:focus {
+    color: #374151;
+    background: #f3f4f6;
+}
+
+.btn-act-complaint {
+    color: #991b1b;
+    background: transparent;
+    border: 1px solid #f1948a;
+}
+.btn-act-complaint:hover,
+.btn-act-complaint:focus {
+    color: #fff;
+    background: #e07468;
+    border-color: #e07468;
+}
+
+.btn-act-unavailable {
+    color: #6b7280;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    cursor: not-allowed;
+}
 
 .crown-upload {
     display: flex;
@@ -208,12 +404,28 @@
     margin-bottom: 1rem;
 }
 
+/* Иначе длинные имена миграций вылезают в соседнюю карточку. */
+.crown-cards > .form-panel {
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+}
+
+.crown-cards .crown-dl dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 .crown-flag {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     padding: 0.1rem 0.6rem;
     border-radius: 999px;
     font-weight: 600;
     font-size: 0.85rem;
+    white-space: nowrap;
+    line-height: 1.25;
 }
 
 .crown-flag.ok { background: #dcfce7; color: #166534; }

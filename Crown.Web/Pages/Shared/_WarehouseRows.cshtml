@@ -1,0 +1,24 @@
+@model List<WarehousePart>
+@foreach (var p in Model)
+{
+    var shortage = p.MinQuantityOnHand > 0 && p.QuantityOnHand < p.MinQuantityOnHand;
+    <tr class="table-row-action @(p.IsArchived ? "crown-row-archived" : null)"
+        data-href="/warehouse/edit/@p.Id"
+        tabindex="0"
+        role="link"
+        aria-label="Склад: @p.Name">
+        <td class="nowrap">@p.Code</td>
+        <td>
+            @p.Name
+            @if (p.IsArchived)
+            {
+                <span class="badge text-bg-secondary">архив</span>
+            }
+        </td>
+        <td>@p.Category</td>
+        <td class="num @(shortage ? "crown-shortage" : null)">@p.QuantityOnHand.ToString("0.###")</td>
+        <td class="num">@p.MinQuantityOnHand.ToString("0.###")</td>
+        <td>@p.DefaultUnit</td>
+        <td class="num nowrap">@p.DefaultUnitPrice.ToString("N2")</td>
+    </tr>
+}

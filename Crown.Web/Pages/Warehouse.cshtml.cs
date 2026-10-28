@@ -24,9 +24,6 @@ public sealed class WarehouseModel(CrownApiClient api) : PageModel
     [BindProperty(SupportsGet = true)]
     public bool Archived { get; set; }
 
-    [BindProperty(SupportsGet = true)]
-    public int P { get; set; } = 1;
-
     public List<WarehousePart> Items { get; private set; } = [];
 
     public List<string> Categories { get; private set; } = [];
@@ -37,11 +34,43 @@ public sealed class WarehouseModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
-        if (P < 1)
+        var (items, hasMore, error, challenge, disabled) = await LoadAsync(0);
+        if (challenge)
         {
-            P = 1;
+            return Challenge();
         }
 
+        Items = items;
+        HasMore = hasMore;
+        Error = error;
+        if (!disabled)
+        {
+            var categories = await api.GetAsync<List<string>>("api/warehouse-parts/categories", HttpContext.RequestAborted);
+            Categories = categories.Data ?? [];
+        }
+
+        return Page();
+    }
+
+    public async Task<IActionResult> OnGetMoreAsync(int skip)
+    {
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge, _) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_WarehouseRows", items);
+    }
+
+    private async Task<(List<WarehousePart> Items, bool HasMore, string? Error, bool Challenge, bool Disabled)> LoadAsync(int skip)
+    {
         var url = UiHelpers.BuildUrl(
             "api/warehouse-parts",
             ("search", Q?.Trim()),
@@ -49,43 +78,25 @@ public sealed class WarehouseModel(CrownApiClient api) : PageModel
             ("inStockOnly", InStock ? "true" : null),
             ("shortageOnly", Shortage ? "true" : null),
             ("includeArchived", Archived ? "true" : null),
-            ("skip", ((P - 1) * UiHelpers.PageSize).ToString()),
+            ("skip", skip.ToString()),
             ("take", UiHelpers.PageSize.ToString()));
 
         var result = await api.GetAsync<PagedResponse<WarehousePart>>(url, HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {
-            return Challenge();
+            return ([], false, null, true, false);
         }
 
         if (result.Status == 404)
         {
-            // API отдаёт 404 на все складские методы, пока WarehouseEnabled выключен.
-            Error = "Складской учёт отключён. Включите его в разделе «Настройки».";
-            return Page();
+            return ([], false, "Складской учёт отключён. Включите его в разделе «Настройки».", false, true);
         }
 
         if (!result.Ok || result.Data is null)
         {
-            Error = result.Error;
-            return Page();
+            return ([], false, result.Error, false, false);
         }
 
-        Items = result.Data.Items;
-        HasMore = result.Data.HasMore;
-
-        var categories = await api.GetAsync<List<string>>("api/warehouse-parts/categories", HttpContext.RequestAborted);
-        Categories = categories.Data ?? [];
-        return Page();
+        return (result.Data.Items, result.Data.HasMore, null, false, false);
     }
-
-    public string PageUrl(int page) =>
-        UiHelpers.BuildUrl(
-            "/warehouse",
-            ("q", Q),
-            ("category", Category),
-            ("inStock", InStock ? "true" : null),
-            ("shortage", Shortage ? "true" : null),
-            ("archived", Archived ? "true" : null),
-            ("p", page > 1 ? page.ToString() : null));
 }

@@ -7,10 +7,12 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace Crown.Web.Pages;
 
 [Authorize(Roles = AppRoles.Administrator)]
-public sealed class SettingsModel(CrownApiClient api) : PageModel
+public sealed class SettingsModel(CrownApiClient api, AppTime appTime) : PageModel
 {
     [BindProperty]
     public SettingsResponse Input { get; set; } = new();
+
+    public IReadOnlyList<TimeZoneInfo> AvailableTimeZones { get; private set; } = [];
 
     public string? Error { get; private set; }
 
@@ -25,15 +27,21 @@ public sealed class SettingsModel(CrownApiClient api) : PageModel
         if (!result.Ok || result.Data is null)
         {
             Error = result.Error;
+            AvailableTimeZones = TimeZoneDisplayHelper.GetOrderedTimeZones();
             return Page();
         }
 
         Input = result.Data;
+        // Подтягиваем пояс из API в Web (как SetTimeZoneId после сохранения в Ratchet).
+        appTime.SetTimeZoneId(Input.TimeZoneId);
+        AvailableTimeZones = TimeZoneDisplayHelper.GetOrderedTimeZones(Input.TimeZoneId);
         return Page();
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
+        AvailableTimeZones = TimeZoneDisplayHelper.GetOrderedTimeZones(Input.TimeZoneId);
+
         // Валюту не трогаем: в заявках денег нет, хост всегда RUB.
         var result = await api.PutAsync<NoContent>(
             "api/settings",
@@ -66,7 +74,7 @@ public sealed class SettingsModel(CrownApiClient api) : PageModel
     {
         if (string.IsNullOrWhiteSpace(timeZoneId))
         {
-            TempData["Warn"] = "Укажите идентификатор часового пояса, например Europe/Moscow.";
+            TempData["Warn"] = "Выберите часовой пояс.";
             return Redirect("/settings");
         }
 
@@ -82,6 +90,7 @@ public sealed class SettingsModel(CrownApiClient api) : PageModel
 
         if (result.Ok)
         {
+            appTime.SetTimeZoneId(timeZoneId.Trim());
             TempData["Ok"] = "Часовой пояс сохранён.";
         }
         else

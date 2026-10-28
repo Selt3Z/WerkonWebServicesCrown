@@ -101,6 +101,24 @@ public Task<List<AuditLogEntry>> CreateEntriesAsync(
                 entityUrl = action == AuditActions.Deleted ? null : $"/warehouse-parts/{entityId}/edit";
                 return true;
 
+            case ServiceRequest serviceRequest:
+                entityType = AuditEntityTypes.ServiceRequest;
+                entityId = ToAuditEntityId(GetLongEntityId(entry, serviceRequest.Id));
+                summary = $"Заявка №{GetLongEntityId(entry, serviceRequest.Id)} · {serviceRequest.InitiatorName}";
+                entityUrl = action == AuditActions.Deleted
+                    ? null
+                    : $"/requests/{GetLongEntityId(entry, serviceRequest.Id)}";
+                return true;
+
+            case RequestAttachment attachment:
+                entityType = AuditEntityTypes.ServiceRequest;
+                entityId = ToAuditEntityId(attachment.ServiceRequestId);
+                summary = $"Вложение: {GetStringValue(entry, nameof(RequestAttachment.FileName), attachment.FileName)}";
+                entityUrl = action == AuditActions.Deleted
+                    ? null
+                    : $"/requests/{attachment.ServiceRequestId}";
+                return true;
+
             default:
                 return false;
         }
@@ -110,6 +128,19 @@ public Task<List<AuditLogEntry>> CreateEntriesAsync(
         entry.State == EntityState.Deleted
             ? entry.OriginalValues.GetValue<Guid>("Id")
             : currentId;
+
+    private static long GetLongEntityId(EntityEntry entry, long currentId) =>
+        entry.State == EntityState.Deleted
+            ? entry.OriginalValues.GetValue<long>("Id")
+            : currentId;
+
+    /// <summary>В AuditLog EntityId — Guid; для long-ключей кладём стабильный Guid из числа.</summary>
+    private static Guid ToAuditEntityId(long id)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        BitConverter.TryWriteBytes(bytes, id);
+        return new Guid(bytes);
+    }
 
     private static string GetStringValue(EntityEntry entry, string propertyName, string currentValue) =>
         entry.State == EntityState.Deleted

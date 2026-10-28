@@ -36,8 +36,12 @@ services:
       Seed__AdminDisplayName: ${Seed__AdminDisplayName:-Administrator}
       AppTimeZone: ${AppTimeZone:-Europe/Moscow}
       CurrencyCode: ${CurrencyCode:-RUB}
-      # Вложения заявок — на именованном томе, переживают пересоздание контейнера.
+      # Вложения: иерархия {requestId}/{guid}_{name} под RootPath.
+      # Диск/путь на хосте — ATTACHMENTS_HOST_PATH в .env (bind-mount), не из UI.
       Attachments__RootPath: /data/attachments
+      Attachments__HostPath: ${ATTACHMENTS_HOST_PATH:-./data/attachments}
+      Attachments__LegacyRootPath: /data/attachments-legacy
+      Attachments__LegacyHostPath: ${ATTACHMENTS_LEGACY_HOST_PATH:-${ATTACHMENTS_HOST_PATH:-./data/attachments}}
       Backup__StatusFilePath: /backups/status.json
       Backup__BackupsDirectory: /backups
       Backup__IntervalSeconds: ${BACKUP_INTERVAL_SECONDS:-86400}
@@ -63,7 +67,10 @@ services:
     volumes:
       # ./backups — общий каталог с сервисом backup.
       - ${BACKUPS_HOST_PATH:-./backups}:/backups
-      - crown_attachments:/data/attachments
+      # Основной диск вложений (можно второй физический диск, напр. /mnt/data2/crown-attachments).
+      - ${ATTACHMENTS_HOST_PATH:-./data/attachments}:/data/attachments
+      # Старое место — только чтение, пока не скопировали файлы (см. scripts/migrate-attachments.sh).
+      - ${ATTACHMENTS_LEGACY_HOST_PATH:-${ATTACHMENTS_HOST_PATH:-./data/attachments}}:/data/attachments-legacy
       # Каталог проекта (compose-файл) для docker compose из API; по умолчанию — текущий.
       - ${UPDATE_REPO_PATH:-.}:/update/repo
       - /var/run/docker.sock:/var/run/docker.sock
@@ -159,7 +166,6 @@ services:
 
 volumes:
   crown_postgres_data:
-  crown_attachments:
   crown_caddy_data:
   crown_caddy_config:
   crown_web_dp_keys:

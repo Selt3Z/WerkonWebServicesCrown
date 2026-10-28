@@ -1,0 +1,20 @@
+@model List<UserListItem>
+@inject AppTime Time
+@foreach (var u in Model)
+{
+    <tr class="table-row-action @(u.IsActive ? null : "users-row-inactive")"
+        data-href="/users/edit/@u.Id"
+        tabindex="0"
+        role="link"
+        aria-label="Пользователь @u.DisplayName">
+        <td>@u.UserName</td>
+        <td>@u.DisplayName</td>
+        <td>@AppRoles.Display(u.Role)</td>
+        <td>
+            <span class="user-status-badge @(u.IsActive ? "user-status-badge-active" : "user-status-badge-inactive")">
+                @(u.IsActive ? "Активен" : "Отключён")
+            </span>
+        </td>
+        <td class="nowrap">@Time.FormatUtc(u.LastActivityAtUtc)</td>
+    </tr>
+}

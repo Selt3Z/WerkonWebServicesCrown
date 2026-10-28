@@ -18,25 +18,34 @@
 }
 
 @{
-    var actions = Model.CanManage ? DetailsModel.ActionsFor(item.Status) : [];
-    // Комментарий после неудачной отправки возвращаем в поле как ввёл пользователь.
+    var isAdmin = User.IsInRole(AppRoles.Administrator);
+    var actions = Model.CanManage ? DetailsModel.ActionsFor(item.Status, isAdmin) : [];
     var comment = Model.CommentInput ?? item.ExecutorComment;
+    var showCancel = actions.Contains("cancel") || Model.CanCancelAsInitiator;
+    var terminal = actions.Count == 0 && Model.CanManage && !isAdmin
+                   && !Model.CanCancelAsInitiator && !Model.CanResubmit;
 }
 
 <div class="crown-page-head">
-    <h1 class="section-title">Заявка № @item.Id</h1>
+    <h1 class="section-title">
+        Заявка № @item.Id
+        @if (item.HasComplaint)
+        {
+            <span class="crown-warn-badge" title="По заявке подана жалоба" aria-label="Жалоба">!</span>
+        }
+    </h1>
     <a class="btn btn-outline-secondary" href="/">&larr; К списку</a>
 </div>
 
-@* «Опер.» — отдельная форма: нельзя вкладывать в форму переходов статусов. *@
-<div class="form-panel crown-op-panel">
+@* «Ознак.» — авто при открытии исполнителем; ручной toggle только админ. *@
+<div class="crown-op-panel">
     <div class="crown-op-row">
-        <span class="crown-op-label" title="Диспетчер ознакомился с заявкой (не workflow-статус)">Опер.</span>
+        <span class="crown-op-label" title="Исполнитель открыл карточку заявки">Ознак.</span>
         <span class="visit-payment-dot @(item.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
-              title="@(item.Acknowledged ? "Ознакомлен" : "Не отмечено")"
+              title="@(item.Acknowledged ? "Ознакомлен" : "Не ознакомлен")"
               aria-hidden="true"></span>
-        <span>@(item.Acknowledged ? "Ознакомлен" : "Не отмечено")</span>
-        @if (Model.CanManage)
+        <span>@(item.Acknowledged ? "Ознакомлен" : "Не ознакомлен")</span>
+        @if (Model.CanToggleAck)
         {
             <form method="post" asp-page-handler="Ack" asp-route-id="@item.Id" class="crown-op-form">
                 <input type="hidden" name="ack" value="@((!item.Acknowledged).ToString().ToLowerInvariant())" />
@@ -52,7 +61,7 @@
     <input type="hidden" name="rowVersion" value="@item.RowVersion" />
 
     <dl class="crown-dl">
-        <dt>Состояние</dt>
+        <dt>Статус</dt>
         <dd><span class="crown-status-pill @UiHelpers.StatusClass(item.Status)">@item.StatusLabel</span></dd>
 
         <dt>Дата подачи</dt>
@@ -65,10 +74,10 @@
         <dd>@item.InitiatorName</dd>
 
         <dt>Телефон</dt>
-        <dd>@item.Phone</dd>
+        <dd>@UiHelpers.FormatPhone(item.Phone)</dd>
 
         <dt>Исполнитель</dt>
-        <dd>@item.DepartmentName</dd>
+        <dd>@item.ExecutorName</dd>
 
         <dt>Реакция</dt>
         <dd>@Time.Format(item.ReactionAt)</dd>
@@ -78,15 +87,24 @@
     </dl>
 
     <div class="mb-3">
-        <label class="form-label">Заявка</label>
-        <div class="crown-body">@item.Body</div>
+        <label class="form-label" for="body">Заявка</label>
+        @if (Model.CanResubmit)
+        {
+            <textarea class="form-control" id="body" name="body" rows="8" required
+                      placeholder="Исправьте текст и подайте заявку снова">@(Model.BodyInput ?? item.Body)</textarea>
+        }
+        else
+        {
+            <div class="crown-body">@item.Body</div>
+        }
     </div>
 
     <div class="mb-3">
         <label class="form-label" for="executorComment">Комментарий исполнителя</label>
         @if (actions.Count > 0)
         {
-            <textarea class="form-control" id="executorComment" name="executorComment" rows="4">@comment</textarea>
+            <textarea class="form-control" id="executorComment" name="executorComment" rows="4"
+                      placeholder="Обязателен для возврата, отклонения и переноса срока">@comment</textarea>
         }
         else
         {
@@ -97,45 +115,85 @@
     @if (actions.Contains("reschedule"))
     {
         <div class="mb-3 crown-reschedule">
-            <label class="form-label" for="newDueAt">Новый срок (для переноса срока; комментарий обязателен)</label>
+            <label class="form-label" for="newDueAt">Новый срок (для переноса; комментарий обязателен)</label>
             <input class="form-control" type="datetime-local" id="newDueAt" name="newDueAt"
                    value="@(Model.NewDueInput ?? Time.ToInput(item.DueAt))" />
         </div>
     }
 
-    @if (actions.Count > 0)
-    {
-        <div class="crown-actions">
-            @if (actions.Contains("accept"))
-            {
-                <button type="submit" name="action" value="accept" class="btn btn-act btn-act-accept">ПРИНЯТЬ В РАБОТУ</button>
-            }
-            @if (actions.Contains("complete"))
-            {
-                <button type="submit" name="action" value="complete" class="btn btn-act btn-act-accept"
-                        data-confirm="Завершить заявку?">ЗАВЕРШИТЬ</button>
-            }
-            @if (actions.Contains("reject"))
-            {
-                <button type="submit" name="action" value="reject" class="btn btn-act btn-act-reject"
-                        data-confirm="Отклонить заявку?">ОТКЛОНИТЬ</button>
-            }
-            @if (actions.Contains("return"))
-            {
-                <button type="submit" name="action" value="return" class="btn btn-act btn-act-return">ВЕРНУТЬ</button>
-            }
-            @if (actions.Contains("reschedule"))
-            {
-                <button type="submit" name="action" value="reschedule" class="btn btn-act btn-act-reschedule">ПЕРЕНОС СРОКА</button>
-            }
-            @if (actions.Contains("cancel"))
-            {
-                <button type="submit" name="action" value="cancel" class="btn btn-act btn-act-cancel"
-                        data-confirm="Отменить заявку?">ОТМЕНА</button>
-            }
-        </div>
-    }
+    <div class="crown-actions">
+        @if (actions.Contains("accept"))
+        {
+            <button type="submit" name="action" value="accept" class="btn btn-act btn-act-accept">Принять в работу</button>
+        }
+        @if (actions.Contains("complete"))
+        {
+            <button type="submit" name="action" value="complete" class="btn btn-act btn-act-accept"
+                    data-confirm="Завершить заявку?">Завершить</button>
+        }
+        @if (actions.Contains("reject"))
+        {
+            <button type="submit" name="action" value="reject" class="btn btn-act btn-act-reject"
+                    data-confirm="Отклонить заявку? Нужен комментарий.">Отклонить</button>
+        }
+        @if (actions.Contains("return"))
+        {
+            <button type="submit" name="action" value="return" class="btn btn-act btn-act-return"
+                    data-confirm="Вернуть заявку инициатору? Нужен комментарий.">Вернуть</button>
+        }
+        @if (actions.Contains("reschedule"))
+        {
+            <button type="submit" name="action" value="reschedule" class="btn btn-act btn-act-reschedule">Перенос срока</button>
+        }
+        @if (Model.CanResubmit)
+        {
+            <button type="submit" name="action" value="resubmit" class="btn btn-act btn-act-accept">Подать снова</button>
+        }
+        @if (showCancel)
+        {
+            <button type="submit" name="action" value="cancel" class="btn btn-act btn-act-cancel"
+                    data-confirm="Отменить заявку?">Отмена</button>
+        }
+        @if (terminal)
+        {
+            <button type="button" class="btn btn-act btn-act-unavailable" disabled>Действия недоступны</button>
+        }
+        @if (Model.CanFileComplaint && !Model.ShowComplaintForm)
+        {
+            <a class="btn btn-act btn-act-complaint" href="/requests/@item.Id?complaint=true">Жалоба</a>
+        }
+    </div>
 </form>
+
+@if (item.HasComplaint)
+{
+    <section class="crown-complaint-panel" aria-label="Жалоба">
+        <p class="crown-complaint-meta">
+            @(item.ComplaintByName ?? item.InitiatorName) оставил жалобу
+            @(item.ComplaintAt is null ? "" : Time.Format(item.ComplaintAt))
+        </p>
+        <div class="crown-body">@item.ComplaintText</div>
+    </section>
+}
+else if (Model.ShowComplaintForm && Model.CanFileComplaint)
+{
+    <form method="post" asp-page-handler="Complaint" asp-route-id="@item.Id" class="crown-complaint-form">
+        <textarea class="form-control" name="complaintText" rows="4"
+                  placeholder="Здесь текст жалобы">@Model.ComplaintTextInput</textarea>
+        <div class="crown-complaint-confirm">
+            <p class="mb-2">
+                Внимание! Вы подаете жалобу на действия службы. Вы подтверждаете, что жалоба обоснована
+                и что Вы подробно описали суть жалобы.
+            </p>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="complaintConfirmed" value="true" id="complaintConfirmed" />
+                <label class="form-check-label" for="complaintConfirmed">Я согласен</label>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-act btn-act-complaint">Подать жалобу</button>
+        <a class="btn btn-secondary" href="/requests/@item.Id">Отмена</a>
+    </form>
+}
 
 <section class="form-panel crown-attachments">
     <h2 class="section-subtitle">Вложения</h2>

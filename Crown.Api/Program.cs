@@ -155,7 +155,7 @@ builder.Services.Configure<AttachmentStorageOptions>(
     builder.Configuration.GetSection(AttachmentStorageOptions.SectionName));
 builder.Services.AddSingleton<AttachmentStorageService>();
 builder.Services.AddHostedService<IdentitySeedHostedService>();
-builder.Services.AddHostedService<ServiceDepartmentSeedHostedService>();
+builder.Services.AddHostedService<DemoRequestsSeedHostedService>();
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>("database", tags: ["ready"])
     .AddCheck<DatabaseMigrationHealthCheck>("database_migrations", tags: ["ready"]);

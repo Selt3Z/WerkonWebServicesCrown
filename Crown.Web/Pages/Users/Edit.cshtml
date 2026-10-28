@@ -1,7 +1,8 @@
 @page "/users/edit/{id:guid?}"
 @model UserEditModel
+@inject AppTime Time
 @{
-    ViewData["Title"] = Model.IsNew ? "Новый пользователь" : "Пользователь";
+    ViewData["Title"] = Model.IsNew ? "Новый пользователь" : "Редактирование пользователя";
 }
 
 <h1 class="section-title">@(Model.IsNew ? "Новый пользователь" : "Редактирование пользователя")</h1>
@@ -12,45 +13,94 @@
 }
 
 <form method="post" class="form-panel crown-form">
-    <div class="crown-form-grid">
-        <div class="mb-3">
-            <label class="form-label" asp-for="Input.UserName">Логин</label>
+    @if (!Model.IsNew && Model.LastActivityAtUtc.HasValue)
+    {
+        <p class="user-last-activity">
+            <span>Последняя активность:</span>
+            <span>@Time.FormatUtc(Model.LastActivityAtUtc)</span>
+        </p>
+    }
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.UserName">Логин</label>
+        @if (Model.IsProtectedAdmin)
+        {
+            <div class="form-control-plaintext">@Model.Input.UserName</div>
+            <input type="hidden" asp-for="Input.UserName" />
+            <div class="form-text">Логин системного пользователя admin нельзя изменить.</div>
+        }
+        else
+        {
             <input class="form-control" asp-for="Input.UserName" required autocomplete="off" />
-        </div>
-        <div class="mb-3">
-            <label class="form-label" asp-for="Input.DisplayName">Имя</label>
-            <input class="form-control" asp-for="Input.DisplayName" required />
-        </div>
-        <div class="mb-3">
-            <label class="form-label" asp-for="Input.Role">Роль</label>
+        }
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.DisplayName">Имя</label>
+        <input class="form-control" asp-for="Input.DisplayName" required />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.Role">Роль</label>
+        @if (Model.IsProtectedAdmin)
+        {
+            <div class="form-control-plaintext">@AppRoles.Display(Model.Input.Role)</div>
+            <input type="hidden" asp-for="Input.Role" />
+            <div class="form-text">Роль системного пользователя admin нельзя изменить.</div>
+        }
+        else
+        {
             <select class="form-select" asp-for="Input.Role">
                 @foreach (var r in AppRoles.All)
                 {
                     <option value="@r">@AppRoles.Display(r)</option>
                 }
             </select>
-        </div>
-        <div class="mb-3">
-            <label class="form-label" asp-for="Input.Password">@(Model.IsNew ? "Пароль" : "Новый пароль (если нужно сменить)")</label>
-            <input class="form-control" type="password" asp-for="Input.Password" autocomplete="new-password" />
-            <div class="form-text">Минимум 8 символов, в том числе строчная буква и цифра.</div>
-        </div>
-        @if (Model.IsSelf)
-        {
-            <div class="mb-3">
-                <label class="form-label" asp-for="Input.CurrentPassword">Текущий пароль (при смене своего пароля)</label>
-                <input class="form-control" type="password" asp-for="Input.CurrentPassword" autocomplete="current-password" />
-            </div>
         }
     </div>
 
-    <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" asp-for="Input.IsActive" />
-        <label class="form-check-label" asp-for="Input.IsActive">Учётная запись активна</label>
+    @if (!Model.IsNew && !Model.IsSelf && !Model.IsProtectedAdmin)
+    {
+        <div class="mb-3 form-check">
+            <input class="form-check-input" type="checkbox" asp-for="Input.IsActive" id="user-is-active" />
+            <label class="form-check-label" for="user-is-active" asp-for="Input.IsActive">Учётная запись активна</label>
+            <div class="form-text">Отключённый пользователь не может войти в систему.</div>
+        </div>
+    }
+    else
+    {
+        <input type="hidden" asp-for="Input.IsActive" />
+    }
+
+    @if (Model.IsSelf)
+    {
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.CurrentPassword">Текущий пароль</label>
+            <input class="form-control" type="password" asp-for="Input.CurrentPassword" autocomplete="current-password" />
+            <div class="form-text">Нужен только если меняете свой пароль.</div>
+        </div>
+    }
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.Password">@(Model.IsSelf ? "Новый пароль" : "Пароль")</label>
+        <input class="form-control" type="password" asp-for="Input.Password" autocomplete="new-password" />
+        @if (Model.IsNew)
+        {
+            <div class="form-text">Минимум 8 символов, в том числе строчная буква и цифра.</div>
+        }
+        else
+        {
+            <div class="form-text">Оставьте пустым, если пароль менять не нужно.</div>
+        }
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.ConfirmPassword">@(Model.IsSelf ? "Подтверждение нового пароля" : "Подтверждение пароля")</label>
+        <input class="form-control" type="password" asp-for="Input.ConfirmPassword" autocomplete="new-password" />
     </div>
 
     <div class="crown-form-actions">
         <button type="submit" class="btn btn-primary">Сохранить</button>
-        <a class="btn btn-outline-secondary" href="/users">Отмена</a>
+        <a class="btn btn-secondary" href="/users">Отмена</a>
     </div>
 </form>

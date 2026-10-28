@@ -11,7 +11,54 @@
     <div class="alert alert-danger">@Model.Error</div>
 }
 
+<form method="post" asp-page-handler="TimeZone" class="form-panel crown-form">
+    <h2 class="section-subtitle">Часовой пояс</h2>
+    <div class="mb-3">
+        <select class="form-select" id="timeZoneId" name="timeZoneId" required aria-label="Часовой пояс">
+            @foreach (var tz in Model.AvailableTimeZones)
+            {
+                <option value="@tz.Id" selected="@(string.Equals(tz.Id, Model.Input.TimeZoneId, StringComparison.OrdinalIgnoreCase))">
+                    @TimeZoneDisplayHelper.FormatLabel(tz)
+                </option>
+            }
+        </select>
+        <div class="form-text">Используется для отображения дат и сроков в заявках.</div>
+    </div>
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-primary">Применить пояс</button>
+    </div>
+</form>
+
+<div class="form-panel crown-form">
+    <h2 class="section-subtitle">Вложения заявок</h2>
+    <dl class="crown-dl">
+        <dt>Путь на сервере (хост)</dt>
+        <dd><code>@Model.Input.AttachmentsHostPath</code></dd>
+        <dt>В контейнере</dt>
+        <dd><code>@Model.Input.AttachmentsContainerPath</code></dd>
+        @if (Model.Input.AttachmentsLegacyActive)
+        {
+            <dt>Старое место (чтение)</dt>
+            <dd><code>@(Model.Input.AttachmentsLegacyHostPath ?? "—")</code></dd>
+        }
+    </dl>
+    <p class="form-text mb-0">
+        Диск и каталог задаются в <code>.env</code> переменной <code>ATTACHMENTS_HOST_PATH</code>
+        (как бэкапы), затем <code>docker compose up -d</code>. Из UI путь не меняется — контейнеру нужен remount.
+        Иерархия внутри: <code>&#123;номер_заявки&#125;/&#123;guid&#125;_имя.файла</code>.
+    </p>
+    <p class="form-text mb-0 mt-2">
+        <strong>Смена диска:</strong>
+        1) скопировать файлы (<code>scripts/migrate-attachments.sh</code> или вручную)
+        → 2) в <code>.env</code> новый <code>ATTACHMENTS_HOST_PATH</code>
+        → 3) <code>docker compose up -d api</code>.
+        Если скопировать ещё не успели, а путь уже сменили — временно задайте старый каталог в
+        <code>ATTACHMENTS_LEGACY_HOST_PATH</code> (только чтение старых файлов). Когда всё на новом месте — строку LEGACY удалите.
+    </p>
+</div>
+
 <form method="post" class="form-panel crown-form">
+    <h2 class="section-subtitle">Прочее</h2>
     <div class="crown-form-grid">
         <div class="mb-3">
             <label class="form-label" asp-for="Input.ListPageSize">Размер страницы в списках</label>
@@ -38,13 +85,5 @@
 
     <div class="crown-form-actions">
         <button type="submit" class="btn btn-primary">Сохранить</button>
-    </div>
-</form>
-
-<form method="post" asp-page-handler="TimeZone" class="form-panel crown-form">
-    <h2 class="section-subtitle">Часовой пояс</h2>
-    <div class="crown-filters">
-        <input class="form-control" name="timeZoneId" value="@Model.Input.TimeZoneId" placeholder="Europe/Moscow" />
-        <button type="submit" class="btn btn-primary">Применить</button>
     </div>
 </form>

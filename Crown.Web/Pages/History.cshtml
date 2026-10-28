@@ -1,26 +1,46 @@
 @page "/history"
 @model HistoryModel
-@inject AppTime Time
 @{
     ViewData["Title"] = "Журнал";
 }
 
 <h1 class="section-title">Журнал</h1>
 
-<form method="get" class="crown-filters">
-    <select class="form-select" name="userId">
-        <option value="">Все пользователи</option>
-        @foreach (var u in Model.Users)
-        {
-            <option value="@u.UserId" selected="@(u.UserId == Model.UserId)">@u.DisplayName</option>
-        }
-    </select>
-    <input class="form-control" name="entityType" value="@Model.EntityType" placeholder="Тип записи" />
-    <input class="form-control" type="date" name="from" value="@Model.From" title="С даты" />
-    <input class="form-control" type="date" name="to" value="@Model.To" title="По дату" />
-    <button class="btn btn-primary" type="submit">Применить</button>
-    <a class="btn btn-outline-secondary" href="/history">Сбросить</a>
+<form method="get" class="list-filters clients-filters mb-3">
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="hist-user">Пользователь</label>
+        <select id="hist-user" class="form-select" name="userId">
+            <option value="">Все</option>
+            @foreach (var u in Model.Users)
+            {
+                <option value="@u.UserId" selected="@(u.UserId == Model.UserId)">@u.DisplayName</option>
+            }
+        </select>
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="hist-entity">Тип</label>
+        <input id="hist-entity" class="form-control" name="entityType" value="@Model.EntityType" placeholder="Тип записи" />
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="hist-from">С</label>
+        <input id="hist-from" class="form-control" type="date" name="from" value="@Model.From" />
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="hist-to">По</label>
+        <input id="hist-to" class="form-control" type="date" name="to" value="@Model.To" />
+    </div>
 </form>
+
+<div class="action-bar mb-3">
+    <button class="btn btn-primary" type="submit" form="" id="btn-hist-filters">Найти</button>
+    <a class="btn btn-secondary" href="/history">Сбросить</a>
+</div>
+<script>
+document.getElementById('btn-hist-filters')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  document.querySelector('form.list-filters')?.requestSubmit();
+});
+</script>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
@@ -38,23 +58,19 @@
             <th>Описание</th>
         </tr>
         </thead>
-        <tbody>
-        @foreach (var a in Model.Items)
-        {
-            <tr>
-                <td class="nowrap">@Time.FormatUtc(a.OccurredAtUtc)</td>
-                <td>@a.UserDisplayName</td>
-                <td>@a.Action</td>
-                <td>@a.EntityType</td>
-                <td>@a.Summary</td>
-            </tr>
-        }
+        <tbody data-infinite-scroll
+               data-more-url="@UiHelpers.BuildUrl("/history", ("handler", "More"), ("userId", Model.UserId?.ToString()), ("entityType", Model.EntityType), ("from", Model.From), ("to", Model.To))"
+               data-skip="@Model.Items.Count"
+               data-has-more="@(Model.HasMore ? "true" : "false")">
         @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
         {
-            <tr><td colspan="5" class="text-muted text-center">Записей нет.</td></tr>
+            <tr class="crown-empty-row"><td colspan="5" class="text-muted text-center">Записей нет.</td></tr>
+        }
+        else
+        {
+            <partial name="_HistoryRows" model="Model.Items" />
         }
         </tbody>
     </table>
 </div>
-
-<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />
+<div class="infinite-scroll-sentinel" hidden></div>

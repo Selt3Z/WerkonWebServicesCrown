@@ -11,6 +11,8 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly AuditEntryFactory _auditEntryFactory;
     private List<Domain.Entities.AuditLogEntry>? _pendingEntries;
+    private Guid? _actorUserId;
+    private bool _hadTrackedChanges;
     private bool _suppressAudit;
 
     public AuditSaveChangesInterceptor(
@@ -26,6 +28,10 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         InterceptionResult<int> result,
         CancellationToken cancellationToken = default)
     {
+        _pendingEntries = null;
+        _actorUserId = null;
+        _hadTrackedChanges = false;
+
         if (!_suppressAudit && eventData.Context is AppDbContext dbContext)
         {
             var trackedEntries = dbContext.ChangeTracker.Entries()
@@ -34,7 +40,9 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
             if (trackedEntries.Count > 0)
             {
+                _hadTrackedChanges = true;
                 var (userId, userDisplayName) = await ResolveCurrentUserAsync(dbContext, cancellationToken);
+                _actorUserId = userId;
                 _pendingEntries = await _auditEntryFactory.CreateEntriesAsync(
                     dbContext,
                     trackedEntries,
@@ -57,9 +65,21 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         if (_suppressAudit
             || savedCount == 0
             || eventData.Context is not AppDbContext dbContext
-            || _pendingEntries is not { Count: > 0 })
+            || !_hadTrackedChanges)
         {
-            _pendingEntries = null;
+            ClearPending();
+            return savedCount;
+        }
+
+        // LastActivity обновляем по любой записи в БД от пользователя,
+        // даже если сущность ещё не мапится в журнал аудита (раньше из‑за этого колонка всегда была пустой).
+        var actorUserId = _actorUserId
+            ?? _pendingEntries?.Select(x => x.UserId).FirstOrDefault(id => id.HasValue);
+
+        var hasAudit = _pendingEntries is { Count: > 0 };
+        if (!actorUserId.HasValue && !hasAudit)
+        {
+            ClearPending();
             return savedCount;
         }
 
@@ -67,10 +87,6 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
         try
         {
-            var actorUserId = _pendingEntries
-                .Select(x => x.UserId)
-                .FirstOrDefault(id => id.HasValue);
-
             if (actorUserId.HasValue)
             {
                 var actor = await dbContext.Users
@@ -82,16 +98,27 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
                 }
             }
 
-            dbContext.AuditLogEntries.AddRange(_pendingEntries);
+            if (hasAudit)
+            {
+                dbContext.AuditLogEntries.AddRange(_pendingEntries!);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         finally
         {
             _suppressAudit = false;
-            _pendingEntries = null;
+            ClearPending();
         }
 
         return savedCount;
+    }
+
+    private void ClearPending()
+    {
+        _pendingEntries = null;
+        _actorUserId = null;
+        _hadTrackedChanges = false;
     }
 
     private async Task<(Guid? UserId, string DisplayName)> ResolveCurrentUserAsync(

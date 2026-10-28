@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Безопасное обновление Docker-стека после git pull (из UI или вручную на сервере).
+# Быстрое обновление Docker-стека WWS Crown после git pull (на сервере вручную).
 #
-# Если на сервере ручные правки мешают git pull / Apply в UI:
+#   cd /path/to/WerkonWebServicesCrown   # или MNS
+#   bash scripts/update-stack.sh
+#
+# Если локальные правки мешают git pull:
 #   bash scripts/update-stack.sh --reset-local
-# (git status → сброс tracked → git pull → дальше обычная сборка)
+# (git status → сброс tracked → git pull → rebuild)
 set -euo pipefail
 
 # Кириллица в логах — UTF-8 (иначе tee/locale даёт кракозябры при открытии на Windows).
@@ -27,11 +30,12 @@ done
 
 DOCKER_BIN="${DOCKER_BINARY:-docker}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
-API_CONTAINER="${UPDATE_API_CONTAINER:-ratchet_api}"
-WEB_CONTAINER="${UPDATE_WEB_CONTAINER:-ratchet_web}"
+API_CONTAINER="${UPDATE_API_CONTAINER:-crown_api}"
+WEB_CONTAINER="${UPDATE_WEB_CONTAINER:-crown_web}"
+BACKUP_CONTAINER="${UPDATE_BACKUP_CONTAINER:-crown_backup}"
 
 # Владелец репо ДО правок от root (иначе после update git pull от пользователя падает на .git/objects).
-# OVERRIDE: UPDATE_REPO_OWNER=1000:1000 или driveservice32:driveservice32
+# OVERRIDE: UPDATE_REPO_OWNER=1000:1000
 REPO_OWNER_SPEC="${UPDATE_REPO_OWNER:-}"
 if [[ -z "$REPO_OWNER_SPEC" ]]; then
   for _owner_probe in "$ROOT/.git" "$ROOT/docker-compose.yml" "$ROOT/README.md"; do
@@ -42,7 +46,6 @@ if [[ -z "$REPO_OWNER_SPEC" ]]; then
     fi
   done
 fi
-# Если всё уже root — UID владельца родительской папки на хосте (обычно home пользователя).
 if [[ -z "$REPO_OWNER_SPEC" && -n "${UPDATE_REPO_PATH:-}" && -n "${DOCKER_BIN:-docker}" ]]; then
   _parent="$(dirname "${UPDATE_REPO_PATH}")"
   REPO_OWNER_SPEC="$("${DOCKER_BIN:-docker}" run --rm -v "${_parent}:/p:ro" alpine:3.20 \
@@ -61,7 +64,6 @@ restore_repo_ownership() {
   if chown -R "$spec" "$ROOT" 2>/dev/null; then
     return 0
   fi
-  # Скрипт с хоста без sudo — пробуем через привилегированный контейнер на bind-mount.
   local host_repo="${UPDATE_REPO_PATH:-}"
   if [[ -n "$host_repo" && -n "$DOCKER_BIN" ]]; then
     echo "chown через docker run alpine…"
@@ -72,7 +74,6 @@ restore_repo_ownership() {
   fi
 }
 
-# Локальные правки Dockerfile/скриптов на VPS часто ломают git pull из UI.
 if (( RESET_LOCAL == 1 )); then
   echo "=== --reset-local: что накрутили руками ==="
   git status
@@ -80,7 +81,7 @@ if (( RESET_LOCAL == 1 )); then
   git diff --stat || true
   echo ""
   echo "=== Сброс tracked (типичные ручные правки, потом всё остальное) ==="
-  git checkout -- WerkonWebServicesRatchet/Dockerfile scripts/update-stack.sh 2>/dev/null || true
+  git checkout -- Crown.Api/Dockerfile Crown.Web/Dockerfile scripts/update-stack.sh 2>/dev/null || true
   if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     echo "Ещё есть изменённые tracked — git checkout -- ."
     git checkout -- .
@@ -92,9 +93,7 @@ fi
 
 # UPDATE_REPO_PATH = путь репо на ХОСТЕ (для bind-mount'ов в docker-compose.yml).
 # Файл compose читаем из ROOT: в runner'е это /update/repo (mount), на хосте — cwd.
-# НЕльзя -f "$UPDATE_REPO_PATH/docker-compose.yml" из контейнера — на FS контейнера
-# /home/... не существует → "no such file or directory" (кнопка ломалась, руками с хоста ок).
-DEFAULT_HOST_REPO="/WerkonWebServicesRatchet"
+DEFAULT_HOST_REPO="/WerkonWebServicesCrown"
 if [[ -z "${UPDATE_REPO_PATH:-}" ]]; then
   repo_src="$("$DOCKER_BIN" inspect -f '{{range .Mounts}}{{if eq .Destination "/update/repo"}}{{.Source}}{{end}}{{end}}' "$API_CONTAINER" 2>/dev/null || true)"
   if [[ -n "$repo_src" ]]; then
@@ -111,7 +110,6 @@ READY_WAIT_SECONDS="${UPDATE_READY_WAIT_SECONDS:-180}"
 READY_INTERVAL_SECONDS="${UPDATE_READY_INTERVAL_SECONDS:-3}"
 HEARTBEAT_SECONDS="${UPDATE_HEARTBEAT_SECONDS:-20}"
 
-# Не висеть вечно на pull/registry
 export COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-120}"
 export DOCKER_CLIENT_TIMEOUT="${DOCKER_CLIENT_TIMEOUT:-120}"
 
@@ -122,20 +120,16 @@ if [[ ! -f "$COMPOSE_FILE_PATH" ]]; then
 fi
 
 # Имя проекта compose ДОЛЖНО совпадать со стеком на хосте.
-# Runner крутится с project-directory=/update/repo → иначе project=«repo»,
-# а живой ratchet_api от «WerkonWebServicesRatchet» — тогда up --force-recreate
-# не снимает старый контейнер и падает: name already in use.
 if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
   COMPOSE_PROJECT_NAME="$("$DOCKER_BIN" inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$API_CONTAINER" 2>/dev/null || true)"
 fi
 if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
   # Не basename(ROOT): внутри контейнера ROOT=/update/repo → «repo».
-  COMPOSE_PROJECT_NAME="$(basename "${UPDATE_REPO_PATH:-WerkonWebServicesRatchet}")"
+  COMPOSE_PROJECT_NAME="$(basename "${UPDATE_REPO_PATH:-WerkonWebServicesCrown}")"
 fi
 export COMPOSE_PROJECT_NAME
 echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}"
 
-# -f и project-directory — пути, видимые CLI (ROOT). Volumes в yml — через UPDATE_REPO_PATH.
 COMPOSE=("$DOCKER_BIN" compose -f "$COMPOSE_FILE_PATH" --project-directory "$ROOT")
 
 TOTAL_STEPS=6
@@ -163,7 +157,6 @@ fmt_elapsed() {
 }
 
 progress_bar() {
-  # $1 = current step (1..TOTAL), width 20
   local cur="$1"
   local width=20
   local filled=$((cur * width / TOTAL_STEPS))
@@ -207,7 +200,6 @@ start_heartbeat() {
   HB_PID=$!
 }
 
-# UI-шкала: logs/update-status.json (читает api GET /api/system/update/status).
 UPDATE_STATUS_STARTED_AT=""
 write_update_status() {
   local running="$1"
@@ -215,7 +207,6 @@ write_update_status() {
   local status="$3"
   local msg="$4"
   mkdir -p "$ROOT/logs"
-  # Простой JSON без jq; msg без кавычек/переносов.
   msg="${msg//$'\n'/ }"
   msg="${msg//\"/\'}"
   if [[ -z "$UPDATE_STATUS_STARTED_AT" ]]; then
@@ -261,7 +252,6 @@ on_update_fail() {
   stop_heartbeat || true
   local pct=$((STEP_NO * 100 / TOTAL_STEPS))
   write_update_status false "$pct" "error" "Update failed (exit ${code}). See logs/update-*.log"
-  # Даже при ошибке — вернуть владельца, иначе git pull снова ляжет.
   restore_repo_ownership || true
 }
 trap 'on_update_fail' ERR
@@ -280,7 +270,7 @@ preflight_url() {
   return 1
 }
 
-echo "=== Ratchet stack update started at $(date -Iseconds) ==="
+echo "=== WWS Crown stack update started at $(date -Iseconds) ==="
 echo "Log: $LOG"
 echo "Всего этапов: ${TOTAL_STEPS} (сеть → cli → build → api → web+backup → proxy)"
 
@@ -303,8 +293,6 @@ begin_step "Сборка образов api + web + backup (самый долг�
 STEP_T="$(now_epoch)"
 echo "Docker progress=plain — смотри слои #1, #2… и heartbeat каждые ${HEARTBEAT_SECONDS}с"
 start_heartbeat "docker compose build" "$STEP_T"
-# --progress глобальный флаг compose (не у build): иначе "better use docker compose --progress xx"
-# backup тоже: иначе restic forget остаётся со старым group-by=host и UI висит на 5%.
 if ! "${COMPOSE[@]}" --progress=plain build api web backup; then
   stop_heartbeat
   echo "ERROR: docker compose build failed." >&2
@@ -322,7 +310,6 @@ end_step "$STEP_T"
 begin_step "Пересоздание API + ожидание healthy (миграции)"
 STEP_T="$(now_epoch)"
 echo "Recreating API (project=${COMPOSE_PROJECT_NAME})..."
-# На случай рассинхрона project/name — снимаем по container_name, потом up создаёт заново.
 if ! "${COMPOSE[@]}" up -d --force-recreate --no-deps api; then
   echo "WARN: compose up api failed — снимаем $API_CONTAINER по имени и повторяем..."
   "$DOCKER_BIN" rm -f "$API_CONTAINER" || true
@@ -362,8 +349,8 @@ if ! "${COMPOSE[@]}" up -d --force-recreate --no-deps web; then
   "${COMPOSE[@]}" up -d --no-deps web
 fi
 if ! "${COMPOSE[@]}" up -d --force-recreate --no-deps backup; then
-  echo "WARN: compose up backup failed — снимаем ratchet_backup по имени и повторяем..."
-  "$DOCKER_BIN" rm -f ratchet_backup || true
+  echo "WARN: compose up backup failed — снимаем $BACKUP_CONTAINER по имени и повторяем..."
+  "$DOCKER_BIN" rm -f "$BACKUP_CONTAINER" || true
   "${COMPOSE[@]}" up -d --no-deps backup
 fi
 end_step "$STEP_T"
@@ -380,6 +367,6 @@ restore_repo_ownership
 
 echo ""
 echo "$(progress_bar "$TOTAL_STEPS")  ГОТОВО"
-echo "=== Ratchet stack update finished at $(date -Iseconds) ==="
+echo "=== WWS Crown stack update finished at $(date -Iseconds) ==="
 echo "Суммарно: $(fmt_elapsed $(( $(now_epoch) - SCRIPT_START_EPOCH ))) | лог: $LOG"
 write_update_status false 100 "ok" "Update finished"

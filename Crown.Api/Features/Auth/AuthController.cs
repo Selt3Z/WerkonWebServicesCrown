@@ -87,6 +87,10 @@ public sealed class AuthController : ControllerBase
 
         await _signInManager.SignInAsync(user, isPersistent: true);
 
+        // Логин тоже считаем активностью (просмотр списков без SaveChanges раньше оставлял колонку пустой).
+        user.LastActivityAtUtc = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+
         return Ok(await MapCurrentUserAsync(user));
     }
 

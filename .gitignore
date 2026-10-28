@@ -385,6 +385,9 @@ logs/update-*.log
 # Database backups
 /backups/
 
+# Request attachments (local bind-mount default)
+/data/attachments/
+
 # Host docker-compose plugin copied for API image build (no GitHub download)
 WerkonWebServicesRatchet/.docker-cli/
 

@@ -2578,6 +2578,15 @@ body:has(#nav-menu-toggle:checked) .navbar-toggler-btn {
     max-width: none;
 }
 
+/* list-filters — на всю ширину; без max-width:680px и толстого padding обычных форм. */
+.page-content form.list-filters,
+.content form.list-filters {
+    max-width: none;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.42rem 0.75rem;
+}
+
 .page-content form .mb-3:last-child,
 .content form .mb-3:last-child {
     margin-bottom: 0 !important;

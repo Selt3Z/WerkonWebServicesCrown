@@ -1,0 +1,40 @@
+@model List<ServiceRequestListItem>
+@inject AppTime Time
+@foreach (var r in Model)
+{
+    <tr class="table-row-action" data-href="/requests/@r.Id" tabindex="0" role="link" aria-label="Заявка № @r.Id">
+        <td class="col-num">
+            <span class="crown-id-cell">
+                <span class="crown-id">@r.Id</span>
+                @if (r.HasComplaint)
+                {
+                    <span class="crown-warn-badge" title="По заявке подана жалоба" aria-label="Жалоба">!</span>
+                }
+            </span>
+        </td>
+        <td class="crown-status-cell">
+            <span class="crown-status-pill @UiHelpers.StatusClass(r.Status)">@r.StatusLabel</span>
+        </td>
+        <td class="col-op">
+            <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
+                  title="@(r.Acknowledged ? "Ознак.: ознакомлен" : "Ознак.: не ознакомлен")"
+                  aria-label="@(r.Acknowledged ? "Исполнитель ознакомился" : "Исполнитель ещё не ознакомился")"></span>
+        </td>
+        <td class="col-init">@r.InitiatorName</td>
+        <td class="col-date">@Time.Format(r.SubmittedAt)</td>
+        <td class="col-date">@Time.Format(r.ReactionAt)</td>
+        <td class="col-date">
+            @if (r.CompletedAt is not null)
+            {
+                @Time.Format(r.CompletedAt)
+            }
+            else
+            {
+                <span class="text-muted" title="Срок исполнения">до @Time.Format(r.DueAt)</span>
+            }
+        </td>
+        <td class="col-dept">@r.ExecutorName</td>
+        <td class="col-phone">@UiHelpers.FormatPhone(r.Phone)</td>
+        <td class="col-body">@r.BodyPreview</td>
+    </tr>
+}

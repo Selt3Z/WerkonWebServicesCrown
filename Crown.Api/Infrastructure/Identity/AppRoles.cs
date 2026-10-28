@@ -7,7 +7,7 @@ public static class AppRoles
     /// <summary>Диспетчер: ведёт заявки, склад и каталог запчастей.</summary>
     public const string Dispatcher = "Dispatcher";
 
-    /// <summary>Инициатор: создаёт заявки и видит только свои.</summary>
+    /// <summary>Инициатор: подаёт заявки другим инициаторам и исполняет назначенные ему.</summary>
     public const string Initiator = "Initiator";
 
     public static readonly string[] All =

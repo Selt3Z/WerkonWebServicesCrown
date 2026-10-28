@@ -9,9 +9,6 @@ namespace Crown.Web.Pages.Users;
 [Authorize(Roles = AppRoles.Administrator)]
 public sealed class UserListModel(CrownApiClient api) : PageModel
 {
-    [BindProperty(SupportsGet = true)]
-    public int P { get; set; } = 1;
-
     public List<UserListItem> Items { get; private set; } = [];
 
     public bool HasMore { get; private set; }
@@ -20,33 +17,53 @@ public sealed class UserListModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
-        if (P < 1)
+        var (items, hasMore, error, challenge) = await LoadAsync(0);
+        if (challenge)
         {
-            P = 1;
+            return Challenge();
         }
 
+        Items = items;
+        HasMore = hasMore;
+        Error = error;
+        return Page();
+    }
+
+    public async Task<IActionResult> OnGetMoreAsync(int skip)
+    {
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_UserRows", items);
+    }
+
+    private async Task<(List<UserListItem> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)
+    {
         var url = UiHelpers.BuildUrl(
             "api/users",
-            ("skip", ((P - 1) * UiHelpers.PageSize).ToString()),
+            ("skip", skip.ToString()),
             ("take", UiHelpers.PageSize.ToString()));
 
         var result = await api.GetAsync<PagedResponse<UserListItem>>(url, HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {
-            return Challenge();
+            return ([], false, null, true);
         }
 
         if (!result.Ok || result.Data is null)
         {
-            Error = result.Error;
-            return Page();
+            return ([], false, result.Error, false);
         }
 
-        Items = result.Data.Items;
-        HasMore = result.Data.HasMore;
-        return Page();
+        return (result.Data.Items, result.Data.HasMore, null, false);
     }
-
-    public string PageUrl(int page) =>
-        UiHelpers.BuildUrl("/users", ("p", page > 1 ? page.ToString() : null));
 }

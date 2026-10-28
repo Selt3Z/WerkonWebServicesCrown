@@ -17,13 +17,16 @@ public sealed class UsersController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<IdentityRole<Guid>> _roleManager;
+    private readonly AppDbContext _db;
 
     public UsersController(
         UserManager<ApplicationUser> userManager,
-        RoleManager<IdentityRole<Guid>> roleManager)
+        RoleManager<IdentityRole<Guid>> roleManager,
+        AppDbContext db)
     {
         _userManager = userManager;
         _roleManager = roleManager;
+        _db = db;
     }
 
     [HttpGet]
@@ -257,6 +260,23 @@ public sealed class UsersController : ControllerBase
         {
             return BadRequest(ApiErrors.FromCode(ApiErrorCodes.ProtectedAdminCannotDelete));
         }
+
+        // Снимок ФИО в заявках до SetNull по FK (имя остаётся текстом).
+        var snapshotName = string.IsNullOrWhiteSpace(user.DisplayName)
+            ? (user.UserName ?? string.Empty)
+            : user.DisplayName;
+        await _db.ServiceRequests
+            .IgnoreQueryFilters()
+            .Where(x => x.InitiatorUserId == user.Id)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(x => x.InitiatorName, snapshotName),
+                cancellationToken);
+        await _db.ServiceRequests
+            .IgnoreQueryFilters()
+            .Where(x => x.ExecutorUserId == user.Id)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(x => x.ExecutorName, snapshotName),
+                cancellationToken);
 
         var deleteResult = await _userManager.DeleteAsync(user);
 

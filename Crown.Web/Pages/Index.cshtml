@@ -1,23 +1,128 @@
 @page "/"
 @model IndexModel
-@inject AppTime Time
 @{
     ViewData["Title"] = "Заявки";
 }
 
-<div class="crown-page-head">
-    <h1 class="section-title">Заявки</h1>
-    <a class="btn btn-save" href="/requests/new">Подать заявку</a>
-</div>
+<h1 class="section-title">Заявки</h1>
 
-<form method="get" class="crown-search">
-    <input class="form-control" type="search" name="q" value="@Model.Q" placeholder="Быстрый поиск: №, инициатор, телефон, текст, служба" />
-    <button class="btn btn-primary" type="submit">Найти</button>
-    @if (!string.IsNullOrWhiteSpace(Model.Q))
+<form method="get" class="list-filters clients-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-search">
+        <label class="form-label" for="q">Поиск</label>
+        <input id="q" class="form-control" type="search" name="q" value="@Model.Q"
+               placeholder="№, инициатор, исполнитель, телефон, текст" />
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="status">Статус</label>
+        <select id="status" class="form-select" name="status">
+            <option value="">Все</option>
+            @foreach (ServiceRequestStatus st in Enum.GetValues<ServiceRequestStatus>())
+            {
+                if (Model.Status == (int)st)
+                {
+                    <option value="@((int)st)" selected>
+                        @(st switch
+                        {
+                            ServiceRequestStatus.Submitted => "Подана",
+                            ServiceRequestStatus.InProgress => "В работе",
+                            ServiceRequestStatus.Rejected => "Отклонена",
+                            ServiceRequestStatus.Returned => "Возвращена",
+                            ServiceRequestStatus.Completed => "Выполнена",
+                            ServiceRequestStatus.Cancelled => "Отменена",
+                            _ => st.ToString()
+                        })
+                    </option>
+                }
+                else
+                {
+                    <option value="@((int)st)">
+                        @(st switch
+                        {
+                            ServiceRequestStatus.Submitted => "Подана",
+                            ServiceRequestStatus.InProgress => "В работе",
+                            ServiceRequestStatus.Rejected => "Отклонена",
+                            ServiceRequestStatus.Returned => "Возвращена",
+                            ServiceRequestStatus.Completed => "Выполнена",
+                            ServiceRequestStatus.Cancelled => "Отменена",
+                            _ => st.ToString()
+                        })
+                    </option>
+                }
+            }
+        </select>
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="initiatorUserId">Инициатор</label>
+        <select id="initiatorUserId" class="form-select" name="initiatorUserId">
+            <option value="">Все</option>
+            @foreach (var u in Model.Assignees)
+            {
+                if (Model.InitiatorUserId == u.Id)
+                {
+                    <option value="@u.Id" selected>@u.DisplayName</option>
+                }
+                else
+                {
+                    <option value="@u.Id">@u.DisplayName</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="executorUserId">Исполнитель</label>
+        <select id="executorUserId" class="form-select" name="executorUserId">
+            <option value="">Все</option>
+            @foreach (var u in Model.Assignees)
+            {
+                if (Model.ExecutorUserId == u.Id)
+                {
+                    <option value="@u.Id" selected>@u.DisplayName</option>
+                }
+                else
+                {
+                    <option value="@u.Id">@u.DisplayName</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="ack">Ознак.</label>
+        <select id="ack" class="form-select" name="ack">
+            <option value="">Все</option>
+            @if (Model.Ack == true)
+            {
+                <option value="true" selected>Ознакомлен</option>
+                <option value="false">Не ознакомлен</option>
+            }
+            else if (Model.Ack == false)
+            {
+                <option value="true">Ознакомлен</option>
+                <option value="false" selected>Не ознакомлен</option>
+            }
+            else
+            {
+                <option value="true">Ознакомлен</option>
+                <option value="false">Не ознакомлен</option>
+            }
+        </select>
+    </div>
+    @if (!string.IsNullOrEmpty(Model.Sort))
     {
-        <a class="btn btn-outline-secondary" href="/">Сбросить</a>
+        <input type="hidden" name="sort" value="@Model.Sort" />
+        <input type="hidden" name="dir" value="@Model.Dir" />
     }
 </form>
+
+<div class="action-bar mb-3">
+    <button class="btn btn-primary" type="submit" form="" id="btn-apply-filters">Найти</button>
+    <a class="btn btn-secondary" href="/">Сбросить</a>
+</div>
+<script>
+document.getElementById('btn-apply-filters')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  document.querySelector('form.list-filters')?.requestSubmit();
+});
+</script>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
@@ -28,53 +133,45 @@
     <table class="table crown-table crown-requests-table">
         <thead>
         <tr>
-            <th class="col-num">#</th>
-            <th class="col-status">Состояние</th>
-            <th class="col-op" title="Оператор/диспетчер ознакомился с заявкой (только индикатор)">Опер.</th>
-            <th class="col-init">Инициатор</th>
+            <th class="col-num">
+                <a class="crown-sort-link @(Model.Sort == "id" ? "is-active" : null)" href="@Model.SortUrl("id")">#@(UiHelpers.SortMark("id", Model.Sort, Model.Dir))</a>
+            </th>
+            <th class="col-status">Статус</th>
+            <th class="col-op" title="Исполнитель открыл заявку">Ознак.</th>
+            <th class="col-init">
+                <a class="crown-sort-link @(Model.Sort == "initiator" ? "is-active" : null)" href="@Model.SortUrl("initiator")">Инициатор@(UiHelpers.SortMark("initiator", Model.Sort, Model.Dir))</a>
+            </th>
             <th class="col-date">Дата подачи</th>
             <th class="col-date">Реакция</th>
             <th class="col-date">Дата исполнения</th>
-            <th class="col-dept">Исполнитель</th>
+            <th class="col-dept">
+                <a class="crown-sort-link @(Model.Sort == "executor" ? "is-active" : null)" href="@Model.SortUrl("executor")">Исполнитель@(UiHelpers.SortMark("executor", Model.Sort, Model.Dir))</a>
+            </th>
             <th class="col-phone">Тел.</th>
             <th class="col-body">Заявка</th>
         </tr>
         </thead>
-        <tbody>
-        @foreach (var r in Model.Items)
-        {
-            <tr class="table-row-action" data-href="/requests/@r.Id" tabindex="0" role="link" aria-label="Заявка № @r.Id">
-                <td class="col-num crown-id">@r.Id</td>
-                <td class="@UiHelpers.StatusClass(r.Status) crown-status-cell">@r.StatusLabel</td>
-                <td class="col-op">
-                    <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
-                          title="@(r.Acknowledged ? "Опер.: ознакомлен" : "Опер.: не отмечено")"
-                          aria-label="@(r.Acknowledged ? "Оператор ознакомлен" : "Оператор ещё не ознакомился")"></span>
-                </td>
-                <td class="col-init">@r.InitiatorName</td>
-                <td class="col-date">@Time.Format(r.SubmittedAt)</td>
-                <td class="col-date">@Time.Format(r.ReactionAt)</td>
-                <td class="col-date">
-                    @if (r.CompletedAt is not null)
-                    {
-                        @Time.Format(r.CompletedAt)
-                    }
-                    else
-                    {
-                        <span class="text-muted" title="Срок исполнения">до @Time.Format(r.DueAt)</span>
-                    }
-                </td>
-                <td class="col-dept">@r.DepartmentName</td>
-                <td class="col-phone">@r.Phone</td>
-                <td class="col-body">@r.BodyPreview</td>
-            </tr>
-        }
+        <tbody data-infinite-scroll
+               data-more-url="@UiHelpers.BuildUrl("/",
+                   ("handler", "More"),
+                   ("q", Model.Q),
+                   ("status", Model.Status?.ToString()),
+                   ("initiatorUserId", Model.InitiatorUserId?.ToString()),
+                   ("executorUserId", Model.ExecutorUserId?.ToString()),
+                   ("ack", Model.Ack.HasValue ? (Model.Ack.Value ? "true" : "false") : null),
+                   ("sort", Model.Sort),
+                   ("dir", Model.Dir))"
+               data-skip="@Model.Items.Count"
+               data-has-more="@(Model.HasMore ? "true" : "false")">
         @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
         {
-            <tr><td colspan="10" class="text-muted text-center">Заявок нет.</td></tr>
+            <tr class="crown-empty-row"><td colspan="10" class="text-muted text-center">Заявок нет.</td></tr>
+        }
+        else
+        {
+            <partial name="_RequestRows" model="Model.Items" />
         }
         </tbody>
     </table>
 </div>
-
-<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />
+<div class="infinite-scroll-sentinel" hidden></div>

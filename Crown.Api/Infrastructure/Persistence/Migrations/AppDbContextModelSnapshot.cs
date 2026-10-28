@@ -171,31 +171,6 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("RequestAttachments");
                 });
 
-            modelBuilder.Entity("Crown.Domain.Entities.ServiceDepartment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("ServiceDepartments");
-                });
-
             modelBuilder.Entity("Crown.Domain.Entities.ServiceRequest", b =>
                 {
                     b.Property<long>("Id")
@@ -211,6 +186,19 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTimeOffset?>("ComplaintAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ComplaintByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("ComplaintByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ComplaintText")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -223,10 +211,21 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<string>("ExecutorComment")
                         .HasColumnType("text");
 
+                    b.Property<string>("ExecutorName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("ExecutorUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("InitiatorName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("InitiatorUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
@@ -244,9 +243,6 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset?>("ReactionAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ServiceDepartmentId")
-                        .HasColumnType("uuid");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -266,9 +262,11 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IsArchived");
+                    b.HasIndex("ExecutorUserId");
 
-                    b.HasIndex("ServiceDepartmentId");
+                    b.HasIndex("InitiatorUserId");
+
+                    b.HasIndex("IsArchived");
 
                     b.HasIndex("Status");
 
@@ -614,13 +612,15 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Crown.Domain.Entities.ServiceRequest", b =>
                 {
-                    b.HasOne("Crown.Domain.Entities.ServiceDepartment", "ServiceDepartment")
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
-                        .HasForeignKey("ServiceDepartmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .HasForeignKey("ExecutorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Navigation("ServiceDepartment");
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("InitiatorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.WarehouseStockMovement", b =>

@@ -8,22 +8,19 @@ public sealed class AppTime
     private static readonly CultureInfo Ru = new("ru-RU");
     private static readonly string[] InputFormats = ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"];
 
-    private readonly TimeZoneInfo _zone;
+    private readonly ILogger<AppTime> _logger;
+    private TimeZoneInfo _zone;
 
     public AppTime(IConfiguration configuration, ILogger<AppTime> logger)
     {
-        var id = configuration["AppTimeZone"];
-        try
-        {
-            _zone = string.IsNullOrWhiteSpace(id) ? TimeZoneInfo.Utc : TimeZoneInfo.FindSystemTimeZoneById(id);
-        }
-        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
-        {
-            // В минимальных образах может не быть tzdata — не падаем, берём МСК без переходов на летнее время.
-            logger.LogWarning(ex, "Часовой пояс {Zone} не найден, используется UTC+3", id);
-            _zone = TimeZoneInfo.CreateCustomTimeZone("MSK", TimeSpan.FromHours(3), "MSK", "MSK");
-        }
+        _logger = logger;
+        _zone = Resolve(configuration["AppTimeZone"], logger);
     }
+
+    public string TimeZoneId => _zone.Id;
+
+    public void SetTimeZoneId(string? timeZoneId) =>
+        _zone = Resolve(timeZoneId, _logger);
 
     public DateTimeOffset Now => ToLocal(DateTimeOffset.UtcNow);
 
@@ -53,5 +50,28 @@ public sealed class AppTime
         // Введено в поясе приложения -> переводим в offset этого пояса.
         result = new DateTimeOffset(local, _zone.GetUtcOffset(local));
         return true;
+    }
+
+    private static TimeZoneInfo Resolve(string? id, ILogger logger)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id.Trim(), out var zone))
+            {
+                return zone;
+            }
+
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                logger.LogWarning("Часовой пояс {Zone} не найден, используется UTC+3", id);
+            }
+
+            return TimeZoneInfo.CreateCustomTimeZone("MSK", TimeSpan.FromHours(3), "MSK", "MSK");
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            logger.LogWarning(ex, "Часовой пояс {Zone} не найден, используется UTC+3", id);
+            return TimeZoneInfo.CreateCustomTimeZone("MSK", TimeSpan.FromHours(3), "MSK", "MSK");
+        }
     }
 }

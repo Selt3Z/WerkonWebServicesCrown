@@ -19,9 +19,6 @@ public sealed class CatalogPartsModel(CrownApiClient api) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? State { get; set; }
 
-    [BindProperty(SupportsGet = true)]
-    public int P { get; set; } = 1;
-
     public List<CatalogPart> Items { get; private set; } = [];
 
     public List<string> Categories { get; private set; } = [];
@@ -32,44 +29,59 @@ public sealed class CatalogPartsModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
-        if (P < 1)
-        {
-            P = 1;
-        }
-
-        var url = UiHelpers.BuildUrl(
-            "api/catalog-parts",
-            ("search", Q?.Trim()),
-            ("category", Category),
-            ("activeFilter", State),
-            ("skip", ((P - 1) * UiHelpers.PageSize).ToString()),
-            ("take", UiHelpers.PageSize.ToString()));
-
-        var result = await api.GetAsync<PagedResponse<CatalogPart>>(url, HttpContext.RequestAborted);
-        if (result.IsUnauthorized)
+        var (items, hasMore, error, challenge) = await LoadAsync(0);
+        if (challenge)
         {
             return Challenge();
         }
 
-        if (!result.Ok || result.Data is null)
-        {
-            Error = result.Error;
-            return Page();
-        }
-
-        Items = result.Data.Items;
-        HasMore = result.Data.HasMore;
+        Items = items;
+        HasMore = hasMore;
+        Error = error;
 
         var categories = await api.GetAsync<List<string>>("api/catalog-parts/categories", HttpContext.RequestAborted);
         Categories = categories.Data ?? [];
         return Page();
     }
 
-    public string PageUrl(int page) =>
-        UiHelpers.BuildUrl(
-            "/catalog-parts",
-            ("q", Q),
+    public async Task<IActionResult> OnGetMoreAsync(int skip)
+    {
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_CatalogPartRows", items);
+    }
+
+    private async Task<(List<CatalogPart> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)
+    {
+        var url = UiHelpers.BuildUrl(
+            "api/catalog-parts",
+            ("search", Q?.Trim()),
             ("category", Category),
-            ("state", State),
-            ("p", page > 1 ? page.ToString() : null));
+            ("activeFilter", State),
+            ("skip", skip.ToString()),
+            ("take", UiHelpers.PageSize.ToString()));
+
+        var result = await api.GetAsync<PagedResponse<CatalogPart>>(url, HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return ([], false, null, true);
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            return ([], false, result.Error, false);
+        }
+
+        return (result.Data.Items, result.Data.HasMore, null, false);
+    }
 }

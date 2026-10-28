@@ -21,6 +21,11 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
     public bool IsSelf =>
         UserId is not null && User.FindFirstValue(ClaimTypes.NameIdentifier) == UserId.ToString();
 
+    /// <summary>Seed-аккаунт admin: логин и роль только через конфиг/БД.</summary>
+    public bool IsProtectedAdmin { get; private set; }
+
+    public DateTime? LastActivityAtUtc { get; private set; }
+
     public string? Error { get; private set; }
 
     public sealed class InputModel
@@ -30,6 +35,7 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
         public string? Role { get; set; }
         public bool IsActive { get; set; }
         public string? Password { get; set; }
+        public string? ConfirmPassword { get; set; }
         public string? CurrentPassword { get; set; }
     }
 
@@ -58,19 +64,15 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        Input = new InputModel
-        {
-            UserName = result.Data.UserName,
-            DisplayName = result.Data.DisplayName,
-            Role = result.Data.Role,
-            IsActive = result.Data.IsActive
-        };
+        ApplyUser(result.Data);
         return Page();
     }
 
     public async Task<IActionResult> OnPostAsync(Guid? id)
     {
         UserId = id;
+        IsProtectedAdmin = !IsNew
+            && string.Equals(Input.UserName, "admin", StringComparison.OrdinalIgnoreCase);
 
         if (string.IsNullOrWhiteSpace(Input.UserName)
             || string.IsNullOrWhiteSpace(Input.DisplayName)
@@ -86,12 +88,34 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
             return Page();
         }
 
+        if (!string.IsNullOrWhiteSpace(Input.Password) || IsNew)
+        {
+            if (string.IsNullOrWhiteSpace(Input.ConfirmPassword))
+            {
+                Error = "Подтвердите пароль.";
+                return Page();
+            }
+
+            if (!string.Equals(Input.Password, Input.ConfirmPassword, StringComparison.Ordinal))
+            {
+                Error = "Пароль и подтверждение не совпадают.";
+                return Page();
+            }
+
+            if (IsSelf && string.IsNullOrWhiteSpace(Input.CurrentPassword))
+            {
+                Error = "Укажите текущий пароль.";
+                return Page();
+            }
+        }
+
         var body = new SaveUserRequest
         {
             UserName = Input.UserName.Trim(),
             DisplayName = Input.DisplayName.Trim(),
             Role = Input.Role,
-            IsActive = Input.IsActive,
+            // Свой профиль / seed-admin: чекбокс скрыт, IsActive уходит hidden-полем с исходным значением.
+            IsActive = IsProtectedAdmin || IsSelf || Input.IsActive,
             Password = string.IsNullOrWhiteSpace(Input.Password) ? null : Input.Password,
             CurrentPassword = string.IsNullOrWhiteSpace(Input.CurrentPassword) ? null : Input.CurrentPassword
         };
@@ -113,5 +137,18 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
 
         TempData["Ok"] = "Пользователь сохранён.";
         return Redirect("/users");
+    }
+
+    private void ApplyUser(UserListItem user)
+    {
+        IsProtectedAdmin = string.Equals(user.UserName, "admin", StringComparison.OrdinalIgnoreCase);
+        LastActivityAtUtc = user.LastActivityAtUtc;
+        Input = new InputModel
+        {
+            UserName = user.UserName,
+            DisplayName = user.DisplayName,
+            Role = user.Role,
+            IsActive = user.IsActive
+        };
     }
 }

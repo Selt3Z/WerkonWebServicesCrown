@@ -65,13 +65,16 @@ public sealed class ServiceRequestListItem
     public string StatusLabel { get; set; } = string.Empty;
     public bool Acknowledged { get; set; }
     public string InitiatorName { get; set; } = string.Empty;
+    public Guid? InitiatorUserId { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
-    public string DepartmentName { get; set; } = string.Empty;
+    public string ExecutorName { get; set; } = string.Empty;
+    public Guid? ExecutorUserId { get; set; }
     public string Phone { get; set; } = string.Empty;
     public string BodyPreview { get; set; } = string.Empty;
     public DateTimeOffset DueAt { get; set; }
+    public bool HasComplaint { get; set; }
 }
 
 public sealed class ServiceRequestDetail
@@ -84,15 +87,33 @@ public sealed class ServiceRequestDetail
     public string Phone { get; set; } = string.Empty;
     public DateTimeOffset DueAt { get; set; }
     public string InitiatorName { get; set; } = string.Empty;
-    public Guid ServiceDepartmentId { get; set; }
-    public string DepartmentName { get; set; } = string.Empty;
+    public Guid? InitiatorUserId { get; set; }
+    public string ExecutorName { get; set; } = string.Empty;
+    public Guid? ExecutorUserId { get; set; }
     public string? TransportType { get; set; }
     public string Body { get; set; } = string.Empty;
     public string? ExecutorComment { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public string? RowVersion { get; set; }
+    public bool HasComplaint { get; set; }
+    public string? ComplaintText { get; set; }
+    public DateTimeOffset? ComplaintAt { get; set; }
+    public string? ComplaintByName { get; set; }
     public List<RequestAttachment> Attachments { get; set; } = [];
+}
+
+public sealed class RequestAssignee
+{
+    public Guid Id { get; set; }
+    public string UserName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+}
+
+public sealed class FileComplaintRequest
+{
+    public string Text { get; set; } = string.Empty;
+    public bool Confirmed { get; set; }
 }
 
 public sealed class RequestAttachment
@@ -104,18 +125,12 @@ public sealed class RequestAttachment
     public DateTimeOffset UploadedAt { get; set; }
 }
 
-public sealed class ServiceDepartment
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-}
-
 public sealed class CreateServiceRequestRequest
 {
     public string Phone { get; set; } = string.Empty;
     public DateTimeOffset DueAt { get; set; }
-    public string InitiatorName { get; set; } = string.Empty;
-    public Guid ServiceDepartmentId { get; set; }
+    public Guid? InitiatorUserId { get; set; }
+    public Guid ExecutorUserId { get; set; }
     public string? TransportType { get; set; }
     public string Body { get; set; } = string.Empty;
 }
@@ -124,6 +139,8 @@ public sealed class TransitionServiceRequestRequest
 {
     public string Action { get; set; } = string.Empty;
     public string? ExecutorComment { get; set; }
+    /// <summary>Текст заявки — повторная подача после возврата.</summary>
+    public string? Body { get; set; }
     public DateTimeOffset? NewDueAt { get; set; }
     public string? RowVersion { get; set; }
     public bool? Acknowledged { get; set; }
@@ -144,6 +161,19 @@ public sealed class WarehousePart
     public bool IsArchived { get; set; }
 }
 
+public sealed class SaveWarehousePartRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string? Barcode { get; set; }
+    public string? Category { get; set; }
+    public decimal DefaultUnitPrice { get; set; }
+    public string DefaultUnit { get; set; } = "шт";
+    public decimal QuantityOnHand { get; set; }
+    public decimal MinQuantityOnHand { get; set; } = 1m;
+    public string? Description { get; set; }
+}
+
 public sealed class CatalogPart
 {
     public Guid Id { get; set; }
@@ -154,6 +184,23 @@ public sealed class CatalogPart
     public string DefaultUnit { get; set; } = string.Empty;
     public string? Description { get; set; }
     public bool IsActive { get; set; }
+}
+
+public sealed class SaveCatalogPartRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Code { get; set; }
+    public string? Category { get; set; }
+    public decimal DefaultUnitPrice { get; set; }
+    public string DefaultUnit { get; set; } = "шт";
+    public string? Description { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+/// <summary>Единицы измерения — зеркало API MeasurementUnits.All.</summary>
+public static class MeasurementUnitOptions
+{
+    public static readonly string[] All = ["шт", "л", "кг", "м", "компл", "уп"];
 }
 
 public sealed class AuditLogItem
@@ -204,6 +251,10 @@ public sealed class SettingsResponse
     public bool WarehouseEnabled { get; set; }
     public int AuditRetentionDays { get; set; } = 30;
     public int ListPageSize { get; set; } = 30;
+    public string AttachmentsHostPath { get; set; } = string.Empty;
+    public string AttachmentsContainerPath { get; set; } = "/data/attachments";
+    public string? AttachmentsLegacyHostPath { get; set; }
+    public bool AttachmentsLegacyActive { get; set; }
 }
 
 public sealed class UpdateSettingsRequest

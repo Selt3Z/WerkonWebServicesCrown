@@ -1,3 +1,4 @@
+using System.Text;
 using Crown.Web.Models;
 
 namespace Crown.Web.Services;
@@ -18,6 +19,54 @@ public static class UiHelpers
         ServiceRequestStatus.Cancelled => "st-cancelled",
         _ => string.Empty
     };
+
+    /// <summary>Отображение нормализованного +7… как +7 (912) 345-67-89.</summary>
+    public static string FormatPhone(string? stored)
+    {
+        if (string.IsNullOrWhiteSpace(stored))
+        {
+            return "—";
+        }
+
+        var digits = new StringBuilder(stored.Length);
+        foreach (var c in stored)
+        {
+            if (char.IsDigit(c))
+            {
+                digits.Append(c);
+            }
+        }
+
+        var d = digits.ToString();
+        if (d.Length == 11 && d[0] == '7')
+        {
+            return $"+7 ({d[1..4]}) {d[4..7]}-{d[7..9]}-{d[9..11]}";
+        }
+
+        return stored.Trim();
+    }
+
+    /// <summary>Следующее направление при клике по заголовку: та же колонка → toggle, новая → asc (id → desc).</summary>
+    public static string NextSortDir(string column, string? currentSort, string? currentDir)
+    {
+        var same = string.Equals(currentSort, column, StringComparison.OrdinalIgnoreCase);
+        if (!same)
+        {
+            return string.Equals(column, "id", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+        }
+
+        return string.Equals(currentDir, "asc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+    }
+
+    public static string SortMark(string column, string? currentSort, string? currentDir)
+    {
+        if (!string.Equals(currentSort, column, StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        return string.Equals(currentDir, "asc", StringComparison.OrdinalIgnoreCase) ? " ↑" : " ↓";
+    }
 
     public static string FormatBytes(long bytes)
     {

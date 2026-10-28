@@ -8,16 +8,55 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
 
     public long MaxFileBytes => _options.MaxFileBytes;
 
-    public string GetAbsolutePath(string relativePath)
+    public string RootPath => _options.RootPath;
+
+    public string HostPath =>
+        string.IsNullOrWhiteSpace(_options.HostPath) ? _options.RootPath : _options.HostPath.Trim();
+
+    public string? LegacyHostPath =>
+        string.IsNullOrWhiteSpace(_options.LegacyHostPath) ? null : _options.LegacyHostPath.Trim();
+
+    public bool HasDistinctLegacyRoot
     {
-        var root = Path.GetFullPath(_options.RootPath);
-        var full = Path.GetFullPath(Path.Combine(root, relativePath));
-        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        get
         {
-            throw new InvalidOperationException("Некорректный путь вложения.");
+            var legacy = GetLegacyRootOrNull();
+            if (legacy is null)
+            {
+                return false;
+            }
+
+            return !string.Equals(
+                Path.GetFullPath(_options.RootPath),
+                Path.GetFullPath(legacy),
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>Абсолютный путь под корнем записи (без проверки существования).</summary>
+    public string GetAbsolutePath(string relativePath) =>
+        CombineUnderRoot(_options.RootPath, relativePath);
+
+    /// <summary>
+    /// Ищет файл: сначала основной диск, потом legacy (если смонтирован).
+    /// Нужен при смене ATTACHMENTS_HOST_PATH без полной миграции.
+    /// </summary>
+    public string? ResolveExistingPath(string relativePath)
+    {
+        var primary = CombineUnderRoot(_options.RootPath, relativePath);
+        if (File.Exists(primary))
+        {
+            return primary;
         }
 
-        return full;
+        var legacyRoot = GetLegacyRootOrNull();
+        if (legacyRoot is null)
+        {
+            return null;
+        }
+
+        var legacy = CombineUnderRoot(legacyRoot, relativePath);
+        return File.Exists(legacy) ? legacy : null;
     }
 
     public async Task<(string RelativePath, long Size)> SaveAsync(
@@ -45,11 +84,52 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
             return;
         }
 
-        var absolute = GetAbsolutePath(relativePath);
-        if (File.Exists(absolute))
+        // Удаляем везде, где лежит копия (основной + legacy).
+        foreach (var root in EnumerateRoots())
         {
-            File.Delete(absolute);
+            var absolute = CombineUnderRoot(root, relativePath);
+            if (File.Exists(absolute))
+            {
+                File.Delete(absolute);
+            }
         }
+    }
+
+    private IEnumerable<string> EnumerateRoots()
+    {
+        yield return _options.RootPath;
+        var legacy = GetLegacyRootOrNull();
+        if (legacy is not null
+            && !string.Equals(
+                Path.GetFullPath(_options.RootPath),
+                Path.GetFullPath(legacy),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            yield return legacy;
+        }
+    }
+
+    private string? GetLegacyRootOrNull()
+    {
+        if (string.IsNullOrWhiteSpace(_options.LegacyRootPath))
+        {
+            return null;
+        }
+
+        var legacy = _options.LegacyRootPath.Trim();
+        return Directory.Exists(legacy) ? legacy : null;
+    }
+
+    private static string CombineUnderRoot(string root, string relativePath)
+    {
+        var rootFull = Path.GetFullPath(root);
+        var full = Path.GetFullPath(Path.Combine(rootFull, relativePath));
+        if (!full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Некорректный путь вложения.");
+        }
+
+        return full;
     }
 
     private static string SanitizeFileName(string fileName)

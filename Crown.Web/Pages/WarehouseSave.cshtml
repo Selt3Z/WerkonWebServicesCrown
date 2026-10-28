@@ -1,0 +1,71 @@
+@page "/warehouse/edit/{id:guid?}"
+@model WarehouseSaveModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Редактирование позиции склада" : "Новая позиция склада";
+}
+
+<h1 class="section-title">@(Model.IsEdit ? "Редактирование позиции склада" : "Новая позиция склада")</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" class="crown-form form-panel">
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.Name">Название <span class="crown-req">*</span></label>
+        <input class="form-control" asp-for="Input.Name" required />
+    </div>
+
+    <div class="crown-form-grid">
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.Code">Код <span class="crown-req">*</span></label>
+            <input class="form-control" asp-for="Input.Code" required />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.Barcode">Штрихкод</label>
+            <input class="form-control" asp-for="Input.Barcode" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.Category">Категория</label>
+            <input class="form-control" asp-for="Input.Category" list="wh-categories" />
+            <datalist id="wh-categories">
+                @foreach (var c in Model.Categories)
+                {
+                    <option value="@c"></option>
+                }
+            </datalist>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.DefaultUnitPrice">Цена</label>
+            <input class="form-control" type="number" step="0.01" min="0" asp-for="Input.DefaultUnitPrice" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.DefaultUnit">Ед. изм.</label>
+            <select class="form-select" asp-for="Input.DefaultUnit">
+                @foreach (var u in MeasurementUnitOptions.All)
+                {
+                    <option value="@u">@u</option>
+                }
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.QuantityOnHand">Остаток</label>
+            <input class="form-control" type="number" step="0.1" min="0" asp-for="Input.QuantityOnHand" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.MinQuantityOnHand">Мин. остаток</label>
+            <input class="form-control" type="number" step="0.1" min="0" asp-for="Input.MinQuantityOnHand" />
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" asp-for="Input.Description">Описание</label>
+        <textarea class="form-control" asp-for="Input.Description" rows="4"></textarea>
+    </div>
+
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
+        <a class="btn btn-outline-secondary btn-lg" href="/warehouse">Отмена</a>
+    </div>
+</form>

@@ -4,23 +4,59 @@
     ViewData["Title"] = "Склад";
 }
 
-<h1 class="section-title">Склад</h1>
+<div class="crown-page-head">
+    <h1 class="section-title">Склад</h1>
+    @if (string.IsNullOrEmpty(Model.Error) || !Model.Error.Contains("отключён", StringComparison.Ordinal))
+    {
+        <a class="btn btn-success" href="/warehouse/edit">Добавить</a>
+    }
+</div>
 
-<form method="get" class="crown-filters">
-    <input class="form-control" type="search" name="q" value="@Model.Q" placeholder="Название или код" />
-    <select class="form-select" name="category">
-        <option value="">Все категории</option>
-        @foreach (var c in Model.Categories)
-        {
-            <option value="@c" selected="@(c == Model.Category)">@c</option>
-        }
-    </select>
-    <label class="crown-check"><input type="checkbox" class="form-check-input" name="inStock" value="true" checked="@Model.InStock" /> В наличии</label>
-    <label class="crown-check"><input type="checkbox" class="form-check-input" name="shortage" value="true" checked="@Model.Shortage" /> Дефицит</label>
-    <label class="crown-check"><input type="checkbox" class="form-check-input" name="archived" value="true" checked="@Model.Archived" /> Архивные</label>
-    <button class="btn btn-primary" type="submit">Применить</button>
-    <a class="btn btn-outline-secondary" href="/warehouse">Сбросить</a>
+<form method="get" class="list-filters clients-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-search">
+        <label class="form-label" for="wh-q">Поиск</label>
+        <input id="wh-q" class="form-control" type="search" name="q" value="@Model.Q" placeholder="Название или код" />
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="wh-category">Категория</label>
+        <select id="wh-category" class="form-select" name="category">
+            <option value="">Все</option>
+            @foreach (var c in Model.Categories)
+            {
+                <option value="@c" selected="@(c == Model.Category)">@c</option>
+            }
+        </select>
+    </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="wh-inStock" name="inStock" value="true" checked="@Model.InStock" />
+            <label class="form-check-label" for="wh-inStock">В наличии</label>
+        </div>
+    </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="wh-shortage" name="shortage" value="true" checked="@Model.Shortage" />
+            <label class="form-check-label" for="wh-shortage">Дефицит</label>
+        </div>
+    </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="wh-archived" name="archived" value="true" checked="@Model.Archived" />
+            <label class="form-check-label" for="wh-archived">Архивные</label>
+        </div>
+    </div>
 </form>
+
+<div class="action-bar mb-3">
+    <button class="btn btn-primary" type="submit" form="" id="btn-wh-filters">Найти</button>
+    <a class="btn btn-secondary" href="/warehouse">Сбросить</a>
+</div>
+<script>
+document.getElementById('btn-wh-filters')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  document.querySelector('form.list-filters')?.requestSubmit();
+});
+</script>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
@@ -40,32 +76,19 @@
             <th class="num">Цена</th>
         </tr>
         </thead>
-        <tbody>
-        @foreach (var p in Model.Items)
-        {
-            var shortage = p.MinQuantityOnHand > 0 && p.QuantityOnHand < p.MinQuantityOnHand;
-            <tr class="@(p.IsArchived ? "crown-row-archived" : null)">
-                <td class="nowrap">@p.Code</td>
-                <td>
-                    @p.Name
-                    @if (p.IsArchived)
-                    {
-                        <span class="badge text-bg-secondary">архив</span>
-                    }
-                </td>
-                <td>@p.Category</td>
-                <td class="num @(shortage ? "crown-shortage" : null)">@p.QuantityOnHand.ToString("0.###")</td>
-                <td class="num">@p.MinQuantityOnHand.ToString("0.###")</td>
-                <td>@p.DefaultUnit</td>
-                <td class="num nowrap">@p.DefaultUnitPrice.ToString("N2")</td>
-            </tr>
-        }
+        <tbody data-infinite-scroll
+               data-more-url="@UiHelpers.BuildUrl("/warehouse", ("handler", "More"), ("q", Model.Q), ("category", Model.Category), ("inStock", Model.InStock ? "true" : null), ("shortage", Model.Shortage ? "true" : null), ("archived", Model.Archived ? "true" : null))"
+               data-skip="@Model.Items.Count"
+               data-has-more="@(Model.HasMore ? "true" : "false")">
         @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
         {
-            <tr><td colspan="7" class="text-muted text-center">Позиций нет.</td></tr>
+            <tr class="crown-empty-row"><td colspan="7" class="text-muted text-center">Ничего не найдено.</td></tr>
+        }
+        else
+        {
+            <partial name="_WarehouseRows" model="Model.Items" />
         }
         </tbody>
     </table>
 </div>
-
-<partial name="_Pager" model="@(new PagerModel(Model.P, Model.HasMore, Model.PageUrl))" />
+<div class="infinite-scroll-sentinel" hidden></div>

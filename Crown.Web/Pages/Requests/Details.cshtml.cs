@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Crown.Web.Models;
 using Crown.Web.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -16,24 +17,69 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
     public string? NewDueInput { get; private set; }
 
-    /// <summary>Действия над заявкой доступны только админу/диспетчеру (API: ManageBusinessRecords).</summary>
+    public string? ComplaintTextInput { get; private set; }
+
+    public string? BodyInput { get; private set; }
+
+    public bool ShowComplaintForm { get; private set; }
+
+    public bool IsInitiatorOfItem =>
+        Item?.InitiatorUserId is Guid iid
+        && User.FindFirstValue(ClaimTypes.NameIdentifier) == iid.ToString();
+
+    public bool IsExecutorOfItem =>
+        Item?.ExecutorUserId is Guid eid
+        && User.FindFirstValue(ClaimTypes.NameIdentifier) == eid.ToString();
+
+    /// <summary>Workflow: админ / диспетчер (прозапас) / исполнитель заявки.</summary>
     public bool CanManage =>
-        User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+        User.IsInRole(AppRoles.Administrator)
+        || User.IsInRole(AppRoles.Dispatcher)
+        || IsExecutorOfItem;
+
+    /// <summary>Ручной toggle «Ознак.» — только администратор.</summary>
+    public bool CanToggleAck => User.IsInRole(AppRoles.Administrator);
+
+    /// <summary>Инициатор может отменить свою заявку, пока она не в терминальном статусе.</summary>
+    public bool CanCancelAsInitiator =>
+        IsInitiatorOfItem
+        && Item is not null
+        && Item.Status is ServiceRequestStatus.Submitted
+            or ServiceRequestStatus.InProgress
+            or ServiceRequestStatus.Returned;
+
+    /// <summary>Возвращённую заявку инициатор правит и подаёт снова.</summary>
+    public bool CanResubmit =>
+        IsInitiatorOfItem && Item?.Status == ServiceRequestStatus.Returned;
+
+    /// <summary>Жалоба: инициатор на возврат / отклонение / выполнено.</summary>
+    public bool CanFileComplaint =>
+        IsInitiatorOfItem
+        && Item is not null
+        && !Item.HasComplaint
+        && Item.Status is ServiceRequestStatus.Returned
+            or ServiceRequestStatus.Rejected
+            or ServiceRequestStatus.Completed;
 
     /// <summary>
-    /// Допустимые действия по статусу. Зеркалит правила RequestsController.Transition:
-    /// API на недопустимое действие отвечает 500, поэтому кнопки не показываем заранее.
+    /// Допустимые действия по статусу. Админ может менять и закрытые заявки (reopen).
+    /// Вернуть / отклонить / перенос — только с комментарием (проверяется на Web и API).
     /// </summary>
-    public static IReadOnlyList<string> ActionsFor(ServiceRequestStatus status) => status switch
+    public static IReadOnlyList<string> ActionsFor(ServiceRequestStatus status, bool isAdmin = false) => status switch
     {
         ServiceRequestStatus.Submitted => ["accept", "reject", "return", "cancel"],
         ServiceRequestStatus.InProgress => ["complete", "reject", "return", "reschedule", "cancel"],
         ServiceRequestStatus.Returned => ["accept", "reject", "cancel"],
+        // Закрытые: админ может вернуть в работу / отменить / вернуть инициатору
+        ServiceRequestStatus.Rejected when isAdmin => ["accept", "cancel"],
+        ServiceRequestStatus.Completed when isAdmin => ["accept", "return", "cancel"],
+        ServiceRequestStatus.Cancelled when isAdmin => ["accept"],
         _ => []
     };
 
-    public async Task<IActionResult> OnGetAsync(long id)
+    public async Task<IActionResult> OnGetAsync(long id, bool complaint = false)
     {
+        ShowComplaintForm = complaint;
         var redirect = await LoadAsync(id);
         if (redirect is not null)
         {
@@ -48,10 +94,12 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         string action,
         string? executorComment,
         string? newDueAt,
-        string? rowVersion)
+        string? rowVersion,
+        string? body)
     {
         CommentInput = executorComment;
         NewDueInput = newDueAt;
+        BodyInput = body;
 
         var redirect = await LoadAsync(id);
         if (redirect is not null)
@@ -64,9 +112,33 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             return Error is null ? NotFound() : Page();
         }
 
-        if (!CanManage || !ActionsFor(Item.Status).Contains(action))
+        var isAdmin = User.IsInRole(AppRoles.Administrator);
+        var managerOk = CanManage && ActionsFor(Item.Status, isAdmin).Contains(action);
+        var initiatorCancelOk = action == "cancel" && CanCancelAsInitiator;
+        var initiatorResubmitOk = action == "resubmit" && CanResubmit;
+        if (!managerOk && !initiatorCancelOk && !initiatorResubmitOk)
         {
             Error = "Это действие недоступно для текущего состояния заявки.";
+            return Page();
+        }
+
+        if (action is "reject" or "return" or "reschedule")
+        {
+            if (string.IsNullOrWhiteSpace(executorComment))
+            {
+                Error = action switch
+                {
+                    "reject" => "Чтобы отклонить заявку, нужен комментарий.",
+                    "return" => "Чтобы вернуть заявку, нужен комментарий.",
+                    _ => "Для переноса срока нужен комментарий исполнителя."
+                };
+                return Page();
+            }
+        }
+
+        if (action == "resubmit" && string.IsNullOrWhiteSpace(body))
+        {
+            Error = "Укажите текст заявки.";
             return Page();
         }
 
@@ -79,12 +151,6 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
                 return Page();
             }
 
-            if (string.IsNullOrWhiteSpace(executorComment))
-            {
-                Error = "Для переноса срока нужен комментарий исполнителя.";
-                return Page();
-            }
-
             newDue = parsed;
         }
 
@@ -94,6 +160,7 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             {
                 Action = action,
                 ExecutorComment = executorComment,
+                Body = body,
                 NewDueAt = newDue,
                 RowVersion = rowVersion
             },
@@ -114,9 +181,67 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         return Redirect($"/requests/{id}");
     }
 
+    public async Task<IActionResult> OnPostComplaintAsync(
+        long id,
+        string? complaintText,
+        bool complaintConfirmed)
+    {
+        ComplaintTextInput = complaintText;
+        ShowComplaintForm = true;
+
+        var redirect = await LoadAsync(id);
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        if (Item is null)
+        {
+            return Error is null ? NotFound() : Page();
+        }
+
+        if (!CanFileComplaint)
+        {
+            Error = "Жалобу может подать только инициатор по возвращённой или отклонённой заявке.";
+            ShowComplaintForm = false;
+            return Page();
+        }
+
+        if (!complaintConfirmed)
+        {
+            Error = "Подтвердите, что жалоба обоснована.";
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(complaintText))
+        {
+            Error = "Опишите суть жалобы.";
+            return Page();
+        }
+
+        var result = await api.PostAsync<ServiceRequestDetail>(
+            $"api/requests/{id}/complaint",
+            new FileComplaintRequest { Text = complaintText.Trim(), Confirmed = true },
+            HttpContext.RequestAborted);
+
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok)
+        {
+            Error = result.Error;
+            return Page();
+        }
+
+        TempData["Ok"] = "Жалоба подана.";
+        return Redirect($"/requests/{id}");
+    }
+
     public async Task<IActionResult> OnPostAckAsync(long id, bool ack)
     {
-        if (!CanManage)
+        if (!CanToggleAck)
         {
             return Forbid();
         }
@@ -137,7 +262,7 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         }
         else
         {
-            TempData["Ok"] = ack ? "Отметка «Опер.» поставлена." : "Отметка «Опер.» снята.";
+            TempData["Ok"] = ack ? "Отметка «Ознак.» поставлена." : "Отметка «Ознак.» снята.";
         }
 
         return Redirect($"/requests/{id}");
@@ -189,7 +314,6 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             return status == 401 ? Challenge() : NotFound();
         }
 
-        // Ответ живёт до конца запроса — стримим тело, не буферизуя файл в памяти.
         HttpContext.Response.RegisterForDispose(response);
         var stream = await response.Content.ReadAsStreamAsync(HttpContext.RequestAborted);
         var headers = response.Content.Headers;

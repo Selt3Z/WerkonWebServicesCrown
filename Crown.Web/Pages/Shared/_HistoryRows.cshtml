@@ -1,0 +1,12 @@
+@model List<AuditLogItem>
+@inject AppTime Time
+@foreach (var a in Model)
+{
+    <tr>
+        <td class="nowrap">@Time.FormatUtc(a.OccurredAtUtc)</td>
+        <td>@a.UserDisplayName</td>
+        <td>@a.Action</td>
+        <td>@a.EntityType</td>
+        <td>@a.Summary</td>
+    </tr>
+}

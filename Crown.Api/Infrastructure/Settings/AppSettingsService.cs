@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Crown.Contracts.Settings;
 using Crown.Domain.Entities;
+using Crown.Infrastructure.Attachments;
 using Crown.Infrastructure.Pdf;
 using Crown.Infrastructure.Persistence;
 using Crown.Infrastructure.Time;
@@ -40,20 +42,31 @@ public sealed class AppSettingsService
     private readonly AppDbContext _dbContext;
     private readonly AppTimeZone _appTimeZone;
     private readonly IConfiguration _configuration;
+    private readonly AttachmentStorageOptions _attachments;
 
     public AppSettingsService(
         AppDbContext dbContext,
         AppTimeZone appTimeZone,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IOptions<AttachmentStorageOptions>? attachments = null)
     {
         _dbContext = dbContext;
         _appTimeZone = appTimeZone;
         _configuration = configuration;
+        _attachments = attachments?.Value ?? new AttachmentStorageOptions();
     }
 
     public async Task<SettingsResponse> GetSettingsAsync(CancellationToken cancellationToken = default)
     {
         var currencyCode = await GetCurrencyCodeAsync(cancellationToken);
+        var hostPath = string.IsNullOrWhiteSpace(_attachments.HostPath)
+            ? _attachments.RootPath
+            : _attachments.HostPath.Trim();
+        var legacyHost = string.IsNullOrWhiteSpace(_attachments.LegacyHostPath)
+            ? null
+            : _attachments.LegacyHostPath.Trim();
+        var legacyActive = !string.IsNullOrWhiteSpace(legacyHost)
+            && !string.Equals(hostPath, legacyHost, StringComparison.OrdinalIgnoreCase);
 
         return new SettingsResponse
         {
@@ -65,7 +78,11 @@ public sealed class AppSettingsService
             DispatcherCanHardDelete = await GetDispatcherCanHardDeleteAsync(cancellationToken),
             WarehouseEnabled = await GetWarehouseEnabledAsync(cancellationToken),
             AuditRetentionDays = await GetAuditRetentionDaysAsync(cancellationToken),
-            ListPageSize = await GetListPageSizeAsync(cancellationToken)
+            ListPageSize = await GetListPageSizeAsync(cancellationToken),
+            AttachmentsHostPath = hostPath,
+            AttachmentsContainerPath = _attachments.RootPath,
+            AttachmentsLegacyHostPath = legacyHost,
+            AttachmentsLegacyActive = legacyActive
         };
     }
 

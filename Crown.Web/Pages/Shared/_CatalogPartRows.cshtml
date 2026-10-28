@@ -1,0 +1,16 @@
+@model List<CatalogPart>
+@foreach (var p in Model)
+{
+    <tr class="table-row-action @(p.IsActive ? null : "crown-row-archived")"
+        data-href="/catalog-parts/edit/@p.Id"
+        tabindex="0"
+        role="link"
+        aria-label="Каталог: @p.Name">
+        <td class="nowrap">@p.Code</td>
+        <td>@p.Name</td>
+        <td>@p.Category</td>
+        <td>@p.DefaultUnit</td>
+        <td class="num nowrap">@p.DefaultUnitPrice.ToString("N2")</td>
+        <td>@(p.IsActive ? "Активна" : "Неактивна")</td>
+    </tr>
+}

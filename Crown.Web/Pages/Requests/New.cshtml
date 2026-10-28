@@ -15,7 +15,8 @@
     <div class="crown-form-grid">
         <div class="mb-3">
             <label class="form-label" asp-for="Input.Phone">Телефон <span class="crown-req">*</span></label>
-            <input class="form-control" type="tel" asp-for="Input.Phone" required autocomplete="tel" />
+            <input class="form-control" type="tel" asp-for="Input.Phone" required autocomplete="tel"
+                   placeholder="+7 912 345-67-89" />
         </div>
 
         <div class="mb-3">
@@ -24,17 +25,30 @@
         </div>
 
         <div class="mb-3">
-            <label class="form-label" asp-for="Input.InitiatorName">Инициатор <span class="crown-req">*</span></label>
-            <input class="form-control" asp-for="Input.InitiatorName" required />
+            <label class="form-label">Инициатор <span class="crown-req">*</span></label>
+            @if (Model.CanPickInitiator)
+            {
+                <select class="form-select" asp-for="Input.InitiatorUserId" required>
+                    <option value="">— выберите —</option>
+                    @foreach (var u in Model.Assignees)
+                    {
+                        <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <input class="form-control" value="@Model.CurrentUserDisplayName" readonly />
+            }
         </div>
 
         <div class="mb-3">
-            <label class="form-label" asp-for="Input.ServiceDepartmentId">Исполнитель (служба) <span class="crown-req">*</span></label>
-            <select class="form-select" asp-for="Input.ServiceDepartmentId" required>
+            <label class="form-label" asp-for="Input.ExecutorUserId">Исполнитель <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.ExecutorUserId" required>
                 <option value="">— выберите —</option>
-                @foreach (var d in Model.Departments)
+                @foreach (var u in Model.Assignees)
                 {
-                    <option value="@d.Id">@d.Name</option>
+                    <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
                 }
             </select>
         </div>

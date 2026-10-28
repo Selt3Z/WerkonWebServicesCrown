@@ -59,28 +59,50 @@ powershell -ExecutionPolicy Bypass -File docker\setup-hosts.ps1
 | `GET /health/ready` | API + БД + миграции |
 | `GET /health` | Web |
 
-## Обновление on-prem (офлайн)
+## Обновление на сервере
 
-GitHub pull из UI **отключён** (`UPDATE_ENABLED=false`).
+GitHub pull из UI **отключён** (`UPDATE_ENABLED=false`). На хосте после `git pull`:
+
+```bash
+cd /path/to/WerkonWebServicesCrown
+bash scripts/update-stack.sh
+```
+
+Если мешают локальные правки tracked-файлов:
+
+```bash
+bash scripts/update-stack.sh --reset-local
+```
+
+Скрипт: prepare-docker-cli → `compose build api web backup` → recreate api (ждёт healthy/миграции) → web + backup → proxy. Лог: `logs/update-*.log`.
+
+### Офлайн (без registry на объекте)
 
 На машине разработчика:
 
 ```bash
 docker compose build
-docker save crown-api crown-web -o crown-images.tar
-# + актуальные docker-compose.yml, .env.example, Caddyfile
+docker save mns-api mns-web mns-backup -o crown-images.tar
 ```
 
 На сервере заказчика:
 
 ```bash
 docker load -i crown-images.tar
-# подложить compose / при необходимости .env
 docker compose up -d
 ```
 
-Перед обновлением — бэкап БД (сервис `backup` / ручной dump из Состояния системы).  
-Том `crown_attachments` с файлами заявок **не** входит в `pg_dump` — копируйте отдельно при миграции хоста.
+Перед обновлением — бэкап БД. Вложения на диске (`ATTACHMENTS_HOST_PATH`) в `pg_dump` **не** входят.
+
+### Вложения на отдельном диске
+
+В `.env` (не в UI — нужен remount Docker):
+
+```bash
+ATTACHMENTS_HOST_PATH=/mnt/data2/crown-attachments
+```
+
+Иерархия внутри: `{номер_заявки}/{guid}_{имя}`. Переезд со старого места: `scripts/migrate-attachments.sh`, временно `ATTACHMENTS_LEGACY_HOST_PATH` для чтения старых файлов.
 
 ## Основные API
 

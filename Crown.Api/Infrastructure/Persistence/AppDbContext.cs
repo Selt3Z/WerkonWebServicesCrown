@@ -17,7 +17,6 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     public DbSet<CatalogPart> CatalogParts => Set<CatalogPart>();
     public DbSet<WarehousePart> WarehouseParts => Set<WarehousePart>();
     public DbSet<WarehouseStockMovement> WarehouseStockMovements => Set<WarehouseStockMovement>();
-    public DbSet<ServiceDepartment> ServiceDepartments => Set<ServiceDepartment>();
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
     public DbSet<RequestAttachment> RequestAttachments => Set<RequestAttachment>();
 
@@ -25,20 +24,17 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<ServiceDepartment>(entity =>
-        {
-            entity.HasIndex(x => x.Name).IsUnique();
-            entity.Property(x => x.Name).HasMaxLength(200);
-        });
-
         modelBuilder.Entity<ServiceRequest>(entity =>
         {
             entity.Property(x => x.Id).ValueGeneratedOnAdd();
             entity.Property(x => x.Phone).HasMaxLength(40).IsRequired();
             entity.Property(x => x.InitiatorName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.ExecutorName).HasMaxLength(200).IsRequired();
             entity.Property(x => x.TransportType).HasMaxLength(100);
             entity.Property(x => x.Body).HasColumnType("text").IsRequired();
             entity.Property(x => x.ExecutorComment).HasColumnType("text");
+            entity.Property(x => x.ComplaintText).HasColumnType("text");
+            entity.Property(x => x.ComplaintByName).HasMaxLength(200);
             entity.Property(x => x.Status).HasConversion<int>();
             entity.Property(x => x.Xmin)
                 .HasColumnName("xmin")
@@ -49,10 +45,17 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.HasIndex(x => x.SubmittedAt);
             entity.HasIndex(x => x.IsArchived);
             entity.HasQueryFilter(x => !x.IsArchived);
-            entity.HasOne(x => x.ServiceDepartment)
+            entity.HasIndex(x => x.InitiatorUserId);
+            entity.HasIndex(x => x.ExecutorUserId);
+            // SetNull: заявка остаётся, имя — снимок текстом.
+            entity.HasOne<ApplicationUser>()
                 .WithMany()
-                .HasForeignKey(x => x.ServiceDepartmentId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .HasForeignKey(x => x.InitiatorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.ExecutorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<RequestAttachment>(entity =>

@@ -21,9 +21,6 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? To { get; set; }
 
-    [BindProperty(SupportsGet = true)]
-    public int P { get; set; } = 1;
-
     public List<AuditLogItem> Items { get; private set; } = [];
 
     public List<AuditLogUserOption> Users { get; private set; } = [];
@@ -34,46 +31,60 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
-        if (P < 1)
-        {
-            P = 1;
-        }
-
-        var url = UiHelpers.BuildUrl(
-            "api/audit-log",
-            ("userId", UserId?.ToString()),
-            ("entityType", EntityType?.Trim()),
-            ("dateFrom", From),
-            ("dateTo", To),
-            ("skip", ((P - 1) * UiHelpers.PageSize).ToString()),
-            ("take", UiHelpers.PageSize.ToString()));
-
-        var result = await api.GetAsync<PagedResponse<AuditLogItem>>(url, HttpContext.RequestAborted);
-        if (result.IsUnauthorized)
+        var (items, hasMore, error, challenge) = await LoadAsync(0);
+        if (challenge)
         {
             return Challenge();
         }
 
-        if (!result.Ok || result.Data is null)
-        {
-            Error = result.Error;
-            return Page();
-        }
-
-        Items = result.Data.Items;
-        HasMore = result.Data.HasMore;
+        Items = items;
+        HasMore = hasMore;
+        Error = error;
 
         var users = await api.GetAsync<List<AuditLogUserOption>>("api/audit-log/users", HttpContext.RequestAborted);
         Users = users.Data ?? [];
         return Page();
     }
 
-    public string PageUrl(int page) =>
-        UiHelpers.BuildUrl(
-            "/history",
+    public async Task<IActionResult> OnGetMoreAsync(int skip)
+    {
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_HistoryRows", items);
+    }
+
+    private async Task<(List<AuditLogItem> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)
+    {
+        var url = UiHelpers.BuildUrl(
+            "api/audit-log",
             ("userId", UserId?.ToString()),
-            ("entityType", EntityType),
-            ("from", From),
-            ("to", To),
-            ("p", page > 1 ? page.ToString() : null));
+            ("entityType", EntityType?.Trim()),
+            ("dateFrom", From),
+            ("dateTo", To),
+            ("skip", skip.ToString()),
+            ("take", UiHelpers.PageSize.ToString()));
+
+        var result = await api.GetAsync<PagedResponse<AuditLogItem>>(url, HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return ([], false, null, true);
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            return ([], false, result.Error, false);
+        }
+
+        return (result.Data.Items, result.Data.HasMore, null, false);
+    }
 }
