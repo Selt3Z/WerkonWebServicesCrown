@@ -4,7 +4,7 @@ public static class AppRoles
 {
     public const string Administrator = "Administrator";
 
-    /// <summary>Диспетчер: ведёт заявки, склад и каталог запчастей.</summary>
+    /// <summary>Диспетчер: ведёт заявки, склад и чужие каталоги услуг.</summary>
     public const string Dispatcher = "Dispatcher";
 
     /// <summary>Инициатор: подаёт заявки другим инициаторам и исполняет назначенные ему.</summary>

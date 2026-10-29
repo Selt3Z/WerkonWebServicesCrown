@@ -19,6 +19,8 @@ public sealed class DataExportCatalogPartItem
 {
     public Guid Id { get; set; }
 
+    public Guid OwnerUserId { get; set; }
+
     public string Name { get; set; } = string.Empty;
 
     public string? Code { get; set; }
@@ -30,6 +32,8 @@ public sealed class DataExportCatalogPartItem
     public string DefaultUnit { get; set; } = string.Empty;
 
     public string? Description { get; set; }
+
+    public int? SlaHours { get; set; }
 
     public bool IsActive { get; set; }
 

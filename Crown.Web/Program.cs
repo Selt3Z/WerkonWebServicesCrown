@@ -9,6 +9,7 @@ builder.Services.AddRazorPages(options =>
     // Всё закрыто, кроме страниц входа/ошибок; роли проверяются атрибутами [Authorize(Roles = ...)] на PageModel.
     options.Conventions.AuthorizeFolder("/");
     options.Conventions.AllowAnonymousToPage("/Login");
+    options.Conventions.AllowAnonymousToPage("/BrandLogo");
     options.Conventions.AllowAnonymousToPage("/AccessDenied");
     options.Conventions.AllowAnonymousToPage("/Error");
 });
@@ -23,9 +24,10 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var apiBaseUrl = builder.Configuration["CrownApiBaseUrl"] ?? "http://localhost:5277/";
+var apiBaseUri = new Uri(apiBaseUrl.EndsWith('/') ? apiBaseUrl : apiBaseUrl + "/");
 builder.Services.AddHttpClient<CrownApiClient>(client =>
     {
-        client.BaseAddress = new Uri(apiBaseUrl.EndsWith('/') ? apiBaseUrl : apiBaseUrl + "/");
+        client.BaseAddress = apiBaseUri;
         client.Timeout = TimeSpan.FromSeconds(60);
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
@@ -34,6 +36,19 @@ builder.Services.AddHttpClient<CrownApiClient>(client =>
         UseCookies = false,
         AllowAutoRedirect = false,
         // Внутренний API: системный/env-прокси здесь только мешает (на dev-машинах отдаёт 502).
+        UseProxy = false
+    });
+
+// Без cookie — для публичного /brand-logo.
+builder.Services.AddHttpClient("CrownApiAnonymous", client =>
+    {
+        client.BaseAddress = apiBaseUri;
+        client.Timeout = TimeSpan.FromSeconds(30);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        UseCookies = false,
+        AllowAutoRedirect = false,
         UseProxy = false
     });
 

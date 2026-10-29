@@ -6,25 +6,40 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Crown.Web.Pages;
 
-[Authorize(Roles = AppRoles.Staff)]
+[Authorize]
 public sealed class CatalogPartSaveModel(CrownApiClient api) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public Guid? Id { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public Guid? OwnerUserId { get; set; }
+
     [BindProperty]
-    public SaveCatalogPartRequest Input { get; set; } = new() { IsActive = true };
+    public SaveCatalogPartRequest Input { get; set; } = new() { IsActive = true, DefaultUnit = "шт" };
 
     public List<string> Categories { get; private set; } = [];
+
+    public List<RequestAssignee> Owners { get; private set; } = [];
 
     public string? Error { get; private set; }
 
     public bool IsEdit => Id is Guid;
 
+    public bool IsStaff =>
+        User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+
     public async Task<IActionResult> OnGetAsync()
     {
-        var categories = await api.GetAsync<List<string>>("api/catalog-parts/categories", HttpContext.RequestAborted);
-        Categories = categories.Data ?? [];
+        if (IsStaff)
+        {
+            await LoadOwnersAsync();
+            if (Id is null && OwnerUserId is null)
+            {
+                Error = "Выберите подразделение на странице каталога.";
+                return Page();
+            }
+        }
 
         if (Id is Guid id)
         {
@@ -36,34 +51,57 @@ public sealed class CatalogPartSaveModel(CrownApiClient api) : PageModel
 
             if (!part.Ok || part.Data is null)
             {
-                Error = part.Error ?? "Запчасть не найдена.";
+                Error = part.Error ?? "Услуга не найдена.";
                 return Page();
             }
 
+            OwnerUserId = part.Data.OwnerUserId;
             Input = new SaveCatalogPartRequest
             {
+                OwnerUserId = part.Data.OwnerUserId,
                 Name = part.Data.Name,
                 Code = part.Data.Code,
                 Category = part.Data.Category,
                 DefaultUnitPrice = part.Data.DefaultUnitPrice,
-                DefaultUnit = part.Data.DefaultUnit,
+                DefaultUnit = string.IsNullOrWhiteSpace(part.Data.DefaultUnit) ? "шт" : part.Data.DefaultUnit,
                 Description = part.Data.Description,
+                SlaHours = part.Data.SlaHours,
                 IsActive = part.Data.IsActive
             };
         }
+        else if (IsStaff)
+        {
+            Input.OwnerUserId = OwnerUserId;
+        }
 
+        await LoadCategoriesAsync();
         return Page();
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
-        var categories = await api.GetAsync<List<string>>("api/catalog-parts/categories", HttpContext.RequestAborted);
-        Categories = categories.Data ?? [];
+        if (IsStaff)
+        {
+            await LoadOwnersAsync();
+            Input.OwnerUserId ??= OwnerUserId;
+            if (Input.OwnerUserId is null || Input.OwnerUserId == Guid.Empty)
+            {
+                Error = "Укажите подразделение-владельца каталога.";
+                return Page();
+            }
+        }
+
+        await LoadCategoriesAsync();
 
         if (string.IsNullOrWhiteSpace(Input.Name))
         {
             Error = "Название обязательно.";
             return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(Input.DefaultUnit))
+        {
+            Input.DefaultUnit = "шт";
         }
 
         var result = Id is Guid id
@@ -81,7 +119,29 @@ public sealed class CatalogPartSaveModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        TempData["Ok"] = IsEdit ? "Запчасть обновлена." : "Запчасть добавлена в каталог.";
-        return RedirectToPage("/CatalogParts");
+        TempData["Ok"] = IsEdit ? "Услуга обновлена." : "Услуга добавлена в каталог.";
+        var backOwner = Input.OwnerUserId ?? OwnerUserId;
+        return IsStaff && backOwner is Guid oid
+            ? Redirect($"/catalog-parts?ownerUserId={oid}")
+            : RedirectToPage("/CatalogParts");
+    }
+
+    private async Task LoadOwnersAsync()
+    {
+        var result = await api.GetAsync<List<RequestAssignee>>("api/requests/assignees", HttpContext.RequestAborted);
+        if (result.Ok && result.Data is not null)
+        {
+            Owners = result.Data;
+        }
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        var owner = IsStaff ? (Input.OwnerUserId ?? OwnerUserId) : null;
+        var url = UiHelpers.BuildUrl(
+            "api/catalog-parts/categories",
+            ("ownerUserId", owner?.ToString()));
+        var categories = await api.GetAsync<List<string>>(url, HttpContext.RequestAborted);
+        Categories = categories.Data ?? [];
     }
 }

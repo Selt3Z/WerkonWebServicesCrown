@@ -1,0 +1,37 @@
+@model List<UserListItem>
+@inject AppTime Time
+@foreach (var u in Model)
+{
+    var isProtectedAdmin = string.Equals(u.UserName, "admin", StringComparison.OrdinalIgnoreCase);
+    <div class="schedule-card table-row-action @(u.IsActive ? null : "users-row-inactive")"
+         data-href="/users/edit/@u.Id"
+         tabindex="0"
+         role="link"
+         aria-label="Пользователь @u.DisplayName">
+        <div class="schedule-card-header">
+            <span class="schedule-card-time">@u.UserName</span>
+            <span class="user-status-badge @(u.IsActive ? "user-status-badge-active" : "user-status-badge-inactive")">
+                @(u.IsActive ? "Активен" : "Отключён")
+            </span>
+        </div>
+        <div class="schedule-card-title">@u.DisplayName</div>
+        <div class="schedule-card-meta">@Time.FormatUtc(u.LastActivityAtUtc)</div>
+        <div class="schedule-card-footer">
+            <span>@AppRoles.Display(u.Role)</span>
+            @if (!isProtectedAdmin)
+            {
+                <button type="button"
+                        class="btn-icon-delete"
+                        title="Удалить"
+                        aria-label="Удалить @u.UserName"
+                        data-user-delete
+                        data-user-id="@u.Id"
+                        data-user-name="@u.UserName">
+                    <svg class="btn-icon-delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                </button>
+            }
+        </div>
+    </div>
+}

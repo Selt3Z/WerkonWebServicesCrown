@@ -6,7 +6,7 @@
 
 <div class="crown-page-head">
     <h1 class="section-title">Пользователи</h1>
-    <a class="btn btn-primary" href="/users/edit">Добавить пользователя</a>
+    <a class="btn btn-success" href="/users/edit">Добавить пользователя</a>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
@@ -14,8 +14,16 @@
     <div class="alert alert-danger">@Model.Error</div>
 }
 
-<div class="crown-table-wrap">
-    <table class="table crown-table">
+<div class="crown-table-wrap schedule-desktop-table">
+    <table class="table crown-table users-list-table">
+        <colgroup>
+            <col class="users-col-username" />
+            <col class="users-col-name" />
+            <col class="users-col-role" />
+            <col class="users-col-status" />
+            <col />
+            <col class="users-col-actions" />
+        </colgroup>
         <thead>
         <tr>
             <th>Логин</th>
@@ -23,6 +31,7 @@
             <th>Роль</th>
             <th>Статус</th>
             <th>Активность</th>
+            <th></th>
         </tr>
         </thead>
         <tbody data-infinite-scroll
@@ -31,7 +40,7 @@
                data-has-more="@(Model.HasMore ? "true" : "false")">
         @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
         {
-            <tr class="crown-empty-row"><td colspan="5" class="text-muted text-center">Пользователей нет.</td></tr>
+            <tr class="crown-empty-row"><td colspan="6" class="text-muted text-center">Пользователей нет.</td></tr>
         }
         else
         {
@@ -40,4 +49,90 @@
         </tbody>
     </table>
 </div>
+
+<div class="schedule-mobile-cards"
+     data-infinite-scroll
+     data-more-url="@UiHelpers.BuildUrl("/users", ("handler", "MoreCards"))"
+     data-skip="@Model.Items.Count"
+     data-has-more="@(Model.HasMore ? "true" : "false")">
+    @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+    {
+        <p class="text-muted text-center mb-0">Пользователей нет.</p>
+    }
+    else
+    {
+        <partial name="_UserCards" model="Model.Items" />
+    }
+</div>
 <div class="infinite-scroll-sentinel" hidden></div>
+
+@* Typed confirm как в Ratchet: ввести логин. *@
+<div id="user-delete-dialog" class="typed-confirm-backdrop" hidden>
+    <div class="typed-confirm-dialog entity-panel" role="dialog" aria-modal="true" aria-labelledby="user-delete-title">
+        <h2 id="user-delete-title" class="section-title">Удалить пользователя</h2>
+        <p class="confirm-dialog-message" id="user-delete-help"></p>
+        <div class="typed-confirm-field mb-3">
+            <label class="form-label" for="user-delete-confirm">Введите логин для подтверждения</label>
+            <input id="user-delete-confirm" class="form-control" autocomplete="off" />
+        </div>
+        <div class="confirm-dialog-actions action-bar mb-0">
+            <button type="button" class="btn btn-outline-secondary" id="user-delete-cancel">Отмена</button>
+            <button type="button" class="btn btn-danger" id="user-delete-submit" disabled>Удалить</button>
+        </div>
+        <form method="post" asp-page-handler="Delete" id="user-delete-form" class="d-none">
+            <input type="hidden" name="id" id="user-delete-id" />
+            <input type="hidden" name="userName" id="user-delete-name" />
+            <input type="hidden" name="confirmation" id="user-delete-confirmation" />
+        </form>
+    </div>
+</div>
+
+<script>
+(() => {
+  const dialog = document.getElementById('user-delete-dialog');
+  const help = document.getElementById('user-delete-help');
+  const input = document.getElementById('user-delete-confirm');
+  const submit = document.getElementById('user-delete-submit');
+  const cancel = document.getElementById('user-delete-cancel');
+  const form = document.getElementById('user-delete-form');
+  const idField = document.getElementById('user-delete-id');
+  const nameField = document.getElementById('user-delete-name');
+  const confField = document.getElementById('user-delete-confirmation');
+  let expected = '';
+
+  function close() {
+    dialog.hidden = true;
+    input.value = '';
+    expected = '';
+    submit.disabled = true;
+  }
+
+  function sync() {
+    submit.disabled = input.value.trim() !== expected;
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-user-delete]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    expected = btn.getAttribute('data-user-name') || '';
+    idField.value = btn.getAttribute('data-user-id') || '';
+    nameField.value = expected;
+    help.textContent = 'Для удаления пользователя «' + expected + '» введите его логин. Это действие нельзя отменить.';
+    input.value = '';
+    submit.disabled = true;
+    dialog.hidden = false;
+    input.focus();
+  });
+
+  input.addEventListener('input', sync);
+  cancel.addEventListener('click', close);
+  dialog.addEventListener('click', (e) => { if (e.target === dialog) close(); });
+  submit.addEventListener('click', () => {
+    if (submit.disabled) return;
+    confField.value = input.value.trim();
+    form.requestSubmit();
+  });
+})();
+</script>

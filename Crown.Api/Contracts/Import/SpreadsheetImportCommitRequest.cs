@@ -29,4 +29,7 @@ public sealed class SpreadsheetImportCommitRequest
     public int? IsArchivedColumn { get; set; }
 
     public int? IsActiveColumn { get; set; }
+
+    /// <summary>Владелец каталога услуг (обязателен для import-catalog-parts).</summary>
+    public Guid? OwnerUserId { get; set; }
 }

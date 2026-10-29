@@ -11,6 +11,8 @@ using Crown.Infrastructure.Api;
 using Crown.Infrastructure.Attachments;
 using Crown.Infrastructure.Identity;
 using Crown.Infrastructure.Persistence;
+using Crown.Infrastructure.Settings;
+using Crown.Infrastructure.Time;
 
 namespace Crown.Features.Requests;
 
@@ -21,16 +23,25 @@ public sealed class RequestsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly AttachmentStorageService _attachments;
+    private readonly AttachmentPreviewService _preview;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly AppSettingsService _settings;
+    private readonly AppTimeZone _time;
 
     public RequestsController(
         AppDbContext db,
         AttachmentStorageService attachments,
-        UserManager<ApplicationUser> userManager)
+        AttachmentPreviewService preview,
+        UserManager<ApplicationUser> userManager,
+        AppSettingsService settings,
+        AppTimeZone time)
     {
         _db = db;
         _attachments = attachments;
+        _preview = preview;
         _userManager = userManager;
+        _settings = settings;
+        _time = time;
     }
 
     /// <summary>Активные пользователи с ролью Initiator — выбор исполнителя и фильтры.</summary>
@@ -61,7 +72,7 @@ public sealed class RequestsController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] int? skip,
         [FromQuery] int? take,
-        [FromQuery] bool includeArchived = false,
+        [FromQuery] bool? includeArchived = null,
         [FromQuery] string? sort = null,
         [FromQuery] string? dir = null,
         [FromQuery] int? status = null,
@@ -71,12 +82,14 @@ public sealed class RequestsController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var (normalizedSkip, normalizedTake) = QueryPagingExtensions.NormalizePaging(skip, take);
-        var query = _db.ServiceRequests.AsNoTracking().AsQueryable();
+        // null → настройка «Скрывать архивные по умолчанию»
+        var showArchived = includeArchived
+            ?? !await _settings.GetHideArchivedByDefaultAsync(cancellationToken);
 
-        if (!includeArchived)
-        {
-            query = query.Where(x => !x.IsArchived);
-        }
+        // Глобальный query filter режет архив — для include нужен IgnoreQueryFilters.
+        var query = showArchived
+            ? _db.ServiceRequests.IgnoreQueryFilters().AsNoTracking()
+            : _db.ServiceRequests.AsNoTracking();
 
         query = ApplyVisibility(query);
 
@@ -157,12 +170,88 @@ public sealed class RequestsController : ControllerBase
                 Phone = x.Phone,
                 BodyPreview = x.Body.Length > 120 ? x.Body.Substring(0, 120) + "…" : x.Body,
                 DueAt = x.DueAt,
-                HasComplaint = x.ComplaintText != null && x.ComplaintText != ""
+                HasComplaint = x.ComplaintText != null && x.ComplaintText != "",
+                IsArchived = x.IsArchived
             })
             .ToPagedResponseAsync(normalizedSkip, normalizedTake, cancellationToken);
 
         return Ok(response);
     }
+
+    /// <summary>
+    /// Очередь «Сегодня»: заявки с действием для текущего пользователя.
+    /// Исключаем выполненные/отменённые; Returned только если пользователь — инициатор
+    /// (возврат исполнителем уже сделан — во входящих не показываем).
+    /// Срок: сегодня и дальше + просроченные (ещё требуют действия).
+    /// </summary>
+    [HttpGet("today")]
+    public async Task<ActionResult<TodayRequestsResponse>> GetToday(
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var today = _time.GetToday();
+
+        // Архив режется query filter. Терминальные статусы — нет действия.
+        var baseQuery = _db.ServiceRequests.AsNoTracking()
+            .Where(x => x.Status != ServiceRequestStatus.Completed
+                        && x.Status != ServiceRequestStatus.Cancelled);
+
+        // Входящие: я исполнитель; Returned не берём — возврат уже сделан исполнителем.
+        var incomingQuery = baseQuery.Where(x =>
+            x.ExecutorUserId == userId
+            && x.Status != ServiceRequestStatus.Returned);
+
+        // Исходящие: я инициатор (Returned показываем — надо править/переподать).
+        var outgoingQuery = baseQuery.Where(x => x.InitiatorUserId == userId);
+
+        var incoming = await ProjectListItems(incomingQuery.OrderBy(x => x.DueAt).ThenBy(x => x.Id))
+            .ToListAsync(cancellationToken);
+        var outgoing = await ProjectListItems(outgoingQuery.OrderBy(x => x.DueAt).ThenBy(x => x.Id))
+            .ToListAsync(cancellationToken);
+
+        return Ok(new TodayRequestsResponse
+        {
+            Date = today,
+            Incoming = incoming,
+            Outgoing = outgoing
+        });
+    }
+
+    private IQueryable<ServiceRequestListItemResponse> ProjectListItems(
+        IQueryable<ServiceRequest> query) =>
+        from x in query
+        join iu in _db.Users.AsNoTracking() on x.InitiatorUserId equals iu.Id into iuj
+        from iu in iuj.DefaultIfEmpty()
+        join eu in _db.Users.AsNoTracking() on x.ExecutorUserId equals eu.Id into euj
+        from eu in euj.DefaultIfEmpty()
+        select new ServiceRequestListItemResponse
+        {
+            Id = x.Id,
+            Status = x.Status,
+            StatusLabel = StatusLabel(x.Status),
+            Acknowledged = x.Acknowledged,
+            InitiatorUserId = x.InitiatorUserId,
+            InitiatorName = iu != null
+                ? (iu.DisplayName != "" ? iu.DisplayName : iu.UserName ?? x.InitiatorName)
+                : x.InitiatorName,
+            ExecutorUserId = x.ExecutorUserId,
+            ExecutorName = eu != null
+                ? (eu.DisplayName != "" ? eu.DisplayName : eu.UserName ?? x.ExecutorName)
+                : x.ExecutorName,
+            SubmittedAt = x.SubmittedAt,
+            ReactionAt = x.ReactionAt,
+            CompletedAt = x.CompletedAt,
+            Phone = x.Phone,
+            BodyPreview = x.Body.Length > 120 ? x.Body.Substring(0, 120) + "…" : x.Body,
+            DueAt = x.DueAt,
+            HasComplaint = x.ComplaintText != null && x.ComplaintText != "",
+            IsArchived = x.IsArchived
+        };
 
     [HttpGet("{id:long}")]
     public async Task<ActionResult<ServiceRequestDetailResponse>> GetById(
@@ -566,6 +655,40 @@ public sealed class RequestsController : ControllerBase
     public async Task<IActionResult> DownloadAttachment(
         long id,
         Guid attachmentId,
+        [FromQuery] bool inline = false,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await LoadAccessibleAsync(id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        var attachment = entity.Attachments.FirstOrDefault(x => x.Id == attachmentId);
+        if (attachment is null)
+        {
+            return NotFound();
+        }
+
+        var path = _attachments.ResolveExistingPath(attachment.StoragePath);
+        if (path is null)
+        {
+            return NotFound();
+        }
+
+        // inline=true — для object/img в превью (без Content-Disposition: attachment).
+        if (inline)
+        {
+            return PhysicalFile(path, attachment.ContentType);
+        }
+
+        return PhysicalFile(path, attachment.ContentType, attachment.FileName);
+    }
+
+    [HttpGet("{id:long}/attachments/{attachmentId:guid}/preview")]
+    public async Task<ActionResult<AttachmentPreviewResponse>> PreviewAttachment(
+        long id,
+        Guid attachmentId,
         CancellationToken cancellationToken)
     {
         var entity = await LoadAccessibleAsync(id, cancellationToken);
@@ -586,7 +709,9 @@ public sealed class RequestsController : ControllerBase
             return NotFound();
         }
 
-        return PhysicalFile(path, attachment.ContentType, attachment.FileName);
+        await using var stream = global::System.IO.File.OpenRead(path);
+        var preview = _preview.Build(attachment.FileName, attachment.ContentType, stream);
+        return Ok(preview);
     }
 
     private IQueryable<ServiceRequest> ApplyVisibility(IQueryable<ServiceRequest> query)
@@ -632,7 +757,9 @@ public sealed class RequestsController : ControllerBase
 
     private async Task<ServiceRequest?> LoadAccessibleAsync(long id, CancellationToken cancellationToken)
     {
+        // IgnoreQueryFilters — чтобы открыть архивную заявку по прямой ссылке.
         var entity = await _db.ServiceRequests
+            .IgnoreQueryFilters()
             .Include(x => x.Attachments)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (entity is null || !CanAccess(entity))
@@ -641,6 +768,77 @@ public sealed class RequestsController : ControllerBase
         }
 
         return entity;
+    }
+
+    /// <summary>Мягкая архивация — инициатор своей заявки (или админ/диспетчер).</summary>
+    [HttpPatch("{id:long}/archive")]
+    public Task<IActionResult> Archive(long id, CancellationToken cancellationToken) =>
+        SetArchivedAsync(id, archived: true, cancellationToken);
+
+    [HttpPatch("{id:long}/unarchive")]
+    public Task<IActionResult> Unarchive(long id, CancellationToken cancellationToken) =>
+        SetArchivedAsync(id, archived: false, cancellationToken);
+
+    /// <summary>Безвозвратное удаление: админ всегда; диспетчер — если галочка в настройках.</summary>
+    [HttpDelete("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.HardDeleteRecords)]
+    public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken)
+    {
+        var entity = await _db.ServiceRequests
+            .IgnoreQueryFilters()
+            .Include(x => x.Attachments)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null || !CanAccess(entity))
+        {
+            return NotFound();
+        }
+
+        foreach (var a in entity.Attachments)
+        {
+            _attachments.DeleteIfExists(a.StoragePath);
+        }
+
+        _db.ServiceRequests.Remove(entity);
+        await _db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    private async Task<IActionResult> SetArchivedAsync(long id, bool archived, CancellationToken cancellationToken)
+    {
+        var entity = await _db.ServiceRequests
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null || !CanAccess(entity))
+        {
+            return NotFound();
+        }
+
+        if (!CanArchive(entity))
+        {
+            return Forbid();
+        }
+
+        if (entity.IsArchived != archived)
+        {
+            entity.IsArchived = archived;
+            entity.LastModifiedAt = DateTimeOffset.UtcNow;
+            entity.LastModifiedByUserId = GetUserId();
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>Архив: инициатор заявки или админ/диспетчер.</summary>
+    private bool CanArchive(ServiceRequest entity)
+    {
+        if (User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher))
+        {
+            return true;
+        }
+
+        var userId = GetUserId();
+        return userId is not null && entity.InitiatorUserId == userId;
     }
 
     private async Task<ApplicationUser?> ResolveActiveInitiatorAsync(
@@ -741,6 +939,7 @@ public sealed class RequestsController : ControllerBase
             ComplaintText = x.ComplaintText,
             ComplaintAt = x.ComplaintAt,
             ComplaintByName = x.ComplaintByName,
+            IsArchived = x.IsArchived,
             Attachments = x.Attachments
                 .OrderByDescending(a => a.UploadedAt)
                 .Select(a => new RequestAttachmentResponse

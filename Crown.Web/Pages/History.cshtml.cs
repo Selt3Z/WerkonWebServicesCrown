@@ -25,6 +25,19 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
 
     public List<AuditLogUserOption> Users { get; private set; } = [];
 
+    /// <summary>Типы сущностей в журнале (как AuditEntityTypes на API).</summary>
+    public IReadOnlyList<(string Value, string Label)> EntityTypeOptions { get; } =
+    [
+        ("ServiceRequest", "Заявка"),
+        ("CatalogPart", "Каталог услуг"),
+        ("WarehousePart", "Склад"),
+        ("Vehicle", "Транспорт"),
+        ("ParkingLot", "Стоянка"),
+        ("VehicleTrip", "Поездка"),
+        ("VehicleFuelRefuel", "Заправка"),
+        ("VehicleRepair", "Ремонт")
+    ];
+
     public bool HasMore { get; private set; }
 
     public string? Error { get; private set; }

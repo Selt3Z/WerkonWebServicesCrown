@@ -46,6 +46,57 @@ public sealed class UserListModel(CrownApiClient api) : PageModel
         return Partial("_UserRows", items);
     }
 
+    public async Task<IActionResult> OnGetMoreCardsAsync(int skip)
+    {
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_UserCards", items);
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(Guid id, string? userName, string? confirmation)
+    {
+        // admin нельзя удалить — UI прячет кнопку, API тоже режет.
+        if (string.Equals(userName, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            TempData["Warn"] = "Главного администратора удалить нельзя.";
+            return Redirect("/users");
+        }
+
+        if (string.IsNullOrWhiteSpace(userName)
+            || !string.Equals(confirmation?.Trim(), userName, StringComparison.Ordinal))
+        {
+            TempData["Warn"] = "Подтверждение не совпало с логином.";
+            return Redirect("/users");
+        }
+
+        var result = await api.DeleteAsync($"api/users/{id}", HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (result.Ok)
+        {
+            TempData["Ok"] = $"Пользователь «{userName}» удалён.";
+        }
+        else
+        {
+            TempData["Warn"] = result.Error;
+        }
+
+        return Redirect("/users");
+    }
+
     private async Task<(List<UserListItem> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)
     {
         var url = UiHelpers.BuildUrl(

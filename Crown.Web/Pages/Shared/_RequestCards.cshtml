@@ -1,0 +1,47 @@
+@model List<ServiceRequestListItem>
+@inject AppTime Time
+@foreach (var r in Model)
+{
+    <div class="schedule-card table-row-action @(r.IsArchived ? "crown-row-archived" : null)"
+         data-href="/requests/@r.Id"
+         tabindex="0"
+         role="link"
+         aria-label="Заявка № @r.Id">
+        <div class="schedule-card-header">
+            <span class="schedule-card-time">
+                @if (r.HasComplaint)
+                {
+                    <span class="crown-warn-badge" title="По заявке подана жалоба" aria-label="Жалоба">!</span>
+                }
+                № @r.Id
+            </span>
+            <span class="schedule-card-header-trailing">
+                <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
+                      title="@(r.Acknowledged ? "Ознак.: ознакомлен" : "Ознак.: не ознакомлен")"
+                      aria-label="@(r.Acknowledged ? "Исполнитель ознакомился" : "Исполнитель ещё не ознакомился")"></span>
+                <span class="crown-status-pill @UiHelpers.StatusClass(r.Status)">@r.StatusLabel</span>
+            </span>
+        </div>
+        <div class="schedule-card-title">@r.InitiatorName</div>
+        <div class="schedule-card-meta">
+            @r.ExecutorName · @UiHelpers.FormatPhone(r.Phone)
+        </div>
+        @if (!string.IsNullOrWhiteSpace(r.BodyPreview))
+        {
+            <div class="schedule-card-note">@r.BodyPreview</div>
+        }
+        <div class="schedule-card-footer">
+            <span>@Time.Format(r.SubmittedAt)</span>
+            <span>
+                @if (r.CompletedAt is not null)
+                {
+                    @Time.Format(r.CompletedAt)
+                }
+                else
+                {
+                    <span title="Срок исполнения">до @Time.Format(r.DueAt)</span>
+                }
+            </span>
+        </div>
+    </div>
+}

@@ -20,6 +20,14 @@ public sealed class SettingsResponse
 
     public int ListPageSize { get; set; } = 30;
 
+    /// <summary>standard | custom</summary>
+    public string BrandLogoMode { get; set; } = "standard";
+
+    public bool HasCustomLogo { get; set; }
+
+    /// <summary>data:... превью своего логотипа (если загружен).</summary>
+    public string? LogoDataUrl { get; set; }
+
     /// <summary>Путь на хосте к каталогу вложений (ATTACHMENTS_HOST_PATH).</summary>
     public string AttachmentsHostPath { get; set; } = string.Empty;
 

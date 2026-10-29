@@ -106,6 +106,15 @@
             }
         </select>
     </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            @* hidden=false, чтобы снятие галочки тоже уходило в query (и не сбрасывалось настройкой) *@
+            <input type="hidden" name="showArchived" value="false" />
+            <input class="form-check-input" type="checkbox" id="showArchived" name="showArchived" value="true"
+                   checked="@Model.ShowArchived" />
+            <label class="form-check-label" for="showArchived">Показать архивные</label>
+        </div>
+    </div>
     @if (!string.IsNullOrEmpty(Model.Sort))
     {
         <input type="hidden" name="sort" value="@Model.Sort" />
@@ -129,7 +138,21 @@ document.getElementById('btn-apply-filters')?.addEventListener('click', (e) => {
     <div class="alert alert-danger">@Model.Error</div>
 }
 
-<div class="crown-table-wrap crown-requests-wrap">
+@{
+    var moreQuery = new (string, string?)[]
+    {
+        ("q", Model.Q),
+        ("status", Model.Status?.ToString()),
+        ("initiatorUserId", Model.InitiatorUserId?.ToString()),
+        ("executorUserId", Model.ExecutorUserId?.ToString()),
+        ("ack", Model.Ack.HasValue ? (Model.Ack.Value ? "true" : "false") : null),
+        ("showArchived", Model.ShowArchived ? "true" : "false"),
+        ("sort", Model.Sort),
+        ("dir", Model.Dir)
+    };
+}
+
+<div class="crown-table-wrap crown-requests-wrap schedule-desktop-table">
     <table class="table crown-table crown-requests-table">
         <thead>
         <tr>
@@ -152,15 +175,7 @@ document.getElementById('btn-apply-filters')?.addEventListener('click', (e) => {
         </tr>
         </thead>
         <tbody data-infinite-scroll
-               data-more-url="@UiHelpers.BuildUrl("/",
-                   ("handler", "More"),
-                   ("q", Model.Q),
-                   ("status", Model.Status?.ToString()),
-                   ("initiatorUserId", Model.InitiatorUserId?.ToString()),
-                   ("executorUserId", Model.ExecutorUserId?.ToString()),
-                   ("ack", Model.Ack.HasValue ? (Model.Ack.Value ? "true" : "false") : null),
-                   ("sort", Model.Sort),
-                   ("dir", Model.Dir))"
+               data-more-url="@UiHelpers.BuildUrl("/", moreQuery.Prepend(("handler", "More")).ToArray())"
                data-skip="@Model.Items.Count"
                data-has-more="@(Model.HasMore ? "true" : "false")">
         @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
@@ -173,5 +188,20 @@ document.getElementById('btn-apply-filters')?.addEventListener('click', (e) => {
         }
         </tbody>
     </table>
+</div>
+
+<div class="schedule-mobile-cards"
+     data-infinite-scroll
+     data-more-url="@UiHelpers.BuildUrl("/", moreQuery.Prepend(("handler", "MoreCards")).ToArray())"
+     data-skip="@Model.Items.Count"
+     data-has-more="@(Model.HasMore ? "true" : "false")">
+    @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+    {
+        <p class="text-muted text-center mb-0">Заявок нет.</p>
+    }
+    else
+    {
+        <partial name="_RequestCards" model="Model.Items" />
+    }
 </div>
 <div class="infinite-scroll-sentinel" hidden></div>

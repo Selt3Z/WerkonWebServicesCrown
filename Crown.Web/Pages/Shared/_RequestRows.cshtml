@@ -2,14 +2,17 @@
 @inject AppTime Time
 @foreach (var r in Model)
 {
-    <tr class="table-row-action" data-href="/requests/@r.Id" tabindex="0" role="link" aria-label="Заявка № @r.Id">
+    <tr class="table-row-action @(r.IsArchived ? "crown-row-archived" : null)"
+        data-href="/requests/@r.Id" tabindex="0" role="link" aria-label="Заявка № @r.Id">
         <td class="col-num">
             <span class="crown-id-cell">
+                <span class="crown-warn-slot" aria-hidden="@(r.HasComplaint ? "false" : "true")">
+                    @if (r.HasComplaint)
+                    {
+                        <span class="crown-warn-badge" title="По заявке подана жалоба" aria-label="Жалоба">!</span>
+                    }
+                </span>
                 <span class="crown-id">@r.Id</span>
-                @if (r.HasComplaint)
-                {
-                    <span class="crown-warn-badge" title="По заявке подана жалоба" aria-label="Жалоба">!</span>
-                }
             </span>
         </td>
         <td class="crown-status-cell">

@@ -38,13 +38,13 @@
             }
             else
             {
-                <input class="form-control" value="@Model.CurrentUserDisplayName" readonly />
+                <input class="form-control form-control-locked" value="@Model.CurrentUserDisplayName" readonly tabindex="-1" />
             }
         </div>
 
         <div class="mb-3">
             <label class="form-label" asp-for="Input.ExecutorUserId">Исполнитель <span class="crown-req">*</span></label>
-            <select class="form-select" asp-for="Input.ExecutorUserId" required>
+            <select class="form-select" asp-for="Input.ExecutorUserId" id="executor-user" required>
                 <option value="">— выберите —</option>
                 @foreach (var u in Model.Assignees)
                 {
@@ -54,9 +54,25 @@
         </div>
     </div>
 
+    <div class="mb-3" id="body-mode-wrap" hidden>
+        <label class="form-label" asp-for="Input.BodyMode">Текст заявки</label>
+        <select class="form-select" asp-for="Input.BodyMode" id="body-mode">
+            <option value="manual">Вручную</option>
+            <option value="catalog">Из каталога исполнителя</option>
+        </select>
+    </div>
+
+    <div class="mb-3" id="catalog-service-wrap" hidden>
+        <label class="form-label" for="catalog-service">Услуга из каталога</label>
+        <select class="form-select" id="catalog-service" asp-for="Input.CatalogPartId">
+            <option value="">— выберите услугу —</option>
+        </select>
+        <div class="form-text">Список — активные услуги из каталога выбранного исполнителя.</div>
+    </div>
+
     <div class="mb-3">
         <label class="form-label" asp-for="Input.Body">Заявка <span class="crown-req">*</span></label>
-        <textarea class="form-control" asp-for="Input.Body" rows="8" required></textarea>
+        <textarea class="form-control" asp-for="Input.Body" id="request-body" rows="8" required></textarea>
     </div>
 
     <div class="mb-3">
@@ -70,3 +86,92 @@
         <a class="btn btn-outline-secondary btn-lg" href="/">Отмена</a>
     </div>
 </form>
+
+<script>
+(function () {
+  var modeWrap = document.getElementById('body-mode-wrap');
+  var mode = document.getElementById('body-mode');
+  var wrap = document.getElementById('catalog-service-wrap');
+  var executor = document.getElementById('executor-user');
+  var service = document.getElementById('catalog-service');
+  var body = document.getElementById('request-body');
+  var due = document.getElementById('Input_DueAt') || document.querySelector('[name="Input.DueAt"]');
+  var cache = {};
+  var hasCatalog = false;
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function applySlaHours(hours) {
+    if (!due || !hours || hours <= 0) return;
+    var d = new Date();
+    d.setHours(d.getHours() + Number(hours));
+    due.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function syncCatalogUi() {
+    var fromCatalog = hasCatalog && mode && mode.value === 'catalog';
+    if (wrap) wrap.hidden = !fromCatalog;
+    if (fromCatalog) fillServiceOptions();
+  }
+
+  function fillServiceOptions() {
+    if (!service || !executor) return;
+    var ownerId = executor.value;
+    var items = cache[ownerId] || [];
+    service.innerHTML = '<option value="">— выберите услугу —</option>';
+    items.forEach(function (x) {
+      var opt = document.createElement('option');
+      opt.value = x.id;
+      opt.textContent = (x.code ? x.code + ' · ' : '') + x.name;
+      opt.dataset.name = x.name || '';
+      opt.dataset.description = x.description || '';
+      if (x.slaHours) opt.dataset.sla = String(x.slaHours);
+      service.appendChild(opt);
+    });
+  }
+
+  async function onExecutorChanged() {
+    hasCatalog = false;
+    if (modeWrap) modeWrap.hidden = true;
+    if (wrap) wrap.hidden = true;
+    if (mode) mode.value = 'manual';
+    if (!service || !executor) return;
+
+    var ownerId = executor.value;
+    if (!ownerId) return;
+
+    if (!cache[ownerId]) {
+      try {
+        var url = '?handler=ServicesJson&ownerUserId=' + encodeURIComponent(ownerId);
+        var res = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error('fail');
+        cache[ownerId] = await res.json();
+      } catch (e) {
+        cache[ownerId] = [];
+      }
+    }
+
+    var items = cache[ownerId] || [];
+    hasCatalog = items.length > 0;
+    if (modeWrap) modeWrap.hidden = !hasCatalog;
+    if (!hasCatalog && mode) mode.value = 'manual';
+    syncCatalogUi();
+  }
+
+  service?.addEventListener('change', function () {
+    var opt = service.options[service.selectedIndex];
+    if (!opt || !opt.value) return;
+    if (body) {
+      var name = opt.dataset.name || '';
+      var desc = opt.dataset.description || '';
+      body.value = desc ? (name + '\n' + desc) : name;
+    }
+    if (opt.dataset.sla) applySlaHours(opt.dataset.sla);
+  });
+
+  mode?.addEventListener('change', syncCatalogUi);
+  executor?.addEventListener('change', onExecutorChanged);
+  onExecutorChanged();
+})();
+</script>

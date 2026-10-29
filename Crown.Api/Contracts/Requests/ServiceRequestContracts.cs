@@ -19,6 +19,7 @@ public sealed class ServiceRequestListItemResponse
     public string BodyPreview { get; set; } = string.Empty;
     public DateTimeOffset DueAt { get; set; }
     public bool HasComplaint { get; set; }
+    public bool IsArchived { get; set; }
 }
 
 public sealed class ServiceRequestDetailResponse
@@ -44,6 +45,7 @@ public sealed class ServiceRequestDetailResponse
     public string? ComplaintText { get; set; }
     public DateTimeOffset? ComplaintAt { get; set; }
     public string? ComplaintByName { get; set; }
+    public bool IsArchived { get; set; }
     public List<RequestAttachmentResponse> Attachments { get; set; } = [];
 }
 
@@ -94,4 +96,12 @@ public sealed class FileComplaintRequest
 {
     public string Text { get; set; } = string.Empty;
     public bool Confirmed { get; set; }
+}
+
+/// <summary>Очередь «Сегодня»: входящие/исходящие, по которым ещё нужно действие.</summary>
+public sealed class TodayRequestsResponse
+{
+    public DateOnly Date { get; set; }
+    public List<ServiceRequestListItemResponse> Incoming { get; set; } = [];
+    public List<ServiceRequestListItemResponse> Outgoing { get; set; } = [];
 }

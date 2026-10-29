@@ -6,12 +6,12 @@ document.addEventListener('click', function (e) {
     }
 });
 
-// Клик по строке таблицы → data-href (как table-row-action в Ratchet).
+// Клик по строке/карточке → data-href (как table-row-action в Ratchet).
 document.addEventListener('click', function (e) {
     if (e.target.closest('a, button, input, label, select, textarea, .table-row-actions')) {
         return;
     }
-    var row = e.target.closest('tr.table-row-action[data-href]');
+    var row = e.target.closest('.table-row-action[data-href]');
     if (!row) {
         return;
     }
@@ -25,7 +25,7 @@ document.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' && e.key !== ' ') {
         return;
     }
-    var row = e.target.closest('tr.table-row-action[data-href]');
+    var row = e.target.closest('.table-row-action[data-href]');
     if (!row || e.target !== row) {
         return;
     }
@@ -38,25 +38,26 @@ document.addEventListener('keydown', function (e) {
 
 // Infinite scroll списков (как ratchetInfiniteScroll): догрузка кусков при появлении sentinel.
 (function () {
-    function bind(tbody) {
-        if (tbody.dataset.infiniteBound === '1') {
+    function bind(host) {
+        if (host.dataset.infiniteBound === '1') {
             return;
         }
 
-        var moreUrl = tbody.getAttribute('data-more-url');
+        var moreUrl = host.getAttribute('data-more-url');
         if (!moreUrl) {
             return;
         }
 
-        var skip = parseInt(tbody.getAttribute('data-skip') || '0', 10) || 0;
-        var hasMore = tbody.getAttribute('data-has-more') === 'true';
+        var skip = parseInt(host.getAttribute('data-skip') || '0', 10) || 0;
+        var hasMore = host.getAttribute('data-has-more') === 'true';
         var loading = false;
-        var wrap = tbody.closest('.crown-table-wrap');
-        var sentinel = wrap && wrap.nextElementSibling;
-        if (!sentinel || !sentinel.classList.contains('infinite-scroll-sentinel')) {
+        var isCards = host.classList.contains('schedule-mobile-cards');
+        var wrap = host.closest('.crown-table-wrap') || host;
+        var sentinel = document.querySelector('.infinite-scroll-sentinel');
+        if (!sentinel) {
             sentinel = document.createElement('div');
             sentinel.className = 'infinite-scroll-sentinel';
-            if (wrap && wrap.parentNode) {
+            if (wrap.parentNode) {
                 wrap.parentNode.insertBefore(sentinel, wrap.nextSibling);
             } else {
                 return;
@@ -64,19 +65,30 @@ document.addEventListener('keydown', function (e) {
         }
 
         function setSentinel() {
+            // На мобиле крутим карточки, на десктопе — tbody; sentinel общий.
+            var active = isCards
+                ? window.matchMedia('(max-width: 640px)').matches
+                : !window.matchMedia('(max-width: 640px)').matches;
+            if (!active) {
+                return;
+            }
+
             if (hasMore) {
                 sentinel.hidden = false;
                 sentinel.innerHTML = loading
                     ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="ms-2">Загрузка…</span>'
                     : '';
-            } else {
+            } else if (!document.querySelector('[data-infinite-scroll][data-has-more="true"]')) {
                 sentinel.hidden = true;
                 sentinel.innerHTML = '';
             }
         }
 
         async function loadMore() {
-            if (!hasMore || loading) {
+            var active = isCards
+                ? window.matchMedia('(max-width: 640px)').matches
+                : !window.matchMedia('(max-width: 640px)').matches;
+            if (!active || !hasMore || loading) {
                 return;
             }
 
@@ -97,13 +109,22 @@ document.addEventListener('keydown', function (e) {
                 var html = await res.text();
                 hasMore = (res.headers.get('X-Has-More') || '').toLowerCase() === 'true';
                 if (html && html.trim()) {
-                    var empty = tbody.querySelector('.crown-empty-row');
-                    if (empty) {
-                        empty.remove();
+                    if (isCards) {
+                        var empty = host.querySelector('p.text-muted');
+                        if (empty) {
+                            empty.remove();
+                        }
+                        host.insertAdjacentHTML('beforeend', html);
+                        skip = host.querySelectorAll('.schedule-card').length;
+                    } else {
+                        var emptyRow = host.querySelector('.crown-empty-row');
+                        if (emptyRow) {
+                            emptyRow.remove();
+                        }
+                        host.insertAdjacentHTML('beforeend', html);
+                        skip = host.querySelectorAll('tr:not(.crown-empty-row)').length;
                     }
-                    tbody.insertAdjacentHTML('beforeend', html);
-                    skip = tbody.querySelectorAll('tr:not(.crown-empty-row)').length;
-                    tbody.setAttribute('data-skip', String(skip));
+                    host.setAttribute('data-skip', String(skip));
                 } else {
                     hasMore = false;
                 }
@@ -112,12 +133,12 @@ document.addEventListener('keydown', function (e) {
                 hasMore = false;
             } finally {
                 loading = false;
-                tbody.setAttribute('data-has-more', hasMore ? 'true' : 'false');
+                host.setAttribute('data-has-more', hasMore ? 'true' : 'false');
                 setSentinel();
             }
         }
 
-        tbody.dataset.infiniteBound = '1';
+        host.dataset.infiniteBound = '1';
         setSentinel();
         if (!hasMore) {
             return;
@@ -134,7 +155,7 @@ document.addEventListener('keydown', function (e) {
     }
 
     function initAll() {
-        document.querySelectorAll('tbody[data-infinite-scroll]').forEach(bind);
+        document.querySelectorAll('[data-infinite-scroll]').forEach(bind);
     }
 
     if (document.readyState === 'loading') {

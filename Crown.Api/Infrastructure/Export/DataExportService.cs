@@ -33,12 +33,14 @@ public sealed class DataExportService
             .Select(x => new DataExportCatalogPartItem
             {
                 Id = x.Id,
+                OwnerUserId = x.OwnerUserId,
                 Name = x.Name,
                 Code = x.Code,
                 Category = x.Category,
                 DefaultUnitPrice = x.DefaultUnitPrice,
                 DefaultUnit = x.DefaultUnit,
                 Description = x.Description,
+                SlaHours = x.SlaHours,
                 IsActive = x.IsActive,
                 CreatedAtUtc = x.CreatedAtUtc
             })
@@ -135,7 +137,8 @@ public sealed class DataExportService
 
     private static string[] CatalogPartHeaders =>
     [
-        "id", "name", "code", "category", "default_unit_price", "default_unit", "description", "is_active", "created_at_utc"
+        "id", "owner_user_id", "name", "code", "category", "default_unit_price", "default_unit",
+        "description", "sla_hours", "is_active", "created_at_utc"
     ];
 
     private static string[] WarehousePartHeaders =>
@@ -146,9 +149,10 @@ public sealed class DataExportService
 
     private static string?[] MapCatalogPartRow(DataExportCatalogPartItem x) =>
     [
-        x.Id.ToString(), x.Name, x.Code, x.Category,
+        x.Id.ToString(), x.OwnerUserId.ToString(), x.Name, x.Code, x.Category,
         x.DefaultUnitPrice.ToString(CultureInfo.InvariantCulture), x.DefaultUnit,
-        x.Description, x.IsActive.ToString(), FormatUtc(x.CreatedAtUtc)
+        x.Description, x.SlaHours?.ToString(CultureInfo.InvariantCulture),
+        x.IsActive.ToString(), FormatUtc(x.CreatedAtUtc)
     ];
 
     private static string?[] MapWarehousePartRow(DataExportWarehousePartItem x) =>

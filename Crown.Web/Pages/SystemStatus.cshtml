@@ -3,102 +3,395 @@
 @{
     ViewData["Title"] = "Состояние системы";
     var s = Model.Status;
+    string FmtList(IReadOnlyList<string> values) => values.Count == 0 ? "—" : string.Join(", ", values);
+    string FmtBytes(long bytes) => UiHelpers.FormatBytes(bytes);
+    string FmtBackupSize(long? bytes) => bytes is null or <= 0 ? "—" : UiHelpers.FormatBytes(bytes.Value);
+    string FmtBackupStatus(string? status) => status switch
+    {
+        "success" => "Успех",
+        "error" => "Ошибка",
+        "running" => "Выполняется",
+        _ => status ?? "—"
+    };
+    string FmtSchedule(BackupStatus b)
+    {
+        if (!string.IsNullOrWhiteSpace(b.DailyAt))
+        {
+            var tz = string.IsNullOrWhiteSpace(b.TimeZoneId) ? (s?.AppTimeZoneId ?? "—") : b.TimeZoneId!;
+            return $"ежедневно в {b.DailyAt} ({tz}), хранение: {b.DailyRetentionDays} дн. / {b.WeeklyRetentionWeeks} нед.";
+        }
+
+        var sec = b.IntervalSeconds > 0 ? b.IntervalSeconds : 86400;
+        var interval = sec >= 86400 && sec % 86400 == 0 ? $"{sec / 86400} дн."
+            : sec >= 3600 && sec % 3600 == 0 ? $"{sec / 3600} ч."
+            : sec >= 60 && sec % 60 == 0 ? $"{sec / 60} мин."
+            : $"{sec} сек.";
+        return $"каждые {interval}, хранение: {b.DailyRetentionDays} дн. / {b.WeeklyRetentionWeeks} нед.";
+    }
 }
 
-<div class="crown-page-head">
-    <h1 class="section-title">Состояние системы</h1>
-    <a class="btn btn-outline-secondary" href="/system">Обновить</a>
-</div>
+<h1 class="section-title">Состояние системы</h1>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
     <div class="alert alert-danger">@Model.Error</div>
 }
-
-@if (s is not null)
+else if (s is null)
 {
-    <div class="crown-cards">
-        <section class="form-panel">
-            <h2 class="section-subtitle">Приложение</h2>
-            <dl class="crown-dl">
-                <dt>Версия API</dt><dd>@s.ApplicationVersion</dd>
-                <dt>Сервер</dt><dd>@s.MachineName</dd>
-                <dt>Адрес</dt><dd>@s.PublicHostname</dd>
-                <dt>Время сервера</dt><dd>@s.ServerLocalTime (@s.AppTimeZoneId)</dd>
-                <dt>Записей в журнале</dt><dd>@s.AuditLogEntryCount</dd>
-            </dl>
-        </section>
-
-        <section class="form-panel">
-            <h2 class="section-subtitle">База данных</h2>
-            <dl class="crown-dl">
-                <dt>Подключение</dt>
-                <dd><span class="crown-flag @(s.DatabaseHealthy ? "ok" : "bad")">@(s.DatabaseHealthy ? "OK" : "Недоступна")</span></dd>
-                <dt>Схема</dt>
-                <dd><span class="crown-flag @(s.DatabaseSchemaUpToDate ? "ok" : "bad")">@(s.DatabaseSchemaUpToDate ? "Актуальна" : $"Не применено миграций: {s.PendingMigrationCount}")</span></dd>
-                <dt>Последняя миграция</dt><dd>@s.LastAppliedMigration</dd>
-            </dl>
-        </section>
-
-        <section class="form-panel">
-            <h2 class="section-subtitle">Резервное копирование</h2>
-            <dl class="crown-dl">
-                <dt>Настроено</dt><dd>@(s.Backup.IsConfigured ? "Да" : "Нет")</dd>
-                <dt>Сегодня</dt>
-                <dd><span class="crown-flag @(s.Backup.BackupOkToday ? "ok" : "bad")">@(s.Backup.BackupOkToday ? "Есть копия" : "Копии нет")</span></dd>
-                <dt>Последний запуск</dt><dd>@s.Backup.LastRunUtc</dd>
-                <dt>Статус</dt><dd>@s.Backup.LastStatus @s.Backup.LastMessage</dd>
-                @if (s.Backup.LastBackupSizeBytes is { } size)
-                {
-                    <dt>Размер</dt><dd>@UiHelpers.FormatBytes(size)</dd>
-                }
-                @if (!string.IsNullOrEmpty(s.Backup.DailyAt))
-                {
-                    <dt>Ежедневно в</dt><dd>@s.Backup.DailyAt</dd>
-                }
-            </dl>
-            <form method="post" asp-page-handler="Backup">
-                <button type="submit" class="btn btn-primary" data-confirm="Создать резервную копию сейчас?"
-                        disabled="@s.Backup.IsRunning">Создать копию сейчас</button>
-            </form>
-        </section>
+    <p class="text-muted">Не удалось загрузить состояние системы.</p>
+}
+else
+{
+    <div class="backup-ok-banner @(s.Backup.BackupOkToday ? "is-ok" : "is-bad")">
+        @(s.Backup.BackupOkToday ? "Резервная копия за сегодня есть" : "Резервной копии за сегодня нет")
     </div>
 
-    @if (s.Health.Disks.Count > 0)
-    {
-        <section class="form-panel">
-            <h2 class="section-subtitle">Диски</h2>
-            <table class="table crown-table">
-                <thead><tr><th>Том</th><th>Точка монтирования</th><th class="num">Занято</th><th class="num">Свободно</th><th class="num">Всего</th></tr></thead>
-                <tbody>
-                @foreach (var d in s.Health.Disks)
-                {
-                    <tr>
-                        <td>@d.Name</td>
-                        <td>@d.Mount</td>
-                        <td class="num @(d.UsedPercent >= 90 ? "crown-shortage" : null)">@d.UsedPercent%</td>
-                        <td class="num nowrap">@UiHelpers.FormatBytes(d.FreeBytes)</td>
-                        <td class="num nowrap">@UiHelpers.FormatBytes(d.TotalBytes)</td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        </section>
-    }
+    <section class="entity-panel">
+        <dl class="entity-meta">
+            <div class="entity-meta-item">
+                <dt>Версия</dt>
+                <dd>@s.ApplicationVersion</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>База данных</dt>
+                <dd>@(s.DatabaseHealthy ? "OK" : "Недоступна")</dd>
+            </div>
+            @if (s.DatabaseHealthy)
+            {
+                <div class="entity-meta-item">
+                    <dt>Схема</dt>
+                    <dd>
+                        @(s.DatabaseSchemaUpToDate
+                            ? "Актуальна"
+                            : $"Не применено миграций: {s.PendingMigrationCount}")
+                        @if (!string.IsNullOrWhiteSpace(s.LastAppliedMigration))
+                        {
+                            <span class="text-muted"> (@s.LastAppliedMigration)</span>
+                        }
+                    </dd>
+                </div>
+            }
+            <div class="entity-meta-item">
+                <dt>Время сервера (UTC)</dt>
+                <dd>@s.ServerTimeUtc</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Часовой пояс</dt>
+                <dd>@s.AppTimeZoneId</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Локальное время</dt>
+                <dd>@s.ServerLocalTime</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Записей в журнале</dt>
+                <dd>@s.AuditLogEntryCount</dd>
+            </div>
+        </dl>
+    </section>
 
-    @if (s.Health.Containers.Count > 0)
-    {
-        <section class="form-panel">
-            <h2 class="section-subtitle">Контейнеры</h2>
-            <table class="table crown-table">
-                <thead><tr><th>Служба</th><th>Состояние</th><th>Статус</th><th>Health</th></tr></thead>
-                <tbody>
-                @foreach (var c in s.Health.Containers)
+    <section class="entity-panel mt-4">
+        <h2 class="section-title">Здоровье</h2>
+        <dl class="entity-meta">
+            <div class="entity-meta-item">
+                <dt>База данных</dt>
+                <dd>@(s.Health.DatabaseHealthy ? "OK" : "Недоступна")</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Схема</dt>
+                <dd>
+                    @(s.Health.DatabaseSchemaUpToDate
+                        ? "Актуальна"
+                        : $"Не применено миграций: {s.Health.PendingMigrationCount}")
+                </dd>
+            </div>
+            @if (s.Health.PendingMigrations.Count > 0)
+            {
+                <div class="entity-meta-item entity-meta-wide">
+                    <dt>Ожидающие миграции</dt>
+                    <dd><code>@string.Join(", ", s.Health.PendingMigrations)</code></dd>
+                </div>
+            }
+            <div class="entity-meta-item">
+                <dt>Бэкап</dt>
+                <dd>@(s.Health.BackupOkToday ? "OK сегодня" : "Нет за сегодня") · @(s.Health.BackupLastStatus ?? "—")</dd>
+            </div>
+        </dl>
+
+        <h3 class="section-title mt-3">Диски</h3>
+        @if (s.Health.Disks.Count == 0)
+        {
+            <p class="system-status-note">Нет данных о дисках.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                    <tr>
+                        <th>Точка монтирования</th>
+                        <th>Свободно</th>
+                        <th>Всего</th>
+                        <th>Занято</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var disk in s.Health.Disks)
+                    {
+                        <tr>
+                            <td><code>@disk.Mount</code></td>
+                            <td>@FmtBytes(disk.FreeBytes)</td>
+                            <td>@FmtBytes(disk.TotalBytes)</td>
+                            <td class="@(disk.UsedPercent >= 90 ? "crown-shortage" : null)">@disk.UsedPercent%</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h3 class="section-title mt-3">Контейнеры</h3>
+        @if (s.Health.Containers.Count == 0)
+        {
+            <p class="system-status-note">Нет данных о контейнерах (docker недоступен из API?).</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                    <tr>
+                        <th>Служба</th>
+                        <th>Состояние</th>
+                        <th>Статус</th>
+                        <th>Health</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var c in s.Health.Containers)
+                    {
+                        <tr>
+                            <td><code>@c.Name</code></td>
+                            <td>@c.State</td>
+                            <td>@c.Status</td>
+                            <td>@(c.Health ?? "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h3 class="section-title mt-3">Логи</h3>
+        <p class="system-status-note">Скачать хвост логов контейнера (~2 МБ).</p>
+        <div class="action-bar mb-2">
+            <form method="post" asp-page-handler="DownloadLogs" class="d-inline">
+                <input type="hidden" name="service" value="api" />
+                <button type="submit" class="btn btn-outline-secondary">api</button>
+            </form>
+            <form method="post" asp-page-handler="DownloadLogs" class="d-inline">
+                <input type="hidden" name="service" value="web" />
+                <button type="submit" class="btn btn-outline-secondary">web</button>
+            </form>
+            <form method="post" asp-page-handler="DownloadLogs" class="d-inline">
+                <input type="hidden" name="service" value="backup" />
+                <button type="submit" class="btn btn-outline-secondary">backup</button>
+            </form>
+        </div>
+
+        <h3 class="section-title mt-3">Сессии</h3>
+        <p class="system-status-note">Сброс всех сессий пользователей (всех выкинет из системы).</p>
+        <form method="post" asp-page-handler="ResetSessions" class="crown-entity-form">
+            <div class="list-filters mb-2">
+                <div class="filter-field filter-field-inline">
+                    <label class="form-label" for="sessions-confirm">Подтверждение</label>
+                    <input id="sessions-confirm" class="form-control" asp-for="SessionsConfirmation"
+                           placeholder="SESSIONS" autocomplete="off" />
+                </div>
+            </div>
+            <div class="action-bar mb-2">
+                <button class="btn btn-warning" type="submit">Сбросить все сессии</button>
+            </div>
+        </form>
+
+        <h3 class="section-title mt-3">Поддержка</h3>
+        <p class="system-status-note">Собрать диагностический отчёт для разработчика.</p>
+        <form method="post" asp-page-handler="Support" class="d-inline">
+            <div class="action-bar mb-2">
+                <button class="btn btn-outline-primary" type="submit">Собрать отчёт</button>
+                @if (!string.IsNullOrWhiteSpace(Model.SupportReportText))
                 {
-                    <tr><td>@c.Name</td><td>@c.State</td><td>@c.Status</td><td>@c.Health</td></tr>
+                    <a class="btn btn-outline-secondary"
+                       href="mailto:selt.miteg@gmail.com?subject=@Uri.EscapeDataString($"Crown diagnostic {s.ApplicationVersion}")">
+                        Открыть письмо
+                    </a>
                 }
-                </tbody>
-            </table>
-        </section>
-    }
+            </div>
+        </form>
+        @if (!string.IsNullOrWhiteSpace(Model.SupportReportText))
+        {
+            <label class="form-label" for="support-report">Отчёт</label>
+            <textarea id="support-report" class="form-control netplan-editor" style="min-height: 12rem;" readonly>@Model.SupportReportText</textarea>
+        }
+    </section>
+
+    <section class="entity-panel mt-4">
+        <h2 class="section-title">Сеть</h2>
+        <dl class="entity-meta">
+            <div class="entity-meta-item">
+                <dt>Hostname</dt>
+                <dd>@s.PublicHostname</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Машина</dt>
+                <dd>@s.MachineName</dd>
+            </div>
+            <div class="entity-meta-item entity-meta-wide">
+                <dt>LAN-адреса</dt>
+                <dd>@FmtList(s.AdvertiseAddresses)</dd>
+            </div>
+            <div class="entity-meta-item entity-meta-wide">
+                <dt>Адреса интерфейсов</dt>
+                <dd>@FmtList(s.InterfaceAddresses)</dd>
+            </div>
+        </dl>
+        <p class="system-status-note">Настройки netplan — через хост / отдельную страницу при необходимости.</p>
+    </section>
+
+    <section class="entity-panel mt-4">
+        <h2 class="section-title">Резервное копирование</h2>
+        <dl class="entity-meta">
+            <div class="entity-meta-item entity-meta-wide">
+                <dt>Расписание</dt>
+                <dd>@FmtSchedule(s.Backup)</dd>
+            </div>
+            @if (s.Backup.IsConfigured)
+            {
+                <div class="entity-meta-item">
+                    <dt>Последний запуск</dt>
+                    <dd>@(s.Backup.LastRunUtc ?? "—")</dd>
+                </div>
+                <div class="entity-meta-item">
+                    <dt>Статус</dt>
+                    <dd>@FmtBackupStatus(s.Backup.LastStatus)</dd>
+                </div>
+                <div class="entity-meta-item entity-meta-wide">
+                    <dt>Сообщение</dt>
+                    <dd>@(s.Backup.LastMessage ?? "—")</dd>
+                </div>
+                <div class="entity-meta-item">
+                    <dt>Размер</dt>
+                    <dd>@FmtBackupSize(s.Backup.LastBackupSizeBytes)</dd>
+                </div>
+                <div class="entity-meta-item">
+                    <dt>Restic</dt>
+                    <dd>@(s.Backup.ResticEnabled ? "Да" : "Нет")</dd>
+                </div>
+            }
+        </dl>
+        @if (!s.Backup.IsConfigured)
+        {
+            <p class="system-status-note">Автобэкап не настроен.</p>
+        }
+
+        @if (s.Backup.IsRunning)
+        {
+            <div class="mb-2">
+                <div class="d-flex justify-content-between mb-1">
+                    <span>Выполняется резервное копирование…</span>
+                    <span>@s.Backup.ProgressPercent%</span>
+                </div>
+                <div class="progress" role="progressbar">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         style="width: @(s.Backup.ProgressPercent is <= 0 or >= 100 ? 100 : s.Backup.ProgressPercent)%"></div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="action-bar system-status-backup-actions mb-2">
+                <form method="post" asp-page-handler="BackupDump" class="d-inline">
+                    <button class="btn btn-primary" type="submit" data-confirm="Создать dump-копию сейчас?">Создать dump</button>
+                </form>
+                @if (s.Backup.ResticEnabled)
+                {
+                    <form method="post" asp-page-handler="BackupRestic" class="d-inline">
+                        <button class="btn btn-outline-primary" type="submit" data-confirm="Запустить restic-бэкап?">Restic</button>
+                    </form>
+                }
+            </div>
+        }
+
+        <h3 class="section-title mt-3">Восстановление</h3>
+        <p class="system-status-note">Восстановление перезапишет текущую БД. Для подтверждения введите RESTORE.</p>
+
+        <form method="post" asp-page-handler="UploadBackup" enctype="multipart/form-data" class="crown-entity-form mb-2">
+            <div class="action-bar mb-2">
+                <label class="btn btn-outline-secondary mb-0">
+                    Загрузить файл
+                    <input type="file" name="BackupUpload" accept=".gz,.sql.gz" class="d-none" onchange="this.form.requestSubmit()" />
+                </label>
+            </div>
+        </form>
+
+        @if (s.AvailableBackups.Count == 0)
+        {
+            <p class="system-status-note">Файлов резервных копий нет.</p>
+        }
+        else
+        {
+            <form method="post" class="crown-entity-form">
+                <div class="list-filters mb-2">
+                    <div class="filter-field filter-field-inline filter-field-grow">
+                        <label class="form-label" for="backup-file">Файл</label>
+                        <select id="backup-file" class="form-select" asp-for="SelectedBackupPath">
+                            @foreach (var file in s.AvailableBackups)
+                            {
+                                <option value="@file.RelativePath">
+                                    @file.Folder / @file.FileName (@FmtBackupSize(file.SizeBytes))
+                                </option>
+                            }
+                        </select>
+                    </div>
+                    <div class="filter-field filter-field-inline">
+                        <label class="form-label" for="backup-confirm">Подтверждение</label>
+                        <input id="backup-confirm" class="form-control" asp-for="RestoreConfirmation"
+                               placeholder="RESTORE" autocomplete="off" />
+                    </div>
+                </div>
+                <div class="action-bar mb-2">
+                    <button class="btn btn-outline-secondary" type="submit" asp-page-handler="DownloadBackup">Скачать</button>
+                    <button class="btn btn-danger" type="submit" asp-page-handler="Restore"
+                            data-confirm="Восстановить базу из выбранного файла? Текущие данные будут заменены.">
+                        Восстановить
+                    </button>
+                </div>
+            </form>
+        }
+    </section>
+
+    <section class="entity-panel mt-4">
+        <h2 class="section-title">Питание / перезапуск</h2>
+        <p class="system-status-note">Подтверждение: RESTART (стек), REBOOT (хост), SHUTDOWN (хост).</p>
+        <form method="post" class="crown-entity-form">
+            <div class="list-filters mb-2">
+                <div class="filter-field filter-field-inline">
+                    <label class="form-label" for="power-confirm">Подтверждение</label>
+                    <input id="power-confirm" class="form-control" asp-for="PowerConfirmation"
+                           placeholder="RESTART / REBOOT / SHUTDOWN" autocomplete="off" />
+                </div>
+            </div>
+            <div class="action-bar mb-2">
+                <button type="submit" class="btn btn-outline-primary" name="action" value="restart" asp-page-handler="Power">
+                    Перезапуск стека
+                </button>
+                <button type="submit" class="btn btn-warning" name="action" value="reboot" asp-page-handler="Power">
+                    Перезагрузка хоста
+                </button>
+                <button type="submit" class="btn btn-danger" name="action" value="shutdown" asp-page-handler="Power">
+                    Выключение хоста
+                </button>
+            </div>
+        </form>
+    </section>
 }

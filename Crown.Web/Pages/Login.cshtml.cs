@@ -1,3 +1,4 @@
+using Crown.Web.Models;
 using Crown.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -45,7 +46,27 @@ public sealed class LoginModel(CrownApiClient api) : PageModel
         }
 
         // Set-Cookie от API уже скопирован в ответ браузеру внутри LoginAsync.
+        await SyncThemeCookieAsync();
         return LocalRedirect(SafeReturnUrl());
+    }
+
+    private async Task SyncThemeCookieAsync()
+    {
+        var settings = await api.GetAsync<SettingsResponse>("api/settings", HttpContext.RequestAborted);
+        var theme = settings.Ok && !string.IsNullOrWhiteSpace(settings.Data?.Theme)
+            ? settings.Data!.Theme
+            : "light";
+        Response.Cookies.Append(
+            SettingsModel.ThemeCookieName,
+            theme,
+            new CookieOptions
+            {
+                Path = "/",
+                HttpOnly = false,
+                IsEssential = true,
+                MaxAge = TimeSpan.FromDays(400),
+                SameSite = SameSiteMode.Lax
+            });
     }
 
     /// <summary>Защита от open redirect: только локальные пути.</summary>

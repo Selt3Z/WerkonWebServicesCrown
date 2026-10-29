@@ -55,6 +55,7 @@ public static class ApiErrors
             "Unsupported logo content type." => ApiErrorCodes.UnsupportedLogoContentType,
             "Logo data is required." => ApiErrorCodes.LogoDataRequired,
             "Invalid logo data." => ApiErrorCodes.InvalidLogoData,
+            "Logo data is not a valid PNG, JPEG, or WebP image." => ApiErrorCodes.InvalidLogoFormat,
             "Logo data is not a valid PNG, JPEG, or WEBP image." => ApiErrorCodes.InvalidLogoFormat,
             "Logo content type does not match the actual image format." => ApiErrorCodes.LogoContentTypeMismatch,
             _ when message.StartsWith("Logo size must be between", StringComparison.Ordinal) => ApiErrorCodes.InvalidLogoSize,

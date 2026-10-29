@@ -43,6 +43,65 @@
 .num { text-align: right; }
 .crown-req { color: #c53030; }
 
+/*
+ * Поля форм — как в фильтрах заявок (list-filters).
+ * Впредь: новые инпуты/селекты без отдельного «жирного» стиля;
+ * layout форм — filter-field / transport-form-grid где уместно.
+ */
+.form-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--r-text-muted, #6c757d);
+    margin-bottom: 0.2rem;
+}
+
+.form-control:not(textarea),
+.form-select {
+    padding: 0.26rem 0.55rem;
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    min-height: 1.8rem;
+}
+
+.form-select {
+    padding-right: 1.9rem;
+    background-position: right 0.4rem center;
+    background-size: 14px 10px;
+}
+
+textarea.form-control {
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    padding: 0.4rem 0.55rem;
+}
+
+/* Логин — прежний «крупный» стиль полей (не list-filters). */
+.login-layout .form-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    color: var(--r-text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.login-layout .form-control {
+    font-size: 0.9rem;
+    padding: 0.48rem 0.75rem;
+    line-height: 1.5;
+    min-height: calc(1.5em + 0.96rem + 2px);
+}
+
+a.history-user-link {
+    text-decoration: none;
+    padding: 0;
+    font-weight: 600;
+}
+a.history-user-link:hover {
+    text-decoration: underline;
+}
+
 .crown-page-head {
     display: flex;
     align-items: center;
@@ -53,6 +112,13 @@
 }
 
 .crown-page-head .section-title { margin: 0; }
+
+.crown-page-head-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
 
 .crown-search,
 .crown-filters {
@@ -98,22 +164,27 @@
     table-layout: fixed;
     width: 100%;
 }
-.crown-requests-table .col-num { width: 3.2rem; text-align: right; }
+.crown-requests-table .col-num { width: 4.5rem; text-align: right; }
 .crown-requests-table .col-status { width: 9.5rem; }
 .crown-requests-table .col-op { width: 2.8rem; text-align: center; }
 .crown-requests-table .col-init { width: 9rem; }
-.crown-requests-table .col-date { width: 7.2rem; }
+.crown-requests-table .col-date { width: 9.6rem; }
 .crown-requests-table .col-dept { width: 7.5rem; }
-.crown-requests-table .col-phone { width: 7.5rem; }
+.crown-requests-table .col-phone { width: 8.2rem; }
 .crown-requests-table .col-body { width: auto; }
 .crown-requests-table .col-init,
 .crown-requests-table .col-dept,
 .crown-requests-table .col-phone,
-.crown-requests-table .col-body,
-.crown-requests-table .col-date {
+.crown-requests-table .col-body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+/* Срок целиком — не режем дату/время. */
+.crown-requests-table .col-date {
+    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
 }
 .crown-requests-table .crown-id {
     color: var(--r-brand, #1d4ed8);
@@ -183,7 +254,17 @@
 .crown-id-cell {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.3rem;
+}
+
+/* Фикс. слот слева — номера в колонке не прыгают из‑за жалобы. */
+.crown-warn-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
 }
 
 /* Значок предупреждения как в Ratchet (жалоба). */
@@ -201,6 +282,52 @@
     line-height: 1;
     cursor: help;
     flex-shrink: 0;
+}
+
+.crown-brand-logo-preview {
+    max-width: 220px;
+    max-height: 72px;
+    object-fit: contain;
+    border: 1px solid var(--r-border, #dee2e6);
+    border-radius: var(--r-radius-sm, 4px);
+    padding: 0.35rem;
+    background: #fff;
+}
+
+/* Явно «не редактируется»: инициатор / владелец каталога. */
+.form-control-locked,
+.form-control[readonly].form-control-locked {
+    background-color: var(--r-surface-muted, #e9ecef);
+    color: var(--r-text-secondary, #495057);
+    cursor: default;
+    pointer-events: none;
+    opacity: 1;
+}
+
+.file-preview-image-wrap {
+    text-align: center;
+    padding: 0.5rem;
+    background: var(--r-surface-muted, #f1f3f5);
+    border: 1px solid var(--r-border, #dee2e6);
+    border-radius: 6px;
+}
+.file-preview-image {
+    max-width: 100%;
+    max-height: calc(100vh - 12rem);
+}
+.file-preview-text {
+    max-height: calc(100vh - 12rem);
+    overflow: auto;
+    padding: 1rem;
+    background: var(--r-surface, #fff);
+    border: 1px solid var(--r-border, #dee2e6);
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.88rem;
+}
+.file-preview-table td {
+    font-size: 0.82rem;
 }
 
 .crown-complaint-panel {

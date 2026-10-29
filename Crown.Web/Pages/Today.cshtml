@@ -1,0 +1,134 @@
+@page "/today"
+@model TodayModel
+@inject AppTime Time
+@{
+    ViewData["Title"] = "Сегодня";
+}
+
+<div class="dashboard-page">
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    else
+    {
+        <div class="schedule-split schedule-split-full">
+            <section class="schedule-panel schedule-panel-visits">
+                <h4 class="schedule-section-title">Входящие</h4>
+                <div class="schedule-scroll">
+                    @if (Model.Incoming.Count == 0)
+                    {
+                        <p class="schedule-empty">Входящих заявок нет.</p>
+                    }
+                    else
+                    {
+                        <div class="schedule-desktop-table">
+                            <table class="table crown-table crown-requests-table">
+                                <thead>
+                                <tr>
+                                    <th class="col-num">#</th>
+                                    <th class="col-status">Статус</th>
+                                    <th class="col-op" title="Ознакомление">Ознак.</th>
+                                    <th class="col-init">Инициатор</th>
+                                    <th class="col-date">Срок</th>
+                                    <th class="col-phone">Тел.</th>
+                                    <th class="col-body">Заявка</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var r in Model.Incoming)
+                                {
+                                    <tr class="table-row-action" data-href="/requests/@r.Id" tabindex="0" role="link"
+                                        aria-label="Заявка № @r.Id">
+                                        <td class="col-num">
+                                            <span class="crown-id-cell">
+                                                <span class="crown-warn-slot">
+                                                    @if (r.HasComplaint)
+                                                    {
+                                                        <span class="crown-warn-badge" title="Жалоба" aria-label="Жалоба">!</span>
+                                                    }
+                                                </span>
+                                                <span class="crown-id">@r.Id</span>
+                                            </span>
+                                        </td>
+                                        <td class="crown-status-cell">
+                                            <span class="crown-status-pill @UiHelpers.StatusClass(r.Status)">@r.StatusLabel</span>
+                                        </td>
+                                        <td class="col-op">
+                                            <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
+                                                  title="@(r.Acknowledged ? "Ознакомлен" : "Не ознакомлен")"></span>
+                                        </td>
+                                        <td class="col-init">@r.InitiatorName</td>
+                                        <td class="col-date">@Time.Format(r.DueAt)</td>
+                                        <td class="col-phone">@UiHelpers.FormatPhone(r.Phone)</td>
+                                        <td class="col-body">@r.BodyPreview</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="schedule-mobile-cards">
+                            <partial name="_RequestCards" model="Model.Incoming" />
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="schedule-panel schedule-panel-reminders">
+                <h4 class="schedule-section-title">Исходящие</h4>
+                <div class="schedule-scroll">
+                    @if (Model.Outgoing.Count == 0)
+                    {
+                        <p class="schedule-empty">Исходящих заявок нет.</p>
+                    }
+                    else
+                    {
+                        <div class="schedule-desktop-table">
+                            <table class="table crown-table crown-requests-table">
+                                <thead>
+                                <tr>
+                                    <th class="col-num">#</th>
+                                    <th class="col-status">Статус</th>
+                                    <th class="col-dept">Исполнитель</th>
+                                    <th class="col-date">Срок</th>
+                                    <th class="col-phone">Тел.</th>
+                                    <th class="col-body">Заявка</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var r in Model.Outgoing)
+                                {
+                                    <tr class="table-row-action" data-href="/requests/@r.Id" tabindex="0" role="link"
+                                        aria-label="Заявка № @r.Id">
+                                        <td class="col-num">
+                                            <span class="crown-id-cell">
+                                                <span class="crown-warn-slot">
+                                                    @if (r.HasComplaint)
+                                                    {
+                                                        <span class="crown-warn-badge" title="Жалоба" aria-label="Жалоба">!</span>
+                                                    }
+                                                </span>
+                                                <span class="crown-id">@r.Id</span>
+                                            </span>
+                                        </td>
+                                        <td class="crown-status-cell">
+                                            <span class="crown-status-pill @UiHelpers.StatusClass(r.Status)">@r.StatusLabel</span>
+                                        </td>
+                                        <td class="col-dept">@r.ExecutorName</td>
+                                        <td class="col-date">@Time.Format(r.DueAt)</td>
+                                        <td class="col-phone">@UiHelpers.FormatPhone(r.Phone)</td>
+                                        <td class="col-body">@r.BodyPreview</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="schedule-mobile-cards">
+                            <partial name="_RequestCards" model="Model.Outgoing" />
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+    }
+}

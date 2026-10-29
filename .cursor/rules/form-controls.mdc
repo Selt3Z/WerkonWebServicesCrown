@@ -1,0 +1,17 @@
+---
+description: Form inputs/selects match list-filters (Requests) style
+globs: Crown.Web/**/*.{cshtml,css}
+alwaysApply: true
+---
+
+# Form controls style (Crown)
+
+All inputs and selects must match the Requests page `list-filters` look:
+
+- Compact: `padding: 0.26rem 0.55rem`, `font-size: 0.8125rem`, `min-height: 1.8rem` (already global in `wwwroot/css/crown.css`).
+- Labels: uppercase muted `.form-label` (same file).
+- Prefer Bootstrap `form-control` / `form-select` — do not invent taller “card form” inputs.
+- Filter bars: `list-filters` + `filter-field` / `filter-field-inline`.
+- Entity forms: `transport-form-grid` or simple `mb-2` stacks; no oversized chrome around fields.
+- Exception: login page (`.login-layout`) keeps the larger pre-filter field style — do not compact it.
+---

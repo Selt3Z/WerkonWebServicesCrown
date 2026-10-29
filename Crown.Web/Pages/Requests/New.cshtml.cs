@@ -27,6 +27,9 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         public string? DueAt { get; set; }
         public Guid? InitiatorUserId { get; set; }
         public Guid? ExecutorUserId { get; set; }
+        /// <summary>manual | catalog</summary>
+        public string BodyMode { get; set; } = "manual";
+        public Guid? CatalogPartId { get; set; }
         public string? Body { get; set; }
     }
 
@@ -35,6 +38,44 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         CurrentUserDisplayName = ResolveDisplayName();
         Input.DueAt = time.ToInput(time.Now.AddDays(1));
         return await LoadLookupsAsync() ?? Page();
+    }
+
+    /// <summary>Активные услуги каталога исполнителя — для второго выпадающего списка.</summary>
+    public async Task<IActionResult> OnGetServicesJsonAsync(Guid ownerUserId)
+    {
+        if (ownerUserId == Guid.Empty)
+        {
+            return new JsonResult(Array.Empty<object>());
+        }
+
+        var url = UiHelpers.BuildUrl(
+            "api/catalog-parts",
+            ("ownerUserId", ownerUserId.ToString()),
+            ("activeFilter", "active"),
+            ("skip", "0"),
+            ("take", "500"));
+
+        var result = await api.GetAsync<PagedResponse<CatalogPart>>(url, HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            return new JsonResult(Array.Empty<object>()) { StatusCode = 400 };
+        }
+
+        var payload = result.Data.Items.Select(x => new
+        {
+            id = x.Id,
+            name = x.Name,
+            code = x.Code,
+            description = x.Description,
+            slaHours = x.SlaHours
+        });
+
+        return new JsonResult(payload);
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -68,6 +109,50 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         {
             Error = "Выберите исполнителя.";
             return Page();
+        }
+
+        var fromCatalog = string.Equals(Input.BodyMode, "catalog", StringComparison.OrdinalIgnoreCase);
+        if (fromCatalog)
+        {
+            if (Input.CatalogPartId is null || Input.CatalogPartId == Guid.Empty)
+            {
+                Error = "Выберите услугу из каталога исполнителя.";
+                return Page();
+            }
+
+            var part = await api.GetAsync<CatalogPart>(
+                $"api/catalog-parts/{Input.CatalogPartId}",
+                HttpContext.RequestAborted);
+            if (part.IsUnauthorized)
+            {
+                return Challenge();
+            }
+
+            if (!part.Ok || part.Data is null)
+            {
+                Error = part.Error ?? "Услуга не найдена.";
+                return Page();
+            }
+
+            if (part.Data.OwnerUserId != Input.ExecutorUserId.Value)
+            {
+                Error = "Услуга не из каталога выбранного исполнителя.";
+                return Page();
+            }
+
+            if (!part.Data.IsActive)
+            {
+                Error = "Услуга неактивна.";
+                return Page();
+            }
+
+            // Если клиент не успел подставить текст — собираем с сервера.
+            if (string.IsNullOrWhiteSpace(Input.Body))
+            {
+                Input.Body = string.IsNullOrWhiteSpace(part.Data.Description)
+                    ? part.Data.Name
+                    : $"{part.Data.Name}\n{part.Data.Description}";
+            }
         }
 
         if (string.IsNullOrWhiteSpace(Input.Body))

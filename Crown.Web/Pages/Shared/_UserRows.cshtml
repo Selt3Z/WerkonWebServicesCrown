@@ -2,6 +2,7 @@
 @inject AppTime Time
 @foreach (var u in Model)
 {
+    var isProtectedAdmin = string.Equals(u.UserName, "admin", StringComparison.OrdinalIgnoreCase);
     <tr class="table-row-action @(u.IsActive ? null : "users-row-inactive")"
         data-href="/users/edit/@u.Id"
         tabindex="0"
@@ -16,5 +17,21 @@
             </span>
         </td>
         <td class="nowrap">@Time.FormatUtc(u.LastActivityAtUtc)</td>
+        <td class="text-end text-nowrap table-row-actions">
+            @if (!isProtectedAdmin)
+            {
+                <button type="button"
+                        class="btn-icon-delete"
+                        title="Удалить"
+                        aria-label="Удалить @u.UserName"
+                        data-user-delete
+                        data-user-id="@u.Id"
+                        data-user-name="@u.UserName">
+                    <svg class="btn-icon-delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                </button>
+            }
+        </td>
     </tr>
 }

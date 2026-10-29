@@ -1,0 +1,265 @@
+@page "/transport/vehicles/{id:guid}"
+@model TransportVehicleModel
+@inject AppTime Time
+@{
+    ViewData["Title"] = Model.Detail is null
+        ? "Карточка автомобиля"
+        : $"Карточка · {Model.Detail.Vehicle.PlateNumber}";
+    var v = Model.Detail?.Vehicle;
+}
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (v is null)
+{
+    <a class="btn btn-outline-secondary btn-sm" href="/transport">← К списку</a>
+    <p class="text-muted mt-3">Машина не найдена.</p>
+}
+else
+{
+    <h1 class="section-title">Карточка автомобиля</h1>
+
+    <div class="detail-page">
+        <div class="entity-panel">
+            <div class="entity-header">
+                <div class="entity-header-leading">
+                    <h2 class="section-title">@v.PlateNumber</h2>
+                    @if (v.IsInRepair)
+                    {
+                        <span class="transport-avail transport-avail-repair">в ремонте</span>
+                    }
+                    else if (v.Availability == "free")
+                    {
+                        <span class="transport-avail transport-avail-free">свободна</span>
+                    }
+                    else if (v.Availability == "reserved")
+                    {
+                        <span class="transport-avail transport-avail-reserved">бронь</span>
+                    }
+                    else
+                    {
+                        <span class="transport-avail transport-avail-out">в работе</span>
+                    }
+                    <div class="entity-header-actions">
+                        @if (Model.CanManageFleet)
+                        {
+                            <form method="post" asp-page-handler="Delete" class="crown-op-form">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                        data-confirm="Удалить машину @v.PlateNumber безвозвратно?">Удалить</button>
+                            </form>
+                        }
+                        <a class="btn btn-sm btn-outline-secondary" href="/transport">← К списку</a>
+                    </div>
+                </div>
+            </div>
+
+            <dl class="entity-meta">
+                <div class="entity-meta-item"><dt>Госномер</dt><dd>@v.PlateNumber</dd></div>
+                <div class="entity-meta-item"><dt>Название</dt><dd>@v.Name</dd></div>
+                <div class="entity-meta-item"><dt>Тип</dt><dd>@(v.VehicleType ?? "—")</dd></div>
+                <div class="entity-meta-item"><dt>VIN</dt><dd>@(v.Vin ?? "—")</dd></div>
+                <div class="entity-meta-item"><dt>Стоянка</dt><dd>@(v.CurrentParkingName ?? "—")</dd></div>
+                <div class="entity-meta-item"><dt>Ремонт</dt><dd>@(v.IsInRepair ? "Да" : "Нет")</dd></div>
+                @if (v.ActiveBorrowerName is not null)
+                {
+                    <div class="entity-meta-item"><dt>Сейчас у</dt><dd>@v.ActiveBorrowerName</dd></div>
+                }
+            </dl>
+
+            @if (Model.CanManageFleet)
+            {
+                <div class="visit-actions-primary">
+                    <a class="btn btn-primary" href="/transport/vehicles/@v.Id/edit">Редактировать</a>
+                </div>
+            }
+        </div>
+
+        <section class="page-section">
+            <h3 class="section-title">История заправок</h3>
+            <p class="text-muted">Всего: @Model.Detail!.TotalLiters.ToString("0.##") л · @Model.Detail.TotalCost.ToString("0.##") ₽</p>
+
+            <form method="post" asp-page-handler="AddRefuel" class="transport-form crown-entity-form mb-3">
+                <div class="transport-form-grid">
+                    <div class="mb-2">
+                        <label class="form-label" for="refuel-at">Когда</label>
+                        <input id="refuel-at" class="form-control" type="datetime-local" name="refueledAtLocal" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="refuel-type">Тип топлива</label>
+                        <input id="refuel-type" class="form-control" name="fuelType" list="fuel-types" required maxlength="40"
+                               placeholder="АИ-95, ДТ…" />
+                        <datalist id="fuel-types">
+                            <option value="АИ-92"></option>
+                            <option value="АИ-95"></option>
+                            <option value="АИ-98"></option>
+                            <option value="ДТ"></option>
+                            <option value="Газ"></option>
+                        </datalist>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="refuel-liters">Литры</label>
+                        <input id="refuel-liters" class="form-control" type="number" name="liters" min="0.01" step="0.01" required />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="refuel-price">Цена за литр</label>
+                        <input id="refuel-price" class="form-control" type="number" name="pricePerLiter" min="0" step="0.01" required />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="refuel-cost">Стоимость</label>
+                        <input id="refuel-cost" class="form-control form-control-locked" type="number" step="0.01" readonly tabindex="-1" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="refuel-note">Комментарий</label>
+                        <input id="refuel-note" class="form-control" name="note" maxlength="500" />
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Добавить заправку</button>
+            </form>
+            <script>
+            (function () {
+              var liters = document.getElementById('refuel-liters');
+              var price = document.getElementById('refuel-price');
+              var cost = document.getElementById('refuel-cost');
+              function syncCost() {
+                if (!liters || !price || !cost) return;
+                var l = parseFloat(liters.value);
+                var p = parseFloat(price.value);
+                if (!isFinite(l) || !isFinite(p)) { cost.value = ''; return; }
+                cost.value = (Math.round(l * p * 100) / 100).toFixed(2);
+              }
+              liters?.addEventListener('input', syncCost);
+              price?.addEventListener('input', syncCost);
+              syncCost();
+            })();
+            </script>
+
+            @if (Model.Detail.Refuels.Count == 0)
+            {
+                <p class="text-muted mb-0">Заправок пока нет.</p>
+            }
+            else
+            {
+                <div class="crown-table-wrap schedule-desktop-table">
+                    <table class="table crown-table">
+                        <thead>
+                        <tr>
+                            <th>Когда</th>
+                            <th>Тип</th>
+                            <th class="num">Литры</th>
+                            <th class="num">₽/л</th>
+                            <th class="num">Сумма</th>
+                            <th>Комментарий</th>
+                            @if (Model.CanManageFleet)
+                            {
+                                <th></th>
+                            }
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var r in Model.Detail.Refuels)
+                        {
+                            <tr>
+                                <td class="nowrap">@Time.Format(r.RefueledAt)</td>
+                                <td>@r.FuelType</td>
+                                <td class="num">@r.Liters.ToString("0.##")</td>
+                                <td class="num">@r.PricePerLiter.ToString("0.##")</td>
+                                <td class="num">@r.Cost.ToString("0.##")</td>
+                                <td>@(r.Note ?? "—")</td>
+                                @if (Model.CanManageFleet)
+                                {
+                                    <td>
+                                        <form method="post" asp-page-handler="DeleteRefuel" class="crown-op-form">
+                                            <input type="hidden" name="refuelId" value="@r.Id" />
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                                    data-confirm="Удалить заправку @r.Liters.ToString("0.##") л?">Удалить</button>
+                                        </form>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="page-section">
+            <h3 class="section-title">История выдач / броней</h3>
+            @if (Model.Detail.Trips.Count == 0)
+            {
+                <p class="text-muted mb-0">Пока пусто.</p>
+            }
+            else
+            {
+                <div class="crown-table-wrap schedule-desktop-table">
+                    <table class="table crown-table">
+                        <thead>
+                        <tr>
+                            <th>Статус</th>
+                            <th>Кто</th>
+                            <th>С</th>
+                            <th>По</th>
+                            <th>Часы</th>
+                            <th>Опоздание</th>
+                            <th>Стоянка</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var t in Model.Detail.Trips)
+                        {
+                            <tr>
+                                <td>@t.StatusLabel</td>
+                                <td>@t.BorrowerName</td>
+                                <td class="nowrap">@Time.Format(t.ActualStartAt ?? t.PlannedStartAt)</td>
+                                <td class="nowrap">@Time.Format(t.ActualEndAt ?? t.PlannedEndAt)</td>
+                                <td>@(t.UsedHours?.ToString("0.##") ?? "—")</td>
+                                <td>@(t.LateMinutes is > 0 ? $"{t.LateMinutes} мин" : "—")</td>
+                                <td>@(t.ReturnParkingName ?? "—")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="page-section">
+            <h3 class="section-title">История ремонтов</h3>
+            @if (Model.Detail.Repairs.Count == 0)
+            {
+                <p class="text-muted mb-0">Пока пусто.</p>
+            }
+            else
+            {
+                <div class="crown-table-wrap schedule-desktop-table">
+                    <table class="table crown-table">
+                        <thead>
+                        <tr>
+                            <th>Статус</th>
+                            <th>С</th>
+                            <th>По</th>
+                            <th>Часы</th>
+                            <th>Комментарий</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var r in Model.Detail.Repairs)
+                        {
+                            <tr>
+                                <td>@(r.IsOpen ? "в ремонте" : "завершён")</td>
+                                <td class="nowrap">@Time.Format(r.StartedAt)</td>
+                                <td class="nowrap">@(r.EndedAt is { } end ? Time.Format(end) : "—")</td>
+                                <td>@(r.DurationHours?.ToString("0.##") ?? "—")</td>
+                                <td>@(r.Note ?? "—")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+}

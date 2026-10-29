@@ -1,80 +1,159 @@
 @page "/catalog-parts"
 @model CatalogPartsModel
 @{
-    ViewData["Title"] = "Каталог";
+    ViewData["Title"] = "Каталог услуг";
+    var addHref = Model.IsStaff && Model.OwnerUserId is Guid oid
+        ? $"/catalog-parts/edit?ownerUserId={oid}"
+        : "/catalog-parts/edit";
+    var resetHref = Model.IsStaff && Model.OwnerUserId is Guid ro
+        ? $"/catalog-parts?ownerUserId={ro}"
+        : "/catalog-parts";
 }
 
 <div class="crown-page-head">
-    <h1 class="section-title">Каталог</h1>
-    <a class="btn btn-success" href="/catalog-parts/edit">Добавить</a>
+    <h1 class="section-title">Каталог услуг</h1>
+    @if (Model.CanEdit)
+    {
+        <a class="btn btn-success" href="@addHref">Добавить услугу</a>
+    }
 </div>
 
-<form method="get" class="list-filters clients-filters mb-3">
-    <div class="filter-field filter-field-inline filter-field-search">
-        <label class="form-label" for="cat-q">Поиск</label>
-        <input id="cat-q" class="form-control" type="search" name="q" value="@Model.Q" placeholder="Название или код" />
-    </div>
-    <div class="filter-field filter-field-inline">
-        <label class="form-label" for="cat-category">Категория</label>
-        <select id="cat-category" class="form-select" name="category">
-            <option value="">Все</option>
-            @foreach (var c in Model.Categories)
-            {
-                <option value="@c" selected="@(c == Model.Category)">@c</option>
-            }
-        </select>
-    </div>
-    <div class="filter-field filter-field-inline">
-        <label class="form-label" for="cat-state">Статус</label>
-        <select id="cat-state" class="form-select" name="state">
-            <option value="" selected="@string.IsNullOrEmpty(Model.State)">Все</option>
-            <option value="active" selected="@(Model.State == "active")">Активные</option>
-            <option value="inactive" selected="@(Model.State == "inactive")">Неактивные</option>
-        </select>
-    </div>
-</form>
-
-<div class="action-bar mb-3">
-    <button class="btn btn-primary" type="submit" form="" id="btn-cat-filters">Найти</button>
-    <a class="btn btn-secondary" href="/catalog-parts">Сбросить</a>
-</div>
-<script>
-document.getElementById('btn-cat-filters')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  document.querySelector('form.list-filters')?.requestSubmit();
-});
-</script>
-
-@if (!string.IsNullOrEmpty(Model.Error))
+@if (Model.IsStaff)
 {
-    <div class="alert alert-danger">@Model.Error</div>
+    <form method="get" class="list-filters summary-user-picker mb-3">
+        <div class="filter-field filter-field-inline filter-field-grow">
+            <label class="form-label" for="cat-owner">Подразделение (каталог)</label>
+            <select id="cat-owner" class="form-select" name="ownerUserId" onchange="this.form.requestSubmit()">
+                <option value="">— выберите инициатора —</option>
+                @foreach (var u in Model.Owners)
+                {
+                    if (Model.OwnerUserId == u.Id)
+                    {
+                        <option value="@u.Id" selected>@u.DisplayName (@u.UserName)</option>
+                    }
+                    else
+                    {
+                        <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
+                    }
+                }
+            </select>
+        </div>
+        <input type="hidden" name="q" value="@Model.Q" />
+        <input type="hidden" name="category" value="@Model.Category" />
+        <input type="hidden" name="state" value="@Model.State" />
+    </form>
 }
 
-<div class="crown-table-wrap">
-    <table class="table crown-table">
-        <thead>
-        <tr>
-            <th>Код</th>
-            <th>Название</th>
-            <th>Категория</th>
-            <th>Ед.</th>
-            <th class="num">Цена</th>
-            <th>Статус</th>
-        </tr>
-        </thead>
-        <tbody data-infinite-scroll
-               data-more-url="@UiHelpers.BuildUrl("/catalog-parts", ("handler", "More"), ("q", Model.Q), ("category", Model.Category), ("state", Model.State))"
-               data-skip="@Model.Items.Count"
-               data-has-more="@(Model.HasMore ? "true" : "false")">
-        @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+@if (Model.IsStaff && Model.OwnerUserId is null)
+{
+    <p class="text-muted">Выберите подразделение, чтобы посмотреть и править его каталог услуг. Своего каталога у администратора и диспетчера нет.</p>
+}
+else
+{
+    <form method="get" class="list-filters clients-filters mb-3">
+        @if (Model.IsStaff && Model.OwnerUserId is Guid keepOwner)
         {
-            <tr class="crown-empty-row"><td colspan="6" class="text-muted text-center">Позиций нет.</td></tr>
+            <input type="hidden" name="ownerUserId" value="@keepOwner" />
         }
-        else
-        {
-            <partial name="_CatalogPartRows" model="Model.Items" />
-        }
-        </tbody>
-    </table>
-</div>
-<div class="infinite-scroll-sentinel" hidden></div>
+        <div class="filter-field filter-field-inline filter-field-search">
+            <label class="form-label" for="cat-q">Поиск</label>
+            <input id="cat-q" class="form-control" type="search" name="q" value="@Model.Q" placeholder="Название или код" />
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="cat-category">Категория</label>
+            <select id="cat-category" class="form-select" name="category">
+                <option value="">Все</option>
+                @foreach (var c in Model.Categories)
+                {
+                    if (c == Model.Category)
+                    {
+                        <option value="@c" selected>@c</option>
+                    }
+                    else
+                    {
+                        <option value="@c">@c</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="cat-state">Статус</label>
+            <select id="cat-state" class="form-select" name="state">
+                @if (string.IsNullOrEmpty(Model.State))
+                {
+                    <option value="" selected>Все</option>
+                }
+                else
+                {
+                    <option value="">Все</option>
+                }
+                @if (Model.State == "active")
+                {
+                    <option value="active" selected>Активные</option>
+                }
+                else
+                {
+                    <option value="active">Активные</option>
+                }
+                @if (Model.State == "inactive")
+                {
+                    <option value="inactive" selected>Неактивные</option>
+                }
+                else
+                {
+                    <option value="inactive">Неактивные</option>
+                }
+            </select>
+        </div>
+    </form>
+
+    <div class="action-bar mb-3">
+        <button class="btn btn-primary" type="button" id="btn-cat-filters">Найти</button>
+        <a class="btn btn-secondary" href="@resetHref">Сбросить</a>
+    </div>
+    <script>
+    document.getElementById('btn-cat-filters')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelector('form.list-filters.clients-filters')?.requestSubmit();
+    });
+    </script>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+
+    <div class="crown-table-wrap schedule-desktop-table">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>Код</th>
+                <th>Название</th>
+                <th>Категория</th>
+                <th>Ед.</th>
+                <th>SLA, ч</th>
+                <th>Статус</th>
+            </tr>
+            </thead>
+            <tbody data-infinite-scroll
+                   data-more-url="@UiHelpers.BuildUrl("/catalog-parts",
+                       ("handler", "More"),
+                       ("q", Model.Q),
+                       ("category", Model.Category),
+                       ("state", Model.State),
+                       ("ownerUserId", Model.IsStaff ? Model.OwnerUserId?.ToString() : null))"
+                   data-skip="@Model.Items.Count"
+                   data-has-more="@(Model.HasMore ? "true" : "false")">
+            @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+            {
+                <tr class="crown-empty-row"><td colspan="6" class="text-muted text-center">Услуг нет.</td></tr>
+            }
+            else
+            {
+                <partial name="_CatalogPartRows" model="Model.Items" />
+            }
+            </tbody>
+        </table>
+    </div>
+    <div class="infinite-scroll-sentinel" hidden></div>
+}

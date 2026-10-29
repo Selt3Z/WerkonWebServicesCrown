@@ -11,79 +11,178 @@
     <div class="alert alert-danger">@Model.Error</div>
 }
 
-<form method="post" asp-page-handler="TimeZone" class="form-panel crown-form">
-    <h2 class="section-subtitle">Часовой пояс</h2>
-    <div class="mb-3">
-        <select class="form-select" id="timeZoneId" name="timeZoneId" required aria-label="Часовой пояс">
-            @foreach (var tz in Model.AvailableTimeZones)
-            {
-                <option value="@tz.Id" selected="@(string.Equals(tz.Id, Model.Input.TimeZoneId, StringComparison.OrdinalIgnoreCase))">
-                    @TimeZoneDisplayHelper.FormatLabel(tz)
-                </option>
-            }
-        </select>
-        <div class="form-text">Используется для отображения дат и сроков в заявках.</div>
+<form method="post" enctype="multipart/form-data" class="settings-form settings-form-split">
+    <div class="settings-form-columns">
+        <section class="settings-form-panel">
+            <div class="settings-field">
+                <label class="form-label" asp-for="Input.TimeZoneId">Часовой пояс</label>
+                <select class="form-select" name="Input.TimeZoneId" required>
+                    @foreach (var tz in Model.AvailableTimeZones)
+                    {
+                        if (string.Equals(tz.Id, Model.Input.TimeZoneId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <option value="@tz.Id" selected>@TimeZoneDisplayHelper.FormatLabel(tz)</option>
+                        }
+                        else
+                        {
+                            <option value="@tz.Id">@TimeZoneDisplayHelper.FormatLabel(tz)</option>
+                        }
+                    }
+                </select>
+                <div class="form-text">Используется для отображения дат и сроков в заявках.</div>
+            </div>
+
+            <div class="settings-field">
+                <label class="form-label" asp-for="Input.Theme">Тема оформления</label>
+                <select class="form-select" asp-for="Input.Theme">
+                    <option value="light">Светлая</option>
+                    <option value="dark">Тёмная</option>
+                    <option value="gray">Серая</option>
+                    <option value="gray-retro">Серая ретро</option>
+                    <option value="pink">Розовая</option>
+                    <option value="green">Зелёная</option>
+                    <option value="green-dark">Зелёная тёмная</option>
+                </select>
+                <div class="form-text">Тема применяется ко всему интерфейсу.</div>
+            </div>
+
+            <div class="settings-field settings-field-check">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" asp-for="Input.HideArchivedByDefault" id="hideArchivedByDefault" />
+                    <label class="form-check-label" for="hideArchivedByDefault" asp-for="Input.HideArchivedByDefault">Скрывать архивные записи по умолчанию</label>
+                </div>
+                <div class="form-text">В списках архив скрыт, пока не включат «Показать архивные».</div>
+            </div>
+
+            <div class="settings-field settings-field-check">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" asp-for="Input.WarehouseEnabled" id="warehouseEnabled" />
+                    <label class="form-check-label" for="warehouseEnabled" asp-for="Input.WarehouseEnabled">Складской учёт включён</label>
+                </div>
+                <div class="form-text">Показывает склад в меню. Каталог услуг доступен всем ролям.</div>
+            </div>
+        </section>
+
+        <section class="settings-form-panel">
+            <div class="settings-field settings-field-inline-pair">
+                <div class="settings-field">
+                    <label class="form-label" asp-for="Input.AuditRetentionDays">Хранить журнал, дней</label>
+                    <input class="form-control" type="number" min="7" max="3650" asp-for="Input.AuditRetentionDays" />
+                    <div class="form-text">Старые записи журнала удаляются автоматически.</div>
+                </div>
+                <div class="settings-field">
+                    <label class="form-label" asp-for="Input.ListPageSize">Размер страницы в списках</label>
+                    <input class="form-control" type="number" min="10" max="200" asp-for="Input.ListPageSize" />
+                    <div class="form-text">Сколько строк подгружать за раз.</div>
+                </div>
+            </div>
+
+            <div class="settings-field settings-field-check">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" asp-for="Input.DispatcherCanHardDelete" id="dispatcherCanHardDelete" />
+                    <label class="form-check-label" for="dispatcherCanHardDelete" asp-for="Input.DispatcherCanHardDelete">Диспетчер может удалять записи безвозвратно</label>
+                </div>
+                <div class="form-text">Без галочки hard-delete только у администратора.</div>
+            </div>
+
+            <div class="settings-field" id="brand-logo-field">
+                <label class="form-label">Логотип</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="Input.BrandLogoMode" id="logo-standard"
+                           value="standard" @(Model.Input.BrandLogoMode != "custom" ? "checked" : null) />
+                    <label class="form-check-label" for="logo-standard">Стандартный логотип</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="Input.BrandLogoMode" id="logo-custom"
+                           value="custom" @(Model.Input.BrandLogoMode == "custom" ? "checked" : null) />
+                    <label class="form-check-label" for="logo-custom">Свой логотип</label>
+                </div>
+
+                <div id="custom-logo-wrap" class="mt-2" @(Model.Input.BrandLogoMode == "custom" ? null : "hidden")>
+                    <input type="hidden" name="Input.HasCustomLogo" value="@(Model.Input.HasCustomLogo ? "true" : "false")" />
+                    <label class="btn btn-outline-primary mb-0" for="logo-file">Загрузить логотип</label>
+                    <input class="d-none" type="file" id="logo-file" name="LogoFile"
+                           accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" />
+                    <span id="logo-file-name" class="form-text ms-2"></span>
+                    @if (Model.Input.HasCustomLogo && !string.IsNullOrWhiteSpace(Model.Input.LogoDataUrl))
+                    {
+                        <div class="mt-2">
+                            <img src="@Model.Input.LogoDataUrl" alt="Свой логотип" class="crown-brand-logo-preview" />
+                        </div>
+                    }
+                    <div class="form-text">PNG, JPEG или WEBP, до 512 КБ. В шапке и на экране входа.</div>
+                </div>
+            </div>
+        </section>
     </div>
-    <div class="crown-form-actions">
-        <button type="submit" class="btn btn-primary">Применить пояс</button>
+
+    <div class="settings-form-actions">
+        <button type="submit" class="btn btn-primary">Сохранить</button>
     </div>
 </form>
 
-<div class="form-panel crown-form">
-    <h2 class="section-subtitle">Вложения заявок</h2>
-    <dl class="crown-dl">
-        <dt>Путь на сервере (хост)</dt>
-        <dd><code>@Model.Input.AttachmentsHostPath</code></dd>
-        <dt>В контейнере</dt>
-        <dd><code>@Model.Input.AttachmentsContainerPath</code></dd>
+<script>
+(function () {
+  var standard = document.getElementById('logo-standard');
+  var custom = document.getElementById('logo-custom');
+  var wrap = document.getElementById('custom-logo-wrap');
+  var file = document.getElementById('logo-file');
+  var nameEl = document.getElementById('logo-file-name');
+  var maxBytes = 512 * 1024;
+
+  function sync() {
+    if (wrap) wrap.hidden = !(custom && custom.checked);
+  }
+  standard?.addEventListener('change', sync);
+  custom?.addEventListener('change', sync);
+
+  file?.addEventListener('change', function () {
+    var f = file.files && file.files[0];
+    if (!f) {
+      if (nameEl) nameEl.textContent = '';
+      return;
+    }
+    if (f.size === 0 || f.size > maxBytes) {
+      alert('Размер логотипа должен быть от 1 байта до 512 КБ.');
+      file.value = '';
+      if (nameEl) nameEl.textContent = '';
+      return;
+    }
+    if (nameEl) nameEl.textContent = f.name;
+  });
+  sync();
+})();
+</script>
+
+<section class="entity-panel mt-4">
+    <h2 class="section-title">Вложения заявок</h2>
+    <dl class="entity-meta">
+        <div class="entity-meta-item entity-meta-wide">
+            <dt>Путь на сервере (хост)</dt>
+            <dd><code>@Model.Input.AttachmentsHostPath</code></dd>
+        </div>
+        <div class="entity-meta-item entity-meta-wide">
+            <dt>В контейнере</dt>
+            <dd><code>@Model.Input.AttachmentsContainerPath</code></dd>
+        </div>
         @if (Model.Input.AttachmentsLegacyActive)
         {
-            <dt>Старое место (чтение)</dt>
-            <dd><code>@(Model.Input.AttachmentsLegacyHostPath ?? "—")</code></dd>
+            <div class="entity-meta-item entity-meta-wide">
+                <dt>Старое место (чтение)</dt>
+                <dd><code>@(Model.Input.AttachmentsLegacyHostPath ?? "—")</code></dd>
+            </div>
         }
     </dl>
-    <p class="form-text mb-0">
-        Диск и каталог задаются в <code>.env</code> переменной <code>ATTACHMENTS_HOST_PATH</code>
-        (как бэкапы), затем <code>docker compose up -d</code>. Из UI путь не меняется — контейнеру нужен remount.
-        Иерархия внутри: <code>&#123;номер_заявки&#125;/&#123;guid&#125;_имя.файла</code>.
+    <p class="system-status-note mb-0">
+        Диск и каталог задаются в <code>.env</code> переменной <code>ATTACHMENTS_HOST_PATH</code>,
+        затем <code>docker compose up -d</code>. Из UI путь не меняется — контейнеру нужен remount.
+        Иерархия: <code>&#123;номер_заявки&#125;/&#123;guid&#125;_имя.файла</code>.
     </p>
-    <p class="form-text mb-0 mt-2">
+    <p class="system-status-note mb-0 mt-2">
         <strong>Смена диска:</strong>
         1) скопировать файлы (<code>scripts/migrate-attachments.sh</code> или вручную)
         → 2) в <code>.env</code> новый <code>ATTACHMENTS_HOST_PATH</code>
         → 3) <code>docker compose up -d api</code>.
-        Если скопировать ещё не успели, а путь уже сменили — временно задайте старый каталог в
-        <code>ATTACHMENTS_LEGACY_HOST_PATH</code> (только чтение старых файлов). Когда всё на новом месте — строку LEGACY удалите.
+        Пока копирование не закончено — временно <code>ATTACHMENTS_LEGACY_HOST_PATH</code> (чтение старых).
     </p>
-</div>
-
-<form method="post" class="form-panel crown-form">
-    <h2 class="section-subtitle">Прочее</h2>
-    <div class="crown-form-grid">
-        <div class="mb-3">
-            <label class="form-label" asp-for="Input.ListPageSize">Размер страницы в списках</label>
-            <input class="form-control" type="number" min="10" max="200" asp-for="Input.ListPageSize" />
-        </div>
-        <div class="mb-3">
-            <label class="form-label" asp-for="Input.AuditRetentionDays">Хранить журнал, дней</label>
-            <input class="form-control" type="number" min="1" asp-for="Input.AuditRetentionDays" />
-        </div>
-    </div>
-
-    <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" asp-for="Input.WarehouseEnabled" />
-        <label class="form-check-label" asp-for="Input.WarehouseEnabled">Складской учёт включён</label>
-    </div>
-    <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" asp-for="Input.HideArchivedByDefault" />
-        <label class="form-check-label" asp-for="Input.HideArchivedByDefault">Скрывать архивные записи по умолчанию</label>
-    </div>
-    <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" asp-for="Input.DispatcherCanHardDelete" />
-        <label class="form-check-label" asp-for="Input.DispatcherCanHardDelete">Диспетчер может удалять записи безвозвратно</label>
-    </div>
-
-    <div class="crown-form-actions">
-        <button type="submit" class="btn btn-primary">Сохранить</button>
-    </div>
-</form>
+</section>

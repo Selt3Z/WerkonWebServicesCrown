@@ -106,7 +106,8 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)");
 
                     b.Property<decimal>("DefaultUnitPrice")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
@@ -120,6 +121,12 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("SlaHours")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Category");
@@ -128,7 +135,39 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Name");
 
+                    b.HasIndex("OwnerUserId");
+
                     b.ToTable("CatalogParts");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.ParkingLot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("ParkingLots");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.RequestAttachment", b =>
@@ -273,6 +312,225 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("SubmittedAt");
 
                     b.ToTable("ServiceRequests");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.Vehicle", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CurrentParkingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsInRepair")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PlateNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("VehicleType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Vin")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CurrentParkingId");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("IsInRepair");
+
+                    b.HasIndex("PlateNumber")
+                        .IsUnique();
+
+                    b.ToTable("Vehicles");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.VehicleFuelRefuel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Cost")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FuelType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<decimal>("Liters")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<decimal>("PricePerLiter")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<DateTimeOffset>("RefueledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RefueledAt");
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("VehicleFuelRefuels");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.VehicleRepair", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartedAt");
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("VehicleRepairs");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.VehicleTrip", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ActualEndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ActualStartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BorrowerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("BorrowerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("FuelEnd")
+                        .HasPrecision(8, 1)
+                        .HasColumnType("numeric(8,1)");
+
+                    b.Property<decimal?>("FuelStart")
+                        .HasPrecision(8, 1)
+                        .HasColumnType("numeric(8,1)");
+
+                    b.Property<int?>("LateMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("OdometerEnd")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OdometerStart")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("PlannedEndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("PlannedStartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Purpose")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("ReturnParkingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("UsedHours")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BorrowerUserId");
+
+                    b.HasIndex("PlannedEndAt");
+
+                    b.HasIndex("PlannedStartAt");
+
+                    b.HasIndex("ReturnParkingId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("VehicleTrips");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.WarehousePart", b =>
@@ -599,6 +857,15 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.CatalogPart", b =>
+                {
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.RequestAttachment", b =>
                 {
                     b.HasOne("Crown.Domain.Entities.ServiceRequest", "ServiceRequest")
@@ -621,6 +888,60 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("InitiatorUserId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.Vehicle", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.ParkingLot", "CurrentParking")
+                        .WithMany()
+                        .HasForeignKey("CurrentParkingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("CurrentParking");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.VehicleFuelRefuel", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.VehicleRepair", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.VehicleTrip", b =>
+                {
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("BorrowerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Crown.Domain.Entities.ParkingLot", null)
+                        .WithMany()
+                        .HasForeignKey("ReturnParkingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Crown.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Vehicle");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.WarehouseStockMovement", b =>

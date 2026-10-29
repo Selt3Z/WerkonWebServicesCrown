@@ -1,12 +1,509 @@
 @page "/transport"
 @model TransportModel
+@inject AppTime Time
 @{
     ViewData["Title"] = "Транспорт";
+    var board = Model.Board;
+    var freeCount = board.Free.Count;
+    var busyCount = board.Busy.Count;
 }
 
-<h1 class="section-title">Транспорт</h1>
-<div class="crown-stub">
-    <span class="bi bi-car-side-nav-menu crown-stub-icon" aria-hidden="true"></span>
-    <p class="crown-stub-text">Скоро</p>
-    <p class="text-muted">Раздел находится в разработке.</p>
+<div class="dashboard-page transport-page">
+    <div class="summary-header">
+        <h1 class="section-title">Транспорт</h1>
+        <p class="summary-period-caption mb-0">Свободно @freeCount · занято @busyCount</p>
+    </div>
+
+    <form method="get" class="list-filters clients-filters mb-3">
+        <div class="filter-field filter-field-inline filter-field-search">
+            <label class="form-label" for="tr-q">Поиск</label>
+            <input id="tr-q" class="form-control" type="search" name="q" value="@Model.Q"
+                   placeholder="Номер, название" />
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="tr-parking">Стоянка</label>
+            <select id="tr-parking" class="form-select" name="parkingId" onchange="this.form.requestSubmit()">
+                <option value="">Все</option>
+                @foreach (var p in board.Parkings)
+                {
+                    if (Model.ParkingId == p.Id)
+                    {
+                        <option value="@p.Id" selected>@p.Name</option>
+                    }
+                    else
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="filter-field filter-field-inline">
+            <button type="submit" class="btn btn-primary">Найти</button>
+            <a class="btn btn-secondary" href="/transport">Сбросить</a>
+        </div>
+    </form>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    else
+    {
+        <div class="schedule-split schedule-split-full transport-split">
+            <section class="schedule-panel">
+                <h4 class="schedule-section-title">Свободные</h4>
+                <div class="schedule-scroll">
+                    @if (board.Free.Count == 0)
+                    {
+                        <p class="schedule-empty">Свободных машин нет.</p>
+                    }
+                    else
+                    {
+                        <div class="crown-table-wrap schedule-desktop-table">
+                            <table class="table crown-table transport-fleet-table">
+                                <thead>
+                                <tr>
+                                    <th>Номер</th>
+                                    <th>Название</th>
+                                    <th>Тип</th>
+                                    <th>Стоянка</th>
+                                    <th>Статус</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var v in board.Free)
+                                {
+                                    <tr class="table-row-action @(v.IsInRepair ? "transport-vehicle-repair" : null)"
+                                        data-href="/transport/vehicles/@v.Id" tabindex="0" role="link"
+                                        aria-label="Карточка @v.PlateNumber">
+                                        <td class="nowrap">@v.PlateNumber</td>
+                                        <td>@v.Name</td>
+                                        <td>@(v.VehicleType ?? "—")</td>
+                                        <td>@(v.CurrentParkingName ?? "—")</td>
+                                        <td>
+                                            @if (v.IsInRepair)
+                                            {
+                                                <span class="transport-avail transport-avail-repair" title="Выдача запрещена">⚠ в ремонте</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="transport-avail transport-avail-free">свободна</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="schedule-mobile-cards">
+                            @foreach (var v in board.Free)
+                            {
+                                <a class="schedule-card transport-vehicle-card @(v.IsInRepair ? "transport-vehicle-repair" : null)"
+                                   href="/transport/vehicles/@v.Id">
+                                    <div class="schedule-card-header">
+                                        <span class="schedule-card-time">@v.PlateNumber</span>
+                                        @if (v.IsInRepair)
+                                        {
+                                            <span class="transport-avail transport-avail-repair">⚠ ремонт</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="transport-avail transport-avail-free">свободна</span>
+                                        }
+                                    </div>
+                                    <div class="schedule-card-title">@v.Name</div>
+                                    <div class="schedule-card-meta">
+                                        @(v.CurrentParkingName ?? "Стоянка не указана")
+                                        @if (!string.IsNullOrWhiteSpace(v.VehicleType))
+                                        {
+                                            <span>· @v.VehicleType</span>
+                                        }
+                                    </div>
+                                </a>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="schedule-panel">
+                <h4 class="schedule-section-title">В работе / бронь</h4>
+                <div class="schedule-scroll">
+                    @if (board.Busy.Count == 0)
+                    {
+                        <p class="schedule-empty">Занятых нет.</p>
+                    }
+                    else
+                    {
+                        <div class="crown-table-wrap schedule-desktop-table">
+                            <table class="table crown-table transport-fleet-table">
+                                <thead>
+                                <tr>
+                                    <th>Номер</th>
+                                    <th>Название</th>
+                                    <th>Статус</th>
+                                    <th>Кто</th>
+                                    <th>До</th>
+                                    <th></th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var v in board.Busy)
+                                {
+                                    var isReserved = v.Availability == "reserved";
+                                    <tr class="table-row-action @(v.IsOverdue ? "transport-vehicle-overdue" : null) @(v.IsInRepair ? "transport-vehicle-repair" : null)"
+                                        data-href="/transport/vehicles/@v.Id" tabindex="0" role="link"
+                                        aria-label="Карточка @v.PlateNumber">
+                                        <td class="nowrap">
+                                            @v.PlateNumber
+                                            @if (v.IsInRepair)
+                                            {
+                                                <span class="transport-avail transport-avail-repair" title="В ремонте">⚠</span>
+                                            }
+                                        </td>
+                                        <td>@v.Name</td>
+                                        <td>
+                                            <span class="transport-avail @(isReserved ? "transport-avail-reserved" : "transport-avail-out")">
+                                                @(isReserved ? "бронь" : "в работе")
+                                                @if (v.IsOverdue)
+                                                {
+                                                    <span> · просрочено</span>
+                                                }
+                                            </span>
+                                        </td>
+                                        <td>@(v.ActiveBorrowerName ?? "—")</td>
+                                        <td class="nowrap">@(v.ActivePlannedEndAt is { } until ? Time.Format(until) : "—")</td>
+                                        <td class="transport-card-actions table-row-actions">
+                                            @if (isReserved && v.ActiveTripId is Guid reservedId)
+                                            {
+                                                <form method="post" asp-page-handler="Start" class="crown-op-form">
+                                                    <input type="hidden" name="tripId" value="@reservedId" />
+                                                    <input type="hidden" name="ParkingId" value="@Model.ParkingId" />
+                                                    <input type="hidden" name="Q" value="@Model.Q" />
+                                                    @if (v.IsInRepair)
+                                                    {
+                                                        <button type="button" class="btn btn-sm btn-primary" disabled title="В ремонте">Начать</button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button type="submit" class="btn btn-sm btn-primary">Начать</button>
+                                                    }
+                                                </form>
+                                                <form method="post" asp-page-handler="Cancel" class="crown-op-form">
+                                                    <input type="hidden" name="tripId" value="@reservedId" />
+                                                    <input type="hidden" name="ParkingId" value="@Model.ParkingId" />
+                                                    <input type="hidden" name="Q" value="@Model.Q" />
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                                            data-confirm="Отменить бронь @v.PlateNumber?">Отмена</button>
+                                                </form>
+                                            }
+                                            else if (v.ActiveTripId is Guid activeId)
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        data-fill-return
+                                                        data-trip-id="@activeId"
+                                                        data-vehicle-label="@v.PlateNumber · @v.Name">
+                                                    Вернуть
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="schedule-mobile-cards">
+                            @foreach (var v in board.Busy)
+                            {
+                                var isReserved = v.Availability == "reserved";
+                                <div class="schedule-card transport-vehicle-card @(v.IsOverdue ? "transport-vehicle-overdue" : null) @(v.IsInRepair ? "transport-vehicle-repair" : null)">
+                                    <a class="transport-card-link" href="/transport/vehicles/@v.Id">
+                                        <div class="schedule-card-header">
+                                            <span class="schedule-card-time">@v.PlateNumber</span>
+                                            <span class="transport-avail @(isReserved ? "transport-avail-reserved" : "transport-avail-out")">
+                                                @(isReserved ? "бронь" : "в работе")
+                                                @if (v.IsOverdue)
+                                                {
+                                                    <span> · просрочено</span>
+                                                }
+                                            </span>
+                                        </div>
+                                        <div class="schedule-card-title">@v.Name</div>
+                                        <div class="schedule-card-meta">
+                                            @(v.ActiveBorrowerName ?? "—")
+                                            @if (v.ActivePlannedEndAt is { } until)
+                                            {
+                                                <span>· до @Time.Format(until)</span>
+                                            }
+                                            @if (v.IsInRepair)
+                                            {
+                                                <span class="transport-avail transport-avail-repair">· ⚠ ремонт</span>
+                                            }
+                                        </div>
+                                    </a>
+                                    <div class="schedule-card-footer transport-card-actions">
+                                        @if (isReserved && v.ActiveTripId is Guid reservedId)
+                                        {
+                                            <form method="post" asp-page-handler="Start" class="crown-op-form">
+                                                <input type="hidden" name="tripId" value="@reservedId" />
+                                                <input type="hidden" name="ParkingId" value="@Model.ParkingId" />
+                                                <input type="hidden" name="Q" value="@Model.Q" />
+                                                @if (v.IsInRepair)
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-primary" disabled title="В ремонте">Начать</button>
+                                                }
+                                                else
+                                                {
+                                                    <button type="submit" class="btn btn-sm btn-primary">Начать</button>
+                                                }
+                                            </form>
+                                            <form method="post" asp-page-handler="Cancel" class="crown-op-form">
+                                                <input type="hidden" name="tripId" value="@reservedId" />
+                                                <input type="hidden" name="ParkingId" value="@Model.ParkingId" />
+                                                <input type="hidden" name="Q" value="@Model.Q" />
+                                                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                                        data-confirm="Отменить бронь @v.PlateNumber?">Отмена</button>
+                                            </form>
+                                        }
+                                        else if (v.ActiveTripId is Guid activeId)
+                                        {
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-secondary"
+                                                    data-fill-return
+                                                    data-trip-id="@activeId"
+                                                    data-vehicle-label="@v.PlateNumber · @v.Name">
+                                                Вернуть
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+
+        <div class="transport-ops">
+            <section class="entity-panel transport-op-panel">
+                <h2 class="section-title">Выдать / забронировать</h2>
+                <form method="post" asp-page-handler="Issue" class="transport-form crown-entity-form">
+                    <input type="hidden" name="ParkingId" value="@Model.ParkingId" />
+                    <input type="hidden" name="Q" value="@Model.Q" />
+                    <div class="transport-form-grid">
+                        <div class="mb-2">
+                            <label class="form-label" for="issue-mode">Режим</label>
+                            <select id="issue-mode" name="mode" class="form-select">
+                                <option value="now">Взять сейчас</option>
+                                <option value="book">Бронь</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="issue-vehicle">Машина</label>
+                            <select id="issue-vehicle" name="vehicleId" class="form-select" required>
+                                <option value="">—</option>
+                                @foreach (var v in board.Free.Where(x => !x.IsInRepair))
+                                {
+                                    <option value="@v.Id">@v.PlateNumber · @v.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="issue-borrower">Подразделение</label>
+                            <select id="issue-borrower" name="borrowerUserId" class="form-select" required>
+                                <option value="">—</option>
+                                @foreach (var u in board.Borrowers)
+                                {
+                                    <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2" id="issue-start-wrap" hidden>
+                            <label class="form-label" for="issue-start">Начало</label>
+                            <input id="issue-start" class="form-control" type="datetime-local" name="plannedStartLocal" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="issue-end">До когда</label>
+                            <input id="issue-end" class="form-control" type="datetime-local" name="plannedEndLocal" required />
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="issue-note">Комментарий</label>
+                        <input id="issue-note" class="form-control" name="note" maxlength="1000" />
+                    </div>
+                    <button type="submit" class="btn btn-primary">Оформить</button>
+                </form>
+            </section>
+
+            <section class="entity-panel transport-op-panel" id="return-panel">
+                <h2 class="section-title">Вернуть</h2>
+                <p class="text-muted transport-return-hint" id="return-hint">Выберите машину «Вернуть» справа сверху.</p>
+                <form method="post" asp-page-handler="Return" class="transport-form crown-entity-form" id="return-form" hidden>
+                    <input type="hidden" name="ParkingId" value="@Model.ParkingId" />
+                    <input type="hidden" name="Q" value="@Model.Q" />
+                    <input type="hidden" name="tripId" id="return-trip-id" />
+                    <p class="transport-return-vehicle" id="return-vehicle-label"></p>
+                    <div class="transport-form-grid">
+                        <div class="mb-2">
+                            <label class="form-label" for="return-parking">Стоянка</label>
+                            <select id="return-parking" name="returnParkingId" class="form-select">
+                                <option value="">—</option>
+                                @foreach (var p in board.Parkings)
+                                {
+                                    <option value="@p.Id">@p.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="return-odo">Пробег</label>
+                            <input id="return-odo" class="form-control" type="number" name="odometerEnd" min="0" />
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="return-note">Комментарий</label>
+                        <input id="return-note" class="form-control" name="note" maxlength="1000" />
+                    </div>
+                    <button type="submit" class="btn btn-success">Сдать машину</button>
+                </form>
+            </section>
+        </div>
+
+        <details class="vehicle-reminders-spoiler transport-spoiler">
+            <summary class="vehicle-reminders-spoiler-summary">Недавние возвраты (@board.RecentReturns.Count)</summary>
+            @if (board.RecentReturns.Count == 0)
+            {
+                <p class="text-muted mb-0">Пока пусто.</p>
+            }
+            else
+            {
+                <div class="crown-table-wrap schedule-desktop-table">
+                    <table class="table crown-table">
+                        <thead>
+                        <tr>
+                            <th>Машина</th>
+                            <th>Кто</th>
+                            <th>С</th>
+                            <th>По</th>
+                            <th>Часы</th>
+                            <th>Опоздание</th>
+                            <th>Стоянка</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var t in board.RecentReturns)
+                        {
+                            <tr>
+                                <td>@t.PlateNumber</td>
+                                <td>@t.BorrowerName</td>
+                                <td>@Time.Format(t.ActualStartAt ?? t.PlannedStartAt)</td>
+                                <td>@Time.Format(t.ActualEndAt)</td>
+                                <td>@(t.UsedHours?.ToString("0.##") ?? "—")</td>
+                                <td>@(t.LateMinutes is > 0 ? $"{t.LateMinutes} мин" : "—")</td>
+                                <td>@(t.ReturnParkingName ?? "—")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </details>
+
+        @if (Model.CanManageFleet)
+        {
+            <details class="vehicle-reminders-spoiler transport-spoiler">
+                <summary class="vehicle-reminders-spoiler-summary">Справочник: стоянки и машины</summary>
+                <div class="transport-ops">
+                    <form method="post" asp-page-handler="AddParking" class="entity-panel transport-op-panel crown-entity-form">
+                        <h3 class="schedule-section-title">Стоянка</h3>
+                        <div class="transport-form-grid">
+                            <div class="mb-2">
+                                <label class="form-label" for="park-name">Название</label>
+                                <input id="park-name" class="form-control" name="name" required maxlength="200" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="park-addr">Адрес</label>
+                                <input id="park-addr" class="form-control" name="address" maxlength="400" />
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">Добавить стоянку</button>
+                    </form>
+                    <form method="post" asp-page-handler="AddVehicle" class="entity-panel transport-op-panel crown-entity-form">
+                        <h3 class="schedule-section-title">Машина</h3>
+                        <div class="transport-form-grid">
+                            <div class="mb-2">
+                                <label class="form-label" for="veh-plate">Госномер</label>
+                                <input id="veh-plate" class="form-control" name="plateNumber" required maxlength="32" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="veh-name">Название</label>
+                                <input id="veh-name" class="form-control" name="name" required maxlength="200" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="veh-type">Тип</label>
+                                <input id="veh-type" class="form-control" name="vehicleType" maxlength="100" placeholder="Газель, легковая…" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="veh-vin">VIN</label>
+                                <input id="veh-vin" class="form-control" name="vin" maxlength="32" placeholder="необяз." />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="veh-parking">Стоянка</label>
+                                <select id="veh-parking" class="form-select" name="currentParkingId">
+                                    <option value="">—</option>
+                                    @foreach (var p in board.Parkings)
+                                    {
+                                        <option value="@p.Id">@p.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="mb-2 form-check align-self-end">
+                                <input class="form-check-input" type="checkbox" name="isInRepair" value="true" id="veh-repair" />
+                                <label class="form-check-label" for="veh-repair">В ремонте</label>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">Добавить машину</button>
+                    </form>
+                </div>
+            </details>
+        }
+    }
 </div>
+
+<script>
+(function () {
+  var mode = document.getElementById('issue-mode');
+  var startWrap = document.getElementById('issue-start-wrap');
+  function syncMode() {
+    if (!mode || !startWrap) return;
+    startWrap.hidden = mode.value !== 'book';
+  }
+  mode?.addEventListener('change', syncMode);
+  syncMode();
+
+  var returnForm = document.getElementById('return-form');
+  var returnHint = document.getElementById('return-hint');
+  var returnTrip = document.getElementById('return-trip-id');
+  var returnLabel = document.getElementById('return-vehicle-label');
+  document.querySelectorAll('[data-fill-return]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!returnForm || !returnTrip) return;
+      returnTrip.value = btn.getAttribute('data-trip-id') || '';
+      if (returnLabel) returnLabel.textContent = btn.getAttribute('data-vehicle-label') || '';
+      returnForm.hidden = false;
+      if (returnHint) returnHint.hidden = true;
+      returnForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  });
+
+  // Дефолт «до когда» = сейчас + 4 часа (удобно для быстрой выдачи).
+  var endInput = document.getElementById('issue-end');
+  if (endInput && !endInput.value) {
+    var d = new Date();
+    d.setHours(d.getHours() + 4);
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    endInput.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+})();
+</script>

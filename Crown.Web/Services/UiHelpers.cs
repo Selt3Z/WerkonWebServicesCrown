@@ -91,4 +91,27 @@ public static class UiHelpers
         var qs = string.Join("&", parts);
         return qs.Length == 0 ? basePath : basePath + "?" + qs;
     }
+
+    public static string AuditActionLabel(string? action) => action switch
+    {
+        "Created" => "Создано",
+        "Updated" => "Изменено",
+        "Deleted" => "Удалено",
+        "Archived" => "В архив",
+        "Restored" => "Восстановлено",
+        _ => string.IsNullOrWhiteSpace(action) ? "—" : action
+    };
+
+    public static string AuditEntityTypeLabel(string? entityType) => entityType switch
+    {
+        "ServiceRequest" => "Заявка",
+        "CatalogPart" => "Каталог услуг",
+        "WarehousePart" => "Склад",
+        "Vehicle" => "Транспорт",
+        "ParkingLot" => "Стоянка",
+        "VehicleTrip" => "Поездка",
+        "VehicleFuelRefuel" => "Заправка",
+        "VehicleRepair" => "Ремонт",
+        _ => string.IsNullOrWhiteSpace(entityType) ? "—" : entityType
+    };
 }

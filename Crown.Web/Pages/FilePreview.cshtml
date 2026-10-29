@@ -1,0 +1,103 @@
+@page "/file-preview"
+@model FilePreviewModel
+@{
+    ViewData["Title"] = Model.Preview?.FileName ?? "Превью";
+    var p = Model.Preview;
+}
+
+<div class="pdf-preview-toolbar">
+    <a class="btn btn-outline-secondary btn-sm" href="@Model.BackUrl">← Назад</a>
+    @if (p is not null)
+    {
+        <span class="align-self-center">@p.FileName</span>
+        <a class="btn btn-primary btn-sm" href="@Model.DownloadUrl" download>Скачать</a>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+else if (p is null)
+{
+    <p class="text-muted">Нет данных.</p>
+}
+else if (p.Kind == "pdf")
+{
+    <object class="pdf-preview-frame" data="@Model.InlineUrl" type="application/pdf">
+        <p>Браузер не показывает PDF. <a href="@Model.DownloadUrl">Скачать</a></p>
+    </object>
+}
+else if (p.Kind == "image")
+{
+    <div class="file-preview-image-wrap">
+        <img class="file-preview-image" src="@Model.InlineUrl" alt="@p.FileName" />
+    </div>
+}
+else if (p.Kind == "text")
+{
+    <pre class="file-preview-text">@p.Text</pre>
+}
+else if (p.Kind == "table")
+{
+    @if (p.Sheets.Count == 0)
+    {
+        <p class="text-muted">Листы пустые.</p>
+    }
+    else
+    {
+        @foreach (var sheet in p.Sheets)
+        {
+            <h2 class="section-title">@sheet.Name</h2>
+            <div class="crown-table-wrap mb-3">
+                <table class="table crown-table file-preview-table">
+                    <tbody>
+                    @foreach (var row in sheet.Rows)
+                    {
+                        <tr>
+                            @foreach (var cell in row)
+                            {
+                                <td>@cell</td>
+                            }
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+else if (p.Kind == "archive")
+{
+    <div class="crown-table-wrap">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>Путь</th>
+                <th class="num">Размер</th>
+            </tr>
+            </thead>
+            <tbody>
+            @if (p.Entries.Count == 0)
+            {
+                <tr><td colspan="2" class="text-muted text-center">Архив пуст.</td></tr>
+            }
+            else
+            {
+                @foreach (var e in p.Entries)
+                {
+                    <tr>
+                        <td>@(e.IsDirectory ? "[папка] " : "")@e.Path</td>
+                        <td class="num">@(e.IsDirectory || e.SizeBytes is null ? "—" : UiHelpers.FormatBytes(e.SizeBytes.Value))</td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-warning">@(p.Message ?? "Превью недоступно.")</div>
+    <a class="btn btn-primary" href="@Model.DownloadUrl" download>Скачать файл</a>
+}

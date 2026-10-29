@@ -23,6 +23,9 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
     public bool ShowComplaintForm { get; private set; }
 
+    /// <summary>Из настроек: диспетчер может hard-delete.</summary>
+    public bool DispatcherCanHardDelete { get; private set; }
+
     public bool IsInitiatorOfItem =>
         Item?.InitiatorUserId is Guid iid
         && User.FindFirstValue(ClaimTypes.NameIdentifier) == iid.ToString();
@@ -39,6 +42,18 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
     /// <summary>Ручной toggle «Ознак.» — только администратор.</summary>
     public bool CanToggleAck => User.IsInRole(AppRoles.Administrator);
+
+    /// <summary>Архив: инициатор своей заявки или админ/диспетчер.</summary>
+    public bool CanArchive =>
+        Item is not null
+        && (IsInitiatorOfItem
+            || User.IsInRole(AppRoles.Administrator)
+            || User.IsInRole(AppRoles.Dispatcher));
+
+    /// <summary>Удаление безвозвратно: админ; диспетчер — по галочке в настройках.</summary>
+    public bool CanHardDelete =>
+        User.IsInRole(AppRoles.Administrator)
+        || (User.IsInRole(AppRoles.Dispatcher) && DispatcherCanHardDelete);
 
     /// <summary>Инициатор может отменить свою заявку, пока она не в терминальном статусе.</summary>
     public bool CanCancelAsInitiator =>
@@ -268,6 +283,75 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         return Redirect($"/requests/{id}");
     }
 
+    public async Task<IActionResult> OnPostArchiveAsync(long id, bool archive)
+    {
+        var redirect = await LoadAsync(id);
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        if (Item is null)
+        {
+            return Error is null ? NotFound() : Page();
+        }
+
+        if (!CanArchive)
+        {
+            return Forbid();
+        }
+
+        var path = archive ? $"api/requests/{id}/archive" : $"api/requests/{id}/unarchive";
+        var result = await api.PatchAsync<NoContent>(path, null, HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok)
+        {
+            TempData["Warn"] = result.Error;
+            return Redirect($"/requests/{id}");
+        }
+
+        TempData["Ok"] = archive ? "Заявка в архиве." : "Заявка восстановлена из архива.";
+        return archive ? Redirect("/") : Redirect($"/requests/{id}");
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(long id)
+    {
+        var redirect = await LoadAsync(id);
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        if (Item is null)
+        {
+            return Error is null ? NotFound() : Page();
+        }
+
+        if (!CanHardDelete)
+        {
+            return Forbid();
+        }
+
+        var result = await api.DeleteAsync($"api/requests/{id}", HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok)
+        {
+            TempData["Warn"] = result.Error;
+            return Redirect($"/requests/{id}");
+        }
+
+        TempData["Ok"] = $"Заявка № {id} удалена безвозвратно.";
+        return Redirect("/");
+    }
+
     public async Task<IActionResult> OnPostUploadAsync(long id, IFormFile? file)
     {
         if (file is null || file.Length == 0)
@@ -295,11 +379,12 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
     }
 
     /// <summary>Скачивание через Web: работает и без Caddy, cookie прокидывается клиентом.</summary>
-    public async Task<IActionResult> OnGetDownloadAsync(long id, Guid attachmentId)
+    public async Task<IActionResult> OnGetDownloadAsync(long id, Guid attachmentId, bool inline = false)
     {
-        var response = await api.OpenDownloadAsync(
-            $"api/requests/{id}/attachments/{attachmentId}",
-            HttpContext.RequestAborted);
+        var apiUrl = inline
+            ? $"api/requests/{id}/attachments/{attachmentId}?inline=true"
+            : $"api/requests/{id}/attachments/{attachmentId}";
+        var response = await api.OpenDownloadAsync(apiUrl, HttpContext.RequestAborted);
 
         if (response is null)
         {
@@ -317,16 +402,29 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         HttpContext.Response.RegisterForDispose(response);
         var stream = await response.Content.ReadAsStreamAsync(HttpContext.RequestAborted);
         var headers = response.Content.Headers;
+        var contentType = headers.ContentType?.ToString() ?? "application/octet-stream";
+        if (inline)
+        {
+            return File(stream, contentType);
+        }
+
         var fileName = headers.ContentDisposition?.FileNameStar
             ?? headers.ContentDisposition?.FileName?.Trim('"')
             ?? $"attachment-{attachmentId}";
 
-        return File(stream, headers.ContentType?.ToString() ?? "application/octet-stream", fileName);
+        return File(stream, contentType, fileName);
     }
 
     private async Task<IActionResult?> LoadAsync(long id)
     {
+        var settingsTask = api.GetAsync<SettingsResponse>("api/settings", HttpContext.RequestAborted);
         var result = await api.GetAsync<ServiceRequestDetail>($"api/requests/{id}", HttpContext.RequestAborted);
+        var settings = await settingsTask;
+        if (settings.Ok && settings.Data is not null)
+        {
+            DispatcherCanHardDelete = settings.Data.DispatcherCanHardDelete;
+        }
+
         if (result.IsUnauthorized)
         {
             return Challenge();

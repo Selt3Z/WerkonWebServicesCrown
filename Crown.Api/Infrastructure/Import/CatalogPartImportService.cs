@@ -29,6 +29,12 @@ public sealed class CatalogPartImportService
         SpreadsheetImportCommitRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (request.OwnerUserId is null || request.OwnerUserId == Guid.Empty)
+        {
+            throw new SpreadsheetImportException("owner_required");
+        }
+
+        var ownerUserId = request.OwnerUserId.Value;
         var data = SpreadsheetImportFileHelper.DecodeBase64(request.FileBase64);
         SpreadsheetImportFileHelper.ValidateFile(data, fileName: null);
 
@@ -110,6 +116,7 @@ public sealed class CatalogPartImportService
             _dbContext.CatalogParts.Add(new CatalogPart
             {
                 Id = Guid.NewGuid(),
+                OwnerUserId = ownerUserId,
                 Name = name.Trim(),
                 Code = normalizedCode,
                 Category = string.IsNullOrWhiteSpace(category) ? null : category.Trim(),

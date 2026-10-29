@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Crown.Web.Pages;
 
-[Authorize(Roles = AppRoles.Staff)]
+[Authorize]
 public sealed class CatalogPartsModel(CrownApiClient api) : PageModel
 {
     [BindProperty(SupportsGet = true)]
@@ -15,20 +15,43 @@ public sealed class CatalogPartsModel(CrownApiClient api) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Category { get; set; }
 
-    /// <summary>"", "active" или "inactive" — как activeFilter в API.</summary>
     [BindProperty(SupportsGet = true)]
     public string? State { get; set; }
+
+    /// <summary>Для staff — чей каталог смотрим. Инициатор игнорирует (всегда свой).</summary>
+    [BindProperty(SupportsGet = true)]
+    public Guid? OwnerUserId { get; set; }
 
     public List<CatalogPart> Items { get; private set; } = [];
 
     public List<string> Categories { get; private set; } = [];
 
+    public List<RequestAssignee> Owners { get; private set; } = [];
+
     public bool HasMore { get; private set; }
 
     public string? Error { get; private set; }
 
+    public bool IsStaff =>
+        User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+
+    public bool CanEdit => !IsStaff || OwnerUserId is Guid;
+
     public async Task<IActionResult> OnGetAsync()
     {
+        if (IsStaff)
+        {
+            await LoadOwnersAsync();
+            if (OwnerUserId is null && Owners.Count > 0)
+            {
+                // Не автовыбираем — staff явно выбирает, как в сводке.
+            }
+        }
+        else
+        {
+            OwnerUserId = null; // API возьмёт текущего
+        }
+
         var (items, hasMore, error, challenge) = await LoadAsync(0);
         if (challenge)
         {
@@ -39,7 +62,10 @@ public sealed class CatalogPartsModel(CrownApiClient api) : PageModel
         HasMore = hasMore;
         Error = error;
 
-        var categories = await api.GetAsync<List<string>>("api/catalog-parts/categories", HttpContext.RequestAborted);
+        var catUrl = UiHelpers.BuildUrl(
+            "api/catalog-parts/categories",
+            ("ownerUserId", EffectiveOwnerQuery()));
+        var categories = await api.GetAsync<List<string>>(catUrl, HttpContext.RequestAborted);
         Categories = categories.Data ?? [];
         return Page();
     }
@@ -61,10 +87,28 @@ public sealed class CatalogPartsModel(CrownApiClient api) : PageModel
         return Partial("_CatalogPartRows", items);
     }
 
+    private string? EffectiveOwnerQuery() =>
+        IsStaff ? OwnerUserId?.ToString() : null;
+
+    private async Task LoadOwnersAsync()
+    {
+        var result = await api.GetAsync<List<RequestAssignee>>("api/requests/assignees", HttpContext.RequestAborted);
+        if (result.Ok && result.Data is not null)
+        {
+            Owners = result.Data;
+        }
+    }
+
     private async Task<(List<CatalogPart> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)
     {
+        if (IsStaff && OwnerUserId is null)
+        {
+            return ([], false, null, false);
+        }
+
         var url = UiHelpers.BuildUrl(
             "api/catalog-parts",
+            ("ownerUserId", EffectiveOwnerQuery()),
             ("search", Q?.Trim()),
             ("category", Category),
             ("activeFilter", State),

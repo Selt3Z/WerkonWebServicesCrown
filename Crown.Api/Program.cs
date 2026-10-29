@@ -151,11 +151,12 @@ builder.Services.AddScoped<DataExportService>();
 builder.Services.AddScoped<CatalogPartImportService>();
 builder.Services.AddScoped<WarehousePartImportService>();
 builder.Services.AddScoped<WarehouseStockService>();
+builder.Services.AddScoped<Crown.Features.Summary.SummaryReportService>();
 builder.Services.Configure<AttachmentStorageOptions>(
     builder.Configuration.GetSection(AttachmentStorageOptions.SectionName));
 builder.Services.AddSingleton<AttachmentStorageService>();
+builder.Services.AddSingleton<AttachmentPreviewService>();
 builder.Services.AddHostedService<IdentitySeedHostedService>();
-builder.Services.AddHostedService<DemoRequestsSeedHostedService>();
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>("database", tags: ["ready"])
     .AddCheck<DatabaseMigrationHealthCheck>("database_migrations", tags: ["ready"]);

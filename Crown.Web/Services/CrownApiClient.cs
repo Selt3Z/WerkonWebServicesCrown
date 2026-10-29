@@ -143,6 +143,12 @@ public sealed class CrownApiClient
     public Task<ApiResult<T>> PutAsync<T>(string url, object? body, CancellationToken ct = default) =>
         SendAsync<T>(HttpMethod.Put, url, body, ct);
 
+    public Task<ApiResult<T>> PatchAsync<T>(string url, object? body = null, CancellationToken ct = default) =>
+        SendAsync<T>(HttpMethod.Patch, url, body, ct);
+
+    public Task<ApiResult<NoContent>> DeleteAsync(string url, CancellationToken ct = default) =>
+        SendAsync<NoContent>(HttpMethod.Delete, url, null, ct);
+
     private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string url, object? body, CancellationToken ct)
     {
         try
@@ -163,7 +169,14 @@ public sealed class CrownApiClient
     }
 
     /// <summary>Загрузка файла в API (поле формы называется file — как IFormFile file в контроллере).</summary>
-    public async Task<ApiResult<RequestAttachment>> UploadAsync(string url, IFormFile file, CancellationToken ct = default)
+    public Task<ApiResult<RequestAttachment>> UploadAsync(string url, IFormFile file, CancellationToken ct = default) =>
+        UploadFileAsync<RequestAttachment>(url, file, "file", ct);
+
+    public async Task<ApiResult<T>> UploadFileAsync<T>(
+        string url,
+        IFormFile file,
+        string fieldName = "file",
+        CancellationToken ct = default)
     {
         try
         {
@@ -174,15 +187,15 @@ public sealed class CrownApiClient
             fileContent.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.TryParse(file.ContentType, out var ct2)
                 ? ct2
                 : new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
-            form.Add(fileContent, "file", Path.GetFileName(file.FileName));
+            form.Add(fileContent, fieldName, Path.GetFileName(file.FileName));
             request.Content = form;
 
-            return await ExecuteAsync<RequestAttachment>(request, ct);
+            return await ExecuteAsync<T>(request, ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             _logger.LogWarning(ex, "Ошибка загрузки файла в API {Url}", url);
-            return ApiResult<RequestAttachment>.Failure(0, ApiErrorTranslator.DefaultForStatus(0));
+            return ApiResult<T>.Failure(0, ApiErrorTranslator.DefaultForStatus(0));
         }
     }
 

@@ -44,6 +44,23 @@ public sealed class SettingsController : ControllerBase
         return await _appSettingsService.GetSettingsAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Активный логотип для шапки/логина (anonymous). 404 → клиент показывает стандартный.
+    /// </summary>
+    [HttpGet("brand-logo")]
+    [AllowAnonymous]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public async Task<IActionResult> GetBrandLogo(CancellationToken cancellationToken)
+    {
+        var logo = await _appSettingsService.TryGetActiveBrandLogoAsync(cancellationToken);
+        if (logo is null)
+        {
+            return NotFound();
+        }
+
+        return File(logo.Value.Bytes, logo.Value.ContentType);
+    }
+
     [HttpPut]
     [Authorize(Policy = AuthorizationPolicies.ManageUsers)]
     public async Task<ActionResult<SettingsResponse>> Update(

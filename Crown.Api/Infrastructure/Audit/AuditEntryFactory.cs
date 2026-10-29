@@ -91,14 +91,14 @@ public Task<List<AuditLogEntry>> CreateEntriesAsync(
                 entityType = AuditEntityTypes.CatalogPart;
                 entityId = GetEntityId(entry, catalogPart.Id);
                 summary = GetStringValue(entry, nameof(CatalogPart.Name), catalogPart.Name);
-                entityUrl = action == AuditActions.Deleted ? null : $"/catalog-parts/{entityId}/edit";
+                entityUrl = action == AuditActions.Deleted ? null : $"/catalog-parts/edit/{entityId}";
                 return true;
 
             case WarehousePart warehousePart:
                 entityType = AuditEntityTypes.WarehousePart;
                 entityId = GetEntityId(entry, warehousePart.Id);
                 summary = GetStringValue(entry, nameof(WarehousePart.Name), warehousePart.Name);
-                entityUrl = action == AuditActions.Deleted ? null : $"/warehouse-parts/{entityId}/edit";
+                entityUrl = action == AuditActions.Deleted ? null : $"/warehouse/edit/{entityId}";
                 return true;
 
             case ServiceRequest serviceRequest:
@@ -117,6 +117,49 @@ public Task<List<AuditLogEntry>> CreateEntriesAsync(
                 entityUrl = action == AuditActions.Deleted
                     ? null
                     : $"/requests/{attachment.ServiceRequestId}";
+                return true;
+
+            case Vehicle vehicle:
+                entityType = AuditEntityTypes.Vehicle;
+                entityId = GetEntityId(entry, vehicle.Id);
+                summary = $"{GetStringValue(entry, nameof(Vehicle.PlateNumber), vehicle.PlateNumber)} · {vehicle.Name}";
+                entityUrl = action == AuditActions.Deleted ? null : $"/transport/vehicles/{vehicle.Id}";
+                return true;
+
+            case VehicleFuelRefuel refuel:
+                entityType = AuditEntityTypes.VehicleFuelRefuel;
+                entityId = GetEntityId(entry, refuel.Id);
+                summary = $"{refuel.Liters:0.##} л · {refuel.FuelType} · {refuel.Cost:0.##}";
+                entityUrl = action == AuditActions.Deleted
+                    ? null
+                    : $"/transport/vehicles/{refuel.VehicleId}";
+                return true;
+
+            case VehicleRepair repair:
+                entityType = AuditEntityTypes.VehicleRepair;
+                entityId = GetEntityId(entry, repair.Id);
+                summary = repair.EndedAt is null
+                    ? $"Ремонт с {repair.StartedAt:dd.MM.yyyy HH:mm}"
+                    : $"Ремонт {repair.StartedAt:dd.MM.yyyy} — {repair.EndedAt:dd.MM.yyyy HH:mm}";
+                entityUrl = action == AuditActions.Deleted
+                    ? null
+                    : $"/transport/vehicles/{repair.VehicleId}";
+                return true;
+
+            case ParkingLot parking:
+                entityType = AuditEntityTypes.ParkingLot;
+                entityId = GetEntityId(entry, parking.Id);
+                summary = GetStringValue(entry, nameof(ParkingLot.Name), parking.Name);
+                entityUrl = action == AuditActions.Deleted ? null : "/transport";
+                return true;
+
+            case VehicleTrip trip:
+                entityType = AuditEntityTypes.VehicleTrip;
+                entityId = GetEntityId(entry, trip.Id);
+                summary = $"{trip.BorrowerName} · {trip.Status}";
+                entityUrl = action == AuditActions.Deleted
+                    ? null
+                    : $"/transport/vehicles/{trip.VehicleId}";
                 return true;
 
             default:

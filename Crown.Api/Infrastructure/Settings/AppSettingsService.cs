@@ -68,6 +68,15 @@ public sealed class AppSettingsService
         var legacyActive = !string.IsNullOrWhiteSpace(legacyHost)
             && !string.Equals(hostPath, legacyHost, StringComparison.OrdinalIgnoreCase);
 
+        var logo = await LoadOrganizationLogoAsync(cancellationToken);
+        string? logoDataUrl = null;
+        if (logo is not null
+            && !string.IsNullOrWhiteSpace(logo.ContentType)
+            && !string.IsNullOrWhiteSpace(logo.DataBase64))
+        {
+            logoDataUrl = $"data:{logo.ContentType};base64,{logo.DataBase64}";
+        }
+
         return new SettingsResponse
         {
             TimeZoneId = await GetTimeZoneIdAsync(cancellationToken),
@@ -79,6 +88,9 @@ public sealed class AppSettingsService
             WarehouseEnabled = await GetWarehouseEnabledAsync(cancellationToken),
             AuditRetentionDays = await GetAuditRetentionDaysAsync(cancellationToken),
             ListPageSize = await GetListPageSizeAsync(cancellationToken),
+            BrandLogoMode = await GetBrandLogoModeAsync(cancellationToken),
+            HasCustomLogo = logoDataUrl is not null,
+            LogoDataUrl = logoDataUrl,
             AttachmentsHostPath = hostPath,
             AttachmentsContainerPath = _attachments.RootPath,
             AttachmentsLegacyHostPath = legacyHost,
@@ -127,8 +139,66 @@ public sealed class AppSettingsService
             await SetListPageSizeAsync(request.ListPageSize.Value, cancellationToken);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.BrandLogoMode))
+        {
+            await SetBrandLogoModeAsync(request.BrandLogoMode, cancellationToken);
+        }
+
         return await GetSettingsAsync(cancellationToken);
     }
+
+    public async Task<string> GetBrandLogoModeAsync(CancellationToken cancellationToken = default)
+    {
+        var stored = await GetSettingValueAsync(AppSettingKeys.BrandLogoMode, cancellationToken);
+        return NormalizeBrandLogoMode(stored);
+    }
+
+    public async Task<string> SetBrandLogoModeAsync(string mode, CancellationToken cancellationToken = default)
+    {
+        var normalized = NormalizeBrandLogoMode(mode);
+        await SaveSettingAsync(AppSettingKeys.BrandLogoMode, normalized, cancellationToken);
+        return normalized;
+    }
+
+    /// <summary>
+    /// Байты своего логотипа для шапки/логина — только если режим custom и файл есть.
+    /// </summary>
+    public async Task<(byte[] Bytes, string ContentType)?> TryGetActiveBrandLogoAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(await GetBrandLogoModeAsync(cancellationToken), "custom", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var logo = await LoadOrganizationLogoAsync(cancellationToken);
+        if (logo is null
+            || string.IsNullOrWhiteSpace(logo.ContentType)
+            || string.IsNullOrWhiteSpace(logo.DataBase64))
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = Convert.FromBase64String(logo.DataBase64);
+            if (bytes.Length == 0)
+            {
+                return null;
+            }
+
+            return (bytes, logo.ContentType);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private static string NormalizeBrandLogoMode(string? mode) =>
+        string.Equals(mode?.Trim(), "custom", StringComparison.OrdinalIgnoreCase)
+            ? "custom"
+            : "standard";
 
     public Task<string> GetCurrencyCodeAsync(CancellationToken cancellationToken = default)
     {

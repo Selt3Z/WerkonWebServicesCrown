@@ -1,12 +1,37 @@
 @model List<AuditLogItem>
 @inject AppTime Time
+@using System.Security.Claims
+@{
+    var isAdmin = User.IsInRole(AppRoles.Administrator);
+    var selfIdRaw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+    Guid? selfId = Guid.TryParse(selfIdRaw, out var sid) ? sid : null;
+}
 @foreach (var a in Model)
 {
+    var canOpenUser = a.UserId is Guid uid && (isAdmin || (selfId is Guid s && s == uid));
     <tr>
         <td class="nowrap">@Time.FormatUtc(a.OccurredAtUtc)</td>
-        <td>@a.UserDisplayName</td>
-        <td>@a.Action</td>
-        <td>@a.EntityType</td>
-        <td>@a.Summary</td>
+        <td>
+            @if (canOpenUser)
+            {
+                <a class="history-user-link" href="/users/edit/@a.UserId">@a.UserDisplayName</a>
+            }
+            else
+            {
+                @a.UserDisplayName
+            }
+        </td>
+        <td>@UiHelpers.AuditActionLabel(a.Action)</td>
+        <td>@UiHelpers.AuditEntityTypeLabel(a.EntityType)</td>
+        <td class="history-record-cell">
+            @if (!string.IsNullOrWhiteSpace(a.EntityUrl))
+            {
+                <a href="@a.EntityUrl">@a.Summary</a>
+            }
+            else
+            {
+                @a.Summary
+            }
+        </td>
     </tr>
 }

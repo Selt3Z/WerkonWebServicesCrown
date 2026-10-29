@@ -1,0 +1,62 @@
+@page "/transport/vehicles/{id:guid}/edit"
+@model TransportVehicleEditModel
+@{
+    ViewData["Title"] = "Редактирование автомобиля";
+}
+
+<a class="btn btn-outline-secondary btn-sm mb-3" href="/transport/vehicles/@Model.Id">← К карточке</a>
+
+<h1 class="section-title">Редактирование автомобиля</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" class="crown-entity-form">
+    <div class="transport-form-grid">
+        <div class="mb-2">
+            <label class="form-label" asp-for="Edit.PlateNumber">Госномер</label>
+            <input class="form-control" asp-for="Edit.PlateNumber" required maxlength="32" />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Edit.Name">Название</label>
+            <input class="form-control" asp-for="Edit.Name" required maxlength="200" />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Edit.VehicleType">Тип</label>
+            <input class="form-control" asp-for="Edit.VehicleType" maxlength="100" />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Edit.Vin">VIN</label>
+            <input class="form-control" asp-for="Edit.Vin" maxlength="32" placeholder="необяз." />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Edit.CurrentParkingId">Стоянка</label>
+            <select class="form-select" asp-for="Edit.CurrentParkingId">
+                <option value="">—</option>
+                @foreach (var p in Model.Parkings)
+                {
+                    if (Model.Edit.CurrentParkingId == p.Id)
+                    {
+                        <option value="@p.Id" selected>@p.Name</option>
+                    }
+                    else
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="mb-2 form-check align-self-end">
+            <input type="hidden" name="Edit.IsInRepair" value="false" />
+            <input class="form-check-input" type="checkbox" asp-for="Edit.IsInRepair" id="edit-repair" />
+            <label class="form-check-label" for="edit-repair">В ремонте</label>
+            <div class="form-text">Запрещает выдачу и бронь.</div>
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+        <a class="btn btn-secondary" href="/transport/vehicles/@Model.Id">Отмена</a>
+    </div>
+</form>

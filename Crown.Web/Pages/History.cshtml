@@ -6,20 +6,40 @@
 
 <h1 class="section-title">Журнал</h1>
 
-<form method="get" class="list-filters clients-filters mb-3">
+<form method="get" class="list-filters history-filters mb-3">
     <div class="filter-field filter-field-inline">
         <label class="form-label" for="hist-user">Пользователь</label>
         <select id="hist-user" class="form-select" name="userId">
             <option value="">Все</option>
             @foreach (var u in Model.Users)
             {
-                <option value="@u.UserId" selected="@(u.UserId == Model.UserId)">@u.DisplayName</option>
+                if (u.UserId == Model.UserId)
+                {
+                    <option value="@u.UserId" selected>@u.DisplayName</option>
+                }
+                else
+                {
+                    <option value="@u.UserId">@u.DisplayName</option>
+                }
             }
         </select>
     </div>
     <div class="filter-field filter-field-inline">
-        <label class="form-label" for="hist-entity">Тип</label>
-        <input id="hist-entity" class="form-control" name="entityType" value="@Model.EntityType" placeholder="Тип записи" />
+        <label class="form-label" for="hist-entity">Тип записи</label>
+        <select id="hist-entity" class="form-select" name="entityType">
+            <option value="">Все</option>
+            @foreach (var (value, label) in Model.EntityTypeOptions)
+            {
+                if (string.Equals(value, Model.EntityType, StringComparison.OrdinalIgnoreCase))
+                {
+                    <option value="@value" selected>@label</option>
+                }
+                else
+                {
+                    <option value="@value">@label</option>
+                }
+            }
+        </select>
     </div>
     <div class="filter-field filter-field-inline">
         <label class="form-label" for="hist-from">С</label>
@@ -29,18 +49,11 @@
         <label class="form-label" for="hist-to">По</label>
         <input id="hist-to" class="form-control" type="date" name="to" value="@Model.To" />
     </div>
+    <div class="history-filters-actions">
+        <button class="btn btn-primary btn-sm" type="submit">Найти</button>
+        <a class="btn btn-secondary btn-sm" href="/history">Сбросить</a>
+    </div>
 </form>
-
-<div class="action-bar mb-3">
-    <button class="btn btn-primary" type="submit" form="" id="btn-hist-filters">Найти</button>
-    <a class="btn btn-secondary" href="/history">Сбросить</a>
-</div>
-<script>
-document.getElementById('btn-hist-filters')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  document.querySelector('form.list-filters')?.requestSubmit();
-});
-</script>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {

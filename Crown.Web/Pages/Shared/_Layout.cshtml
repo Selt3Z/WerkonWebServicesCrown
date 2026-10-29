@@ -4,6 +4,11 @@
     var isStaff = isAdmin || User.IsInRole(AppRoles.Dispatcher);
     var displayName = User.FindFirst(CrownAuthHandler.DisplayNameClaim)?.Value ?? string.Empty;
     var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+    var theme = Context.Request.Cookies[Crown.Web.Pages.SettingsModel.ThemeCookieName];
+    if (string.IsNullOrWhiteSpace(theme))
+    {
+        theme = "light";
+    }
 
     string Active(string prefix) =>
         path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "active" : string.Empty;
@@ -15,7 +20,7 @@
         ? "active" : string.Empty;
 }
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="@theme">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -34,12 +39,23 @@
     <aside class="app-sidebar nav-sidebar">
         <div class="nav-brand">
             <a class="nav-brand-link" href="/" title="WWS Crown">
-                <img class="nav-brand-logo" src="~/images/fulllogo.png" alt="WWS Crown" />
+                <img class="nav-brand-logo" src="/brand-logo"
+                     alt="WWS Crown"
+                     onerror="this.onerror=null;this.src='@Url.Content("~/images/fulllogo.png")';" />
             </a>
         </div>
 
         <div class="nav-scrollable">
             <nav class="nav-section">
+                @if (!isAdmin)
+                {
+                    <div class="nav-item">
+                        <a class="nav-link @Active("/today")" href="/today">
+                            <span class="bi bi-calendar3-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                            <span class="nav-menu-text">Сегодня</span>
+                        </a>
+                    </div>
+                }
                 <div class="nav-item">
                     <a class="nav-link @requestsActive" href="/">
                         <span class="bi bi-clipboard-check-nav-menu nav-menu-icon" aria-hidden="true"></span>
@@ -66,13 +82,19 @@
                             <span class="nav-menu-text">Склад</span>
                         </a>
                     </div>
-                    <div class="nav-item">
-                        <a class="nav-link @Active("/catalog-parts")" href="/catalog-parts">
-                            <span class="bi bi-journal-text-nav-menu nav-menu-icon" aria-hidden="true"></span>
-                            <span class="nav-menu-text">Каталог</span>
-                        </a>
-                    </div>
                 }
+                <div class="nav-item">
+                    <a class="nav-link @Active("/catalog-parts")" href="/catalog-parts">
+                        <span class="bi bi-journal-text-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                        <span class="nav-menu-text">Каталог</span>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a class="nav-link @Active("/summary")" href="/summary">
+                        <span class="bi bi-bar-chart-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                        <span class="nav-menu-text">Сводка</span>
+                    </a>
+                </div>
             </nav>
         </div>
 
@@ -113,7 +135,13 @@
         }
 
         <div class="nav-footer">
-            <div class="nav-version">Crown v1.0 · WWS</div>
+            @{
+                var fullVer = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+                    typeof(Program).Assembly)?.InformationalVersion ?? "1.0";
+                var verParts = fullVer.Split('.', StringSplitOptions.RemoveEmptyEntries);
+                var shortVer = verParts.Length >= 2 ? $"{verParts[0]}.{verParts[1]}" : fullVer;
+            }
+            <div class="nav-version">Crown v@(shortVer) · WWS</div>
         </div>
     </aside>
 
@@ -129,20 +157,25 @@
                 {
                     <span class="app-user-name"><span class="app-user-name-text">@displayName</span></span>
                     <span class="app-user-role">@AppRoles.Display(role)</span>
-                    <form method="post" asp-page="/Logout" class="d-inline">
-                        <button type="submit" class="btn-logout" title="Выйти" aria-label="Выйти">
-                            <svg class="btn-logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M16 17l5-5-5-5M21 12H9" />
-                            </svg>
-                        </button>
-                    </form>
+                    <div class="app-user-actions">
+                        <form method="post" asp-page="/Logout" class="d-inline">
+                            <button type="submit" class="btn-logout" title="Выйти" aria-label="Выйти">
+                                <svg class="btn-logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 17l5-5-5-5M21 12H9" />
+                                </svg>
+                            </button>
+                        </form>
+                        <label for="nav-menu-toggle" class="navbar-toggler-btn" title="Меню" aria-label="Меню"></label>
+                    </div>
                 }
                 else
                 {
                     <a class="app-user-role" href="/login">Войти</a>
+                    <div class="app-user-actions">
+                        <label for="nav-menu-toggle" class="navbar-toggler-btn" title="Меню" aria-label="Меню"></label>
+                    </div>
                 }
-                <label for="nav-menu-toggle" class="navbar-toggler-btn" title="Меню" aria-label="Меню"></label>
             </div>
         </header>
 

@@ -7,7 +7,9 @@
 
 <div class="login-card">
     <div class="login-logo-wrap">
-        <img class="login-logo crown-login-full" src="~/images/fulllogo.png" alt="WWS Crown" />
+        <img class="login-logo crown-login-full" src="/brand-logo"
+             alt="WWS Crown"
+             onerror="this.onerror=null;this.src='@Url.Content("~/images/fulllogo.png")';" />
     </div>
 
     @if (!string.IsNullOrEmpty(Model.Error))

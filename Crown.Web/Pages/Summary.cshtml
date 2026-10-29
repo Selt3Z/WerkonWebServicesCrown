@@ -1,0 +1,319 @@
+@page "/summary"
+@model SummaryModel
+@{
+    ViewData["Title"] = "Сводка";
+    var s = Model.Summary;
+    string FmtPeriod(DateOnly a, DateOnly b) => a == b ? a.ToString("dd.MM.yyyy") : $"{a:dd.MM.yyyy} — {b:dd.MM.yyyy}";
+    string FmtChange(int current, int previous)
+    {
+        var delta = current - previous;
+        if (delta == 0) return "0";
+        return delta > 0 ? $"+{delta}" : delta.ToString();
+    }
+    string ChangeClass(int current, int previous) =>
+        current == previous ? "summary-change-flat" : current > previous ? "summary-change-up" : "summary-change-down";
+    string FmtPctChange(decimal current, decimal previous)
+    {
+        if (previous == 0 && current == 0) return "0%";
+        if (previous == 0) return "—";
+        var pct = Math.Round((current - previous) / previous * 100m, 1);
+        return pct > 0 ? $"+{pct}%" : $"{pct}%";
+    }
+    string PctChangeClass(decimal current, decimal previous) =>
+        current == previous ? "summary-change-flat" : current > previous ? "summary-change-up" : "summary-change-down";
+    string CssPct(decimal value) => $"{Math.Clamp(value, 0m, 100m).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+    int MaxSubmitted = s?.DailyTrend.Count > 0 ? Math.Max(1, s.DailyTrend.Max(x => x.SubmittedCount)) : 1;
+    int MaxCompleted = s?.DailyTrend.Count > 0 ? Math.Max(1, s.DailyTrend.Max(x => x.CompletedCount)) : 1;
+    string TrendHeight(int value, int max) => CssPct(max <= 0 ? 0 : Math.Round((decimal)value / max * 100m, 1));
+    string TrendChartClass() => Model.Period switch
+    {
+        "year" => "summary-trend-chart-year",
+        "month" => "summary-trend-chart-dense",
+        _ => string.Empty
+    };
+    string MonthName(int m) => System.Globalization.CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(m);
+}
+
+<div class="summary-page">
+    <div class="summary-header">
+        <h1 class="section-title">Сводка</h1>
+        <div class="summary-period-switch" role="group" aria-label="Период">
+            <a class="btn btn-sm @(Model.Period == "today" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("today")">Сегодня</a>
+            <a class="btn btn-sm @(Model.Period == "week" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("week")">Неделя</a>
+            <a class="btn btn-sm @(Model.Period == "month" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("month")">Месяц</a>
+            <a class="btn btn-sm @(Model.Period == "year" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("year")">Год</a>
+        </div>
+    </div>
+
+    @if (Model.CanPickUser)
+    {
+        <form method="get" class="list-filters summary-user-picker mb-3">
+            <input type="hidden" name="period" value="@Model.Period" />
+            <input type="hidden" name="year" value="@Model.Year" />
+            <input type="hidden" name="month" value="@Model.Month" />
+            <div class="filter-field filter-field-inline filter-field-grow">
+                <label class="form-label" for="summary-user">Подразделение</label>
+                <select id="summary-user" class="form-select" name="userId" onchange="this.form.requestSubmit()">
+                    <option value="">— выберите инициатора —</option>
+                    @foreach (var u in Model.AvailableUsers)
+                    {
+                        if (Model.UserId == u.Id)
+                        {
+                            <option value="@u.Id" selected>@u.DisplayName (@u.UserName)</option>
+                        }
+                        else
+                        {
+                            <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
+                        }
+                    }
+                </select>
+            </div>
+        </form>
+    }
+
+    @if (Model.Period == "month")
+    {
+        <form method="get" class="summary-period-picker list-filters">
+            <input type="hidden" name="period" value="month" />
+            @if (Model.CanPickUser && Model.UserId is Guid mid)
+            {
+                <input type="hidden" name="userId" value="@mid" />
+            }
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="summary-report-month">Месяц</label>
+                <select id="summary-report-month" class="form-select" name="month" onchange="this.form.requestSubmit()">
+                    @for (var m = 1; m <= 12; m++)
+                    {
+                        if (Model.Month == m)
+                        {
+                            <option value="@m" selected>@MonthName(m)</option>
+                        }
+                        else
+                        {
+                            <option value="@m">@MonthName(m)</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="summary-report-year-month">Год</label>
+                <select id="summary-report-year-month" class="form-select" name="year" onchange="this.form.requestSubmit()">
+                    @foreach (var y in Model.AvailableYears)
+                    {
+                        if (Model.Year == y)
+                        {
+                            <option value="@y" selected>@y</option>
+                        }
+                        else
+                        {
+                            <option value="@y">@y</option>
+                        }
+                    }
+                </select>
+            </div>
+        </form>
+    }
+    else if (Model.Period == "year")
+    {
+        <form method="get" class="summary-period-picker list-filters">
+            <input type="hidden" name="period" value="year" />
+            @if (Model.CanPickUser && Model.UserId is Guid yid)
+            {
+                <input type="hidden" name="userId" value="@yid" />
+            }
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="summary-report-year">Год</label>
+                <select id="summary-report-year" class="form-select" name="year" onchange="this.form.requestSubmit()">
+                    @foreach (var y in Model.AvailableYears)
+                    {
+                        if (Model.Year == y)
+                        {
+                            <option value="@y" selected>@y</option>
+                        }
+                        else
+                        {
+                            <option value="@y">@y</option>
+                        }
+                    }
+                </select>
+            </div>
+        </form>
+    }
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    else if (Model.NeedsUserPick)
+    {
+        <p class="text-muted">Выберите подразделение, чтобы посмотреть его сводку. Своей сводки у администратора и диспетчера нет.</p>
+    }
+    else if (s is null)
+    {
+        <p class="text-muted">Нет данных.</p>
+    }
+    else
+    {
+        <div class="summary-period-toolbar">
+            <p class="summary-period-caption">
+                @s.UserDisplayName · @FmtPeriod(s.PeriodStart, s.PeriodEnd)
+            </p>
+        </div>
+
+        <section class="entity-panel summary-comparison-panel">
+            <h2 class="section-title">Сравнение с прошлым периодом</h2>
+            <p class="summary-comparison-period">
+                Прошлый период: @FmtPeriod(s.PeriodComparison.PreviousPeriodStart, s.PeriodComparison.PreviousPeriodEnd)
+            </p>
+            <div class="summary-comparison-grid">
+                <article class="summary-comparison-item">
+                    <span class="summary-comparison-label">Всего заявок</span>
+                    <span class="summary-comparison-value">@s.TotalCount</span>
+                    <span class="@ChangeClass(s.TotalCount, s.PeriodComparison.PreviousTotalCount)">
+                        @FmtChange(s.TotalCount, s.PeriodComparison.PreviousTotalCount)
+                    </span>
+                </article>
+                <article class="summary-comparison-item">
+                    <span class="summary-comparison-label">Исходящие</span>
+                    <span class="summary-comparison-value">@s.OutgoingCount</span>
+                    <span class="@ChangeClass(s.OutgoingCount, s.PeriodComparison.PreviousOutgoingCount)">
+                        @FmtChange(s.OutgoingCount, s.PeriodComparison.PreviousOutgoingCount)
+                    </span>
+                </article>
+                <article class="summary-comparison-item">
+                    <span class="summary-comparison-label">Входящие</span>
+                    <span class="summary-comparison-value">@s.IncomingCount</span>
+                    <span class="@ChangeClass(s.IncomingCount, s.PeriodComparison.PreviousIncomingCount)">
+                        @FmtChange(s.IncomingCount, s.PeriodComparison.PreviousIncomingCount)
+                    </span>
+                </article>
+                <article class="summary-comparison-item">
+                    <span class="summary-comparison-label">Выполнено</span>
+                    <span class="summary-comparison-value">@s.CompletedTotalCount</span>
+                    <span class="@ChangeClass(s.CompletedTotalCount, s.PeriodComparison.PreviousCompletedTotalCount)">
+                        @FmtChange(s.CompletedTotalCount, s.PeriodComparison.PreviousCompletedTotalCount)
+                    </span>
+                </article>
+                <article class="summary-comparison-item">
+                    <span class="summary-comparison-label summary-help-label" title="Доля выполненных среди заявок периода, где пользователь инициатор или исполнитель">Доля выполненных</span>
+                    <span class="summary-comparison-value">@s.CompletionRatePercent.ToString("0.#")%</span>
+                    <span class="@PctChangeClass(s.CompletionRatePercent, s.PeriodComparison.PreviousCompletionRatePercent)">
+                        @FmtPctChange(s.CompletionRatePercent, s.PeriodComparison.PreviousCompletionRatePercent)
+                    </span>
+                </article>
+            </div>
+        </section>
+
+        <p class="summary-revenue-note">В периоде считаются заявки по дате подачи, где пользователь — инициатор или исполнитель.</p>
+
+        <section class="summary-cards summary-cards-grid">
+            <a class="summary-card summary-card-clickable" href="@UiHelpers.BuildUrl("/", ("initiatorUserId", s.UserId.ToString()))">
+                <div class="summary-card-label">Исходящие</div>
+                <div class="summary-card-value">@s.OutgoingCount</div>
+                <div class="summary-card-meta">подано за период</div>
+            </a>
+            <a class="summary-card summary-card-clickable" href="@UiHelpers.BuildUrl("/", ("executorUserId", s.UserId.ToString()))">
+                <div class="summary-card-label">Входящие</div>
+                <div class="summary-card-value">@s.IncomingCount</div>
+                <div class="summary-card-meta">назначено за период</div>
+            </a>
+            <article class="summary-card">
+                <div class="summary-card-label">Выполнено исходящих</div>
+                <div class="summary-card-value">@s.CompletedOutgoingCount</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Выполнено входящих</div>
+                <div class="summary-card-value">@s.CompletedIncomingCount</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Средняя реакция</div>
+                <div class="summary-card-value">@(s.AverageReactionHours is { } h ? $"{h:0.#} ч" : "—")</div>
+                <div class="summary-card-meta">как исполнитель</div>
+            </article>
+            <a class="summary-card summary-card-clickable" href="@UiHelpers.BuildUrl("/", ("executorUserId", s.UserId.ToString()), ("ack", "false"))">
+                <div class="summary-card-label">Не ознакомлен</div>
+                <div class="summary-card-value">@s.UnacknowledgedIncomingCount</div>
+                <div class="summary-card-meta">сейчас, входящие</div>
+            </a>
+            <article class="summary-card">
+                <div class="summary-card-label">Открытые исходящие</div>
+                <div class="summary-card-value">@s.OpenOutgoingCount</div>
+                <div class="summary-card-meta">сейчас</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Открытые входящие</div>
+                <div class="summary-card-value">@s.OpenIncomingCount</div>
+                <div class="summary-card-meta">сейчас</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Просрочено исходящих</div>
+                <div class="summary-card-value">@s.OverdueOutgoingCount</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Просрочено входящих</div>
+                <div class="summary-card-value">@s.OverdueIncomingCount</div>
+            </article>
+        </section>
+
+        <section class="entity-panel summary-mix-panel">
+            <h2 class="section-title">Исходящие / входящие</h2>
+            <div class="summary-revenue-mix-bar" aria-hidden="true">
+                <span class="summary-revenue-mix-labor" style="width: @CssPct(s.OutgoingSharePercent)"></span>
+                <span class="summary-revenue-mix-parts" style="width: @CssPct(s.IncomingSharePercent)"></span>
+            </div>
+            <div class="summary-revenue-mix-legend">
+                <span>Исходящие: @s.OutgoingSharePercent.ToString("0.#")%</span>
+                <span>Входящие: @s.IncomingSharePercent.ToString("0.#")%</span>
+            </div>
+        </section>
+
+        <div class="summary-tables summary-tables-grid">
+            <section class="entity-panel summary-funnel-panel">
+                <h2 class="section-title">Исходящие по статусам</h2>
+                <div class="summary-status-funnel">
+                    <div class="summary-status-item"><span>Подана</span><strong>@s.OutgoingStatusBreakdown.SubmittedCount</strong></div>
+                    <div class="summary-status-item"><span>В работе</span><strong>@s.OutgoingStatusBreakdown.InProgressCount</strong></div>
+                    <div class="summary-status-item"><span>Возвращена</span><strong>@s.OutgoingStatusBreakdown.ReturnedCount</strong></div>
+                    <div class="summary-status-item"><span>Отклонена</span><strong>@s.OutgoingStatusBreakdown.RejectedCount</strong></div>
+                    <div class="summary-status-item"><span>Выполнена</span><strong>@s.OutgoingStatusBreakdown.CompletedCount</strong></div>
+                    <div class="summary-status-item"><span>Отменена</span><strong>@s.OutgoingStatusBreakdown.CancelledCount</strong></div>
+                </div>
+            </section>
+            <section class="entity-panel summary-funnel-panel">
+                <h2 class="section-title">Входящие по статусам</h2>
+                <div class="summary-status-funnel">
+                    <div class="summary-status-item"><span>Подана</span><strong>@s.IncomingStatusBreakdown.SubmittedCount</strong></div>
+                    <div class="summary-status-item"><span>В работе</span><strong>@s.IncomingStatusBreakdown.InProgressCount</strong></div>
+                    <div class="summary-status-item"><span>Возвращена</span><strong>@s.IncomingStatusBreakdown.ReturnedCount</strong></div>
+                    <div class="summary-status-item"><span>Отклонена</span><strong>@s.IncomingStatusBreakdown.RejectedCount</strong></div>
+                    <div class="summary-status-item"><span>Выполнена</span><strong>@s.IncomingStatusBreakdown.CompletedCount</strong></div>
+                    <div class="summary-status-item"><span>Отменена</span><strong>@s.IncomingStatusBreakdown.CancelledCount</strong></div>
+                </div>
+            </section>
+        </div>
+
+        @if (s.DailyTrend.Count > 0)
+        {
+            <section class="entity-panel summary-trend-panel">
+                <h2 class="section-title">Динамика</h2>
+                <div class="summary-trend-chart @TrendChartClass()">
+                    @foreach (var point in s.DailyTrend)
+                    {
+                        <div class="summary-trend-column" title="@point.Label: подано @point.SubmittedCount, выполнено @point.CompletedCount">
+                            <div class="summary-trend-bars">
+                                <span class="summary-trend-bar summary-trend-bar-visits" style="height: @TrendHeight(point.SubmittedCount, MaxSubmitted)"></span>
+                                <span class="summary-trend-bar summary-trend-bar-revenue" style="height: @TrendHeight(point.CompletedCount, MaxCompleted)"></span>
+                            </div>
+                            <div class="summary-trend-label-wrap">
+                                <span class="summary-trend-label">@point.Label</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="summary-trend-legend">
+                    <span><i class="summary-trend-swatch summary-trend-swatch-visits"></i>Подано</span>
+                    <span><i class="summary-trend-swatch summary-trend-swatch-revenue"></i>Выполнено</span>
+                </div>
+            </section>
+        }
+    }
