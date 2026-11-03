@@ -29,8 +29,10 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
     public IReadOnlyList<(string Value, string Label)> EntityTypeOptions { get; } =
     [
         ("ServiceRequest", "Заявка"),
-        ("CatalogPart", "Каталог услуг"),
+        ("CatalogPart", "Каталог услуг/узлов"),
         ("WarehousePart", "Склад"),
+        ("EquipmentAsset", "Оборудование"),
+        ("SpecialVehicleUnit", "Спецтехника"),
         ("Vehicle", "Транспорт"),
         ("ParkingLot", "Стоянка"),
         ("VehicleTrip", "Поездка"),

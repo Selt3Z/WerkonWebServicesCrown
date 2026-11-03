@@ -6,9 +6,14 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Crown.Web.Pages;
 
-[Authorize(Roles = AppRoles.Staff)]
+[Authorize]
 public sealed class WarehouseModel(CrownApiClient api) : PageModel
 {
+    private bool CanAccess =>
+        User.IsInRole(AppRoles.Administrator)
+        || User.IsInRole(AppRoles.Dispatcher)
+        || User.FindFirst(CrownAuthHandler.CanViewWarehouseClaim)?.Value == "1";
+
     [BindProperty(SupportsGet = true)]
     public string? Q { get; set; }
 
@@ -34,6 +39,11 @@ public sealed class WarehouseModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
         var (items, hasMore, error, challenge, disabled) = await LoadAsync(0);
         if (challenge)
         {
@@ -54,6 +64,11 @@ public sealed class WarehouseModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetMoreAsync(int skip)
     {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
         if (skip < 0)
         {
             skip = 0;
@@ -89,7 +104,7 @@ public sealed class WarehouseModel(CrownApiClient api) : PageModel
 
         if (result.Status == 404)
         {
-            return ([], false, "Складской учёт отключён. Включите его в разделе «Настройки».", false, true);
+            return ([], false, "Учёт оборудования отключён. Включите его в разделе «Настройки».", false, true);
         }
 
         if (!result.Ok || result.Data is null)

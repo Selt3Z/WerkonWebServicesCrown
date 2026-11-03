@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Crown.Infrastructure.Api;
 using Crown.Infrastructure.Audit;
@@ -24,7 +25,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 PdfFontRegistry.EnsureInitialized();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o =>
+    {
+        // Web шлёт enum строкой (JsonStringEnumConverter) — без этого Create падает: «The request field is required».
+        o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddOpenApi();
 
 builder.Services.AddHttpContextAccessor();
@@ -150,7 +156,9 @@ builder.Services.AddScoped<AppSettingsService>();
 builder.Services.AddScoped<DataExportService>();
 builder.Services.AddScoped<CatalogPartImportService>();
 builder.Services.AddScoped<WarehousePartImportService>();
+builder.Services.AddScoped<EquipmentAssetImportService>();
 builder.Services.AddScoped<WarehouseStockService>();
+builder.Services.AddScoped<Crown.Infrastructure.Requests.RequestAssetReservationService>();
 builder.Services.AddScoped<Crown.Features.Summary.SummaryReportService>();
 builder.Services.Configure<AttachmentStorageOptions>(
     builder.Configuration.GetSection(AttachmentStorageOptions.SectionName));

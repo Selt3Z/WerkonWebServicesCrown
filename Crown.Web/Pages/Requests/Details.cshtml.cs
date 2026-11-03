@@ -21,6 +21,12 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
     public string? BodyInput { get; private set; }
 
+    public string? ReassignCommentInput { get; private set; }
+
+    public Guid? ReassignExecutorUserId { get; private set; }
+
+    public List<RequestAssignee> Assignees { get; private set; } = [];
+
     public bool ShowComplaintForm { get; private set; }
 
     /// <summary>Из настроек: диспетчер может hard-delete.</summary>
@@ -66,6 +72,21 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
     /// <summary>Возвращённую заявку инициатор правит и подаёт снова.</summary>
     public bool CanResubmit =>
         IsInitiatorOfItem && Item?.Status == ServiceRequestStatus.Returned;
+
+    /// <summary>Перенаправление: Подана / Возвращена / В работе, у кого есть доступ к карточке.</summary>
+    public bool CanReassign =>
+        Item is not null
+        && Item.Status is ServiceRequestStatus.Submitted
+            or ServiceRequestStatus.Returned
+            or ServiceRequestStatus.InProgress;
+
+    public bool CanSpecArrive =>
+        CanManage
+        && Item is { Kind: ServiceRequestKind.SpecTech, Status: ServiceRequestStatus.InProgress, SpecArrivedAt: null };
+
+    public bool CanSpecRelease =>
+        CanManage
+        && Item is { Kind: ServiceRequestKind.SpecTech, Status: ServiceRequestStatus.InProgress, SpecArrivedAt: not null, SpecReleasedAt: null };
 
     /// <summary>Жалоба: инициатор на возврат / отклонение / выполнено.</summary>
     public bool CanFileComplaint =>
@@ -131,7 +152,8 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         var managerOk = CanManage && ActionsFor(Item.Status, isAdmin).Contains(action);
         var initiatorCancelOk = action == "cancel" && CanCancelAsInitiator;
         var initiatorResubmitOk = action == "resubmit" && CanResubmit;
-        if (!managerOk && !initiatorCancelOk && !initiatorResubmitOk)
+        var specOk = (action == "spec-arrive" && CanSpecArrive) || (action == "spec-release" && CanSpecRelease);
+        if (!managerOk && !initiatorCancelOk && !initiatorResubmitOk && !specOk)
         {
             Error = "Это действие недоступно для текущего состояния заявки.";
             return Page();
@@ -217,7 +239,7 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
         if (!CanFileComplaint)
         {
-            Error = "Жалобу может подать только инициатор по возвращённой или отклонённой заявке.";
+            Error = "Жалобу может подать только инициатор по возвращённой, отклонённой или выполненной заявке.";
             ShowComplaintForm = false;
             return Page();
         }
@@ -352,6 +374,69 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         return Redirect("/");
     }
 
+    public async Task<IActionResult> OnPostReassignAsync(
+        long id,
+        Guid executorUserId,
+        string? comment,
+        string? rowVersion)
+    {
+        ReassignCommentInput = comment;
+        ReassignExecutorUserId = executorUserId;
+
+        var redirect = await LoadAsync(id);
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        if (Item is null)
+        {
+            return Error is null ? NotFound() : Page();
+        }
+
+        if (!CanReassign)
+        {
+            Error = "Перенаправление недоступно для текущего статуса.";
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            Error = "Комментарий обязателен.";
+            return Page();
+        }
+
+        if (executorUserId == Guid.Empty)
+        {
+            Error = "Выберите исполнителя.";
+            return Page();
+        }
+
+        var result = await api.PostAsync<ServiceRequestDetail>(
+            $"api/requests/{id}/reassign",
+            new ReassignServiceRequestRequest
+            {
+                ExecutorUserId = executorUserId,
+                Comment = comment.Trim(),
+                RowVersion = rowVersion
+            },
+            HttpContext.RequestAborted);
+
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok)
+        {
+            Error = result.Error;
+            return Page();
+        }
+
+        TempData["Ok"] = "Заявка перенаправлена.";
+        return Redirect($"/requests/{id}");
+    }
+
     public async Task<IActionResult> OnPostUploadAsync(long id, IFormFile? file)
     {
         if (file is null || file.Length == 0)
@@ -444,6 +529,13 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         }
 
         Item = result.Data;
+
+        var assignees = await api.GetAsync<List<RequestAssignee>>("api/requests/assignees", HttpContext.RequestAborted);
+        if (assignees.Ok && assignees.Data is not null)
+        {
+            Assignees = assignees.Data;
+        }
+
         return null;
     }
 }

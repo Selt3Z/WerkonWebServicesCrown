@@ -23,8 +23,16 @@ public sealed class TransportModel(CrownApiClient api) : PageModel
     public bool CanManageFleet =>
         User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
 
+    private bool CanAccess =>
+        CanManageFleet || User.FindFirst(CrownAuthHandler.CanViewTransportClaim)?.Value == "1";
+
     public async Task<IActionResult> OnGetAsync()
     {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
         var loaded = await LoadBoardAsync();
         if (!loaded)
         {

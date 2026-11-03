@@ -30,6 +30,12 @@ public sealed class SpreadsheetImportCommitRequest
 
     public int? IsActiveColumn { get; set; }
 
+    /// <summary>Инв. № для импорта оборудования.</summary>
+    public int? InventoryNumberColumn { get; set; }
+
+    /// <summary>Текущее место (label) для импорта оборудования.</summary>
+    public int? LocationColumn { get; set; }
+
     /// <summary>Владелец каталога услуг (обязателен для import-catalog-parts).</summary>
     public Guid? OwnerUserId { get; set; }
 }

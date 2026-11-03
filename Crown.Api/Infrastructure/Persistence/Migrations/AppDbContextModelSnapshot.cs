@@ -140,6 +140,202 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("CatalogParts");
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<Guid?>("FolderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UploadedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FolderId");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("DocumentationFiles");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationFolder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ParentFolderId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("ParentFolderId");
+
+                    b.HasIndex("OwnerUserId", "ParentFolderId", "Name");
+
+                    b.ToTable("DocumentationFolders");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.EquipmentAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ArchivedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Availability")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CurrentLocationLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("CurrentLocationUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("InventoryNumber")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("OwnerLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("ReservedByRequestId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Availability");
+
+                    b.HasIndex("CurrentLocationUserId");
+
+                    b.HasIndex("InventoryNumber")
+                        .IsUnique();
+
+                    b.HasIndex("IsArchived");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("EquipmentAssets");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.EquipmentMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ByUserDisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("ByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EquipmentAssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FromLocationLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("FromLocationUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ServiceRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ToLocationLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("ToLocationUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EquipmentAssetId");
+
+                    b.HasIndex("OccurredAt");
+
+                    b.HasIndex("ServiceRequestId");
+
+                    b.ToTable("EquipmentMovements");
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.ParkingLot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -247,6 +443,9 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("DueAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("EquipmentAssetId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ExecutorComment")
                         .HasColumnType("text");
 
@@ -269,6 +468,12 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsUrgent")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -282,6 +487,22 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset?>("ReactionAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("SpecArrivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SpecOperation")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("SpecPlannedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("SpecReleasedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SpecialVehicleUnitId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -301,17 +522,63 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EquipmentAssetId");
+
                     b.HasIndex("ExecutorUserId");
 
                     b.HasIndex("InitiatorUserId");
 
                     b.HasIndex("IsArchived");
 
+                    b.HasIndex("IsUrgent");
+
+                    b.HasIndex("Kind");
+
+                    b.HasIndex("SpecialVehicleUnitId");
+
                     b.HasIndex("Status");
 
                     b.HasIndex("SubmittedAt");
 
                     b.ToTable("ServiceRequests");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.SpecialVehicleUnit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Availability")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PlateOrNote")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<long?>("ReservedByRequestId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Availability");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("SpecialVehicleUnits");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.Vehicle", b =>
@@ -660,6 +927,41 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("CanBeExecutor")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("CanCreateTransportRequests")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanManageEquipment")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewSpecialVehicles")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewSummary")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewTransport")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewWarehouse")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("text");
@@ -668,6 +970,11 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("DocumentationEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
@@ -866,6 +1173,62 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationFile", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.DocumentationFolder", "Folder")
+                        .WithMany("Files")
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Folder");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationFolder", b =>
+                {
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Crown.Domain.Entities.DocumentationFolder", "ParentFolder")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentFolderId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("ParentFolder");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.EquipmentAsset", b =>
+                {
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CurrentLocationUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.EquipmentMovement", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.EquipmentAsset", "EquipmentAsset")
+                        .WithMany("Movements")
+                        .HasForeignKey("EquipmentAssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EquipmentAsset");
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.RequestAttachment", b =>
                 {
                     b.HasOne("Crown.Domain.Entities.ServiceRequest", "ServiceRequest")
@@ -879,6 +1242,11 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Crown.Domain.Entities.ServiceRequest", b =>
                 {
+                    b.HasOne("Crown.Domain.Entities.EquipmentAsset", null)
+                        .WithMany()
+                        .HasForeignKey("EquipmentAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("ExecutorUserId")
@@ -887,6 +1255,11 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("InitiatorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Crown.Domain.Entities.SpecialVehicleUnit", null)
+                        .WithMany()
+                        .HasForeignKey("SpecialVehicleUnitId")
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 
@@ -1004,6 +1377,18 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationFolder", b =>
+                {
+                    b.Navigation("Children");
+
+                    b.Navigation("Files");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.EquipmentAsset", b =>
+                {
+                    b.Navigation("Movements");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.ServiceRequest", b =>

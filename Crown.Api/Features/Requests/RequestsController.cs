@@ -11,6 +11,7 @@ using Crown.Infrastructure.Api;
 using Crown.Infrastructure.Attachments;
 using Crown.Infrastructure.Identity;
 using Crown.Infrastructure.Persistence;
+using Crown.Infrastructure.Requests;
 using Crown.Infrastructure.Settings;
 using Crown.Infrastructure.Time;
 
@@ -27,6 +28,7 @@ public sealed class RequestsController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly AppSettingsService _settings;
     private readonly AppTimeZone _time;
+    private readonly RequestAssetReservationService _reservations;
 
     public RequestsController(
         AppDbContext db,
@@ -34,7 +36,8 @@ public sealed class RequestsController : ControllerBase
         AttachmentPreviewService preview,
         UserManager<ApplicationUser> userManager,
         AppSettingsService settings,
-        AppTimeZone time)
+        AppTimeZone time,
+        RequestAssetReservationService reservations)
     {
         _db = db;
         _attachments = attachments;
@@ -42,16 +45,17 @@ public sealed class RequestsController : ControllerBase
         _userManager = userManager;
         _settings = settings;
         _time = time;
+        _reservations = reservations;
     }
 
-    /// <summary>Активные пользователи с ролью Initiator — выбор исполнителя и фильтры.</summary>
+    /// <summary>Активные пользователи с ролью Department — выбор исполнителя и фильтры.</summary>
     [HttpGet("assignees")]
     public async Task<ActionResult<List<RequestAssigneeResponse>>> GetAssignees(
         CancellationToken cancellationToken)
     {
-        var users = await _userManager.GetUsersInRoleAsync(AppRoles.Initiator);
+        var users = await _userManager.GetUsersInRoleAsync(AppRoles.Department);
         var items = users
-            .Where(x => x.IsActive)
+            .Where(x => x.IsActive && x.CanBeExecutor)
             .OrderBy(x => x.DisplayName)
             .ThenBy(x => x.UserName)
             .Select(x => new RequestAssigneeResponse
@@ -155,6 +159,9 @@ public sealed class RequestsController : ControllerBase
                 Id = x.Id,
                 Status = x.Status,
                 StatusLabel = StatusLabel(x.Status),
+                Kind = x.Kind,
+                KindLabel = KindLabel(x.Kind),
+                IsUrgent = x.IsUrgent,
                 Acknowledged = x.Acknowledged,
                 InitiatorUserId = x.InitiatorUserId,
                 InitiatorName = iu != null
@@ -234,6 +241,9 @@ public sealed class RequestsController : ControllerBase
             Id = x.Id,
             Status = x.Status,
             StatusLabel = StatusLabel(x.Status),
+            Kind = x.Kind,
+            KindLabel = KindLabel(x.Kind),
+            IsUrgent = x.IsUrgent,
             Acknowledged = x.Acknowledged,
             InitiatorUserId = x.InitiatorUserId,
             InitiatorName = iu != null
@@ -324,8 +334,33 @@ public sealed class RequestsController : ControllerBase
             return BadRequest(new
             {
                 error = "executor_invalid",
-                message = "Выберите активного исполнителя с ролью «Инициатор»."
+                message = "Выберите активного исполнителя с ролью «Подразделение»."
             });
+        }
+
+        var kind = Enum.IsDefined(typeof(ServiceRequestKind), request.Kind)
+            ? request.Kind
+            : ServiceRequestKind.Other;
+
+        if (kind == ServiceRequestKind.SpecTech
+            && !User.IsInRole(AppRoles.Administrator)
+            && !User.IsInRole(AppRoles.Dispatcher))
+        {
+            var actor = await _userManager.GetUserAsync(User);
+            if (actor is null || !actor.CanCreateTransportRequests)
+            {
+                return BadRequest(new
+                {
+                    error = "transport_forbidden",
+                    message = "Нет права создавать транспортные заявки (спецтехника)."
+                });
+            }
+        }
+
+        var kindError = await ValidateKindSelectionAsync(kind, request, cancellationToken);
+        if (kindError is not null)
+        {
+            return BadRequest(new { error = "kind_invalid", message = kindError });
         }
 
         var initiatorName = DisplayOf(initiatorUser);
@@ -348,6 +383,16 @@ public sealed class RequestsController : ControllerBase
             TransportType = string.IsNullOrWhiteSpace(request.TransportType) ? null : request.TransportType.Trim(),
             Body = request.Body.Trim(),
             Status = ServiceRequestStatus.Submitted,
+            Kind = kind,
+            IsUrgent = request.IsUrgent,
+            EquipmentAssetId = kind == ServiceRequestKind.Equipment ? request.EquipmentAssetId : null,
+            SpecialVehicleUnitId = kind == ServiceRequestKind.SpecTech ? request.SpecialVehicleUnitId : null,
+            SpecOperation = kind == ServiceRequestKind.SpecTech
+                ? (string.IsNullOrWhiteSpace(request.SpecOperation) ? null : request.SpecOperation.Trim())
+                : null,
+            SpecPlannedAt = kind == ServiceRequestKind.SpecTech
+                ? request.SpecPlannedAt?.ToUniversalTime()
+                : null,
             CreatedByUserId = GetUserId(),
             LastModifiedAt = now,
             LastModifiedByUserId = GetUserId()
@@ -411,6 +456,12 @@ public sealed class RequestsController : ControllerBase
                     return BadRequest(new { error = "invalid_status", message = acceptErr });
                 }
 
+                var (reserveOk, reserveErr) = await _reservations.TryReserveAsync(entity, cancellationToken);
+                if (!reserveOk)
+                {
+                    return BadRequest(new { error = "reserve_failed", message = reserveErr });
+                }
+
                 entity.Status = ServiceRequestStatus.InProgress;
                 entity.ReactionAt ??= DateTimeOffset.UtcNow;
                 entity.CompletedAt = null;
@@ -428,6 +479,7 @@ public sealed class RequestsController : ControllerBase
                     return BadRequest(new { error = "comment_required", message = "Чтобы отклонить заявку, нужен комментарий." });
                 }
 
+                await _reservations.ReleaseAsync(entity, cancellationToken);
                 entity.Status = ServiceRequestStatus.Rejected;
                 entity.ReactionAt ??= DateTimeOffset.UtcNow;
                 entity.CompletedAt = DateTimeOffset.UtcNow;
@@ -444,6 +496,7 @@ public sealed class RequestsController : ControllerBase
                     return BadRequest(new { error = "comment_required", message = "Чтобы вернуть заявку, нужен комментарий." });
                 }
 
+                await _reservations.ReleaseAsync(entity, cancellationToken);
                 entity.Status = ServiceRequestStatus.Returned;
                 entity.ReactionAt ??= DateTimeOffset.UtcNow;
                 entity.CompletedAt = null;
@@ -455,8 +508,68 @@ public sealed class RequestsController : ControllerBase
                     return BadRequest(new { error = "invalid_status", message = completeErr });
                 }
 
+                if (entity.Kind == ServiceRequestKind.Equipment)
+                {
+                    var byUser = await _userManager.GetUserAsync(User);
+                    var (moveOk, moveErr) = await _reservations.CompleteEquipmentMoveAsync(
+                        entity,
+                        GetUserId(),
+                        byUser is null ? null : DisplayOf(byUser),
+                        cancellationToken);
+                    if (!moveOk)
+                    {
+                        return BadRequest(new { error = "complete_failed", message = moveErr });
+                    }
+                }
+                else if (entity.Kind == ServiceRequestKind.SpecTech)
+                {
+                    var (relOk, relErr) = await _reservations.MarkSpecReleasedAsync(entity, cancellationToken);
+                    if (!relOk)
+                    {
+                        return BadRequest(new { error = "complete_failed", message = relErr });
+                    }
+                }
+
                 entity.Status = ServiceRequestStatus.Completed;
                 entity.CompletedAt = DateTimeOffset.UtcNow;
+                break;
+            case "spec-arrive":
+                if (!isAdmin
+                    && !TryEnsureStatus(entity, out var arriveErr, ServiceRequestStatus.InProgress))
+                {
+                    return BadRequest(new { error = "invalid_status", message = arriveErr });
+                }
+
+                if (entity.Kind != ServiceRequestKind.SpecTech)
+                {
+                    return BadRequest(new { error = "kind_invalid", message = "Действие только для заявки спецтехники." });
+                }
+
+                var (arrOk, arrErr) = await _reservations.MarkSpecArrivedAsync(entity, cancellationToken);
+                if (!arrOk)
+                {
+                    return BadRequest(new { error = "arrive_failed", message = arrErr });
+                }
+
+                break;
+            case "spec-release":
+                if (!isAdmin
+                    && !TryEnsureStatus(entity, out var releaseErr, ServiceRequestStatus.InProgress))
+                {
+                    return BadRequest(new { error = "invalid_status", message = releaseErr });
+                }
+
+                if (entity.Kind != ServiceRequestKind.SpecTech)
+                {
+                    return BadRequest(new { error = "kind_invalid", message = "Действие только для заявки спецтехники." });
+                }
+
+                var (specRelOk, specRelErr) = await _reservations.MarkSpecReleasedAsync(entity, cancellationToken);
+                if (!specRelOk)
+                {
+                    return BadRequest(new { error = "release_failed", message = specRelErr });
+                }
+
                 break;
             case "cancel":
                 // Инициатор может отменить свою заявку (подана / в работе / возвращена).
@@ -474,6 +587,7 @@ public sealed class RequestsController : ControllerBase
                     return Forbid();
                 }
 
+                await _reservations.ReleaseAsync(entity, cancellationToken);
                 entity.Status = ServiceRequestStatus.Cancelled;
                 entity.CompletedAt = DateTimeOffset.UtcNow;
                 break;
@@ -532,6 +646,81 @@ public sealed class RequestsController : ControllerBase
         }
 
         entity.ExecutorComment = comment;
+        entity.LastModifiedAt = DateTimeOffset.UtcNow;
+        entity.LastModifiedByUserId = GetUserId();
+        await _db.SaveChangesAsync(cancellationToken);
+        return Ok(await MapDetailAsync(entity, cancellationToken));
+    }
+
+    /// <summary>Перенаправление исполнителя: статусы Подана / Возвращена / В работе.</summary>
+    [HttpPost("{id:long}/reassign")]
+    public async Task<ActionResult<ServiceRequestDetailResponse>> Reassign(
+        long id,
+        [FromBody] ReassignServiceRequestRequest request,
+        CancellationToken cancellationToken)
+    {
+        var entity = await _db.ServiceRequests
+            .Include(x => x.Attachments)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null || !CanAccess(entity))
+        {
+            return NotFound();
+        }
+
+        if (entity.Status is not (
+            ServiceRequestStatus.Submitted
+            or ServiceRequestStatus.Returned
+            or ServiceRequestStatus.InProgress))
+        {
+            return BadRequest(new
+            {
+                error = "invalid_status",
+                message = "Перенаправление доступно только для поданных, возвращённых или заявок в работе."
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Comment))
+        {
+            return BadRequest(new { error = "comment_required", message = "Комментарий обязателен." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RowVersion)
+            && uint.TryParse(request.RowVersion, out var expectedXmin)
+            && entity.Xmin != expectedXmin)
+        {
+            return Conflict(new { error = "concurrency", message = "Заявка изменена другим пользователем." });
+        }
+
+        var newExecutor = await ResolveActiveInitiatorAsync(request.ExecutorUserId, cancellationToken);
+        if (newExecutor is null)
+        {
+            return BadRequest(new
+            {
+                error = "executor_invalid",
+                message = "Выберите активного исполнителя с ролью «Подразделение»."
+            });
+        }
+
+        if (entity.ExecutorUserId == newExecutor.Id)
+        {
+            return BadRequest(new { error = "executor_same", message = "Выберите другого исполнителя." });
+        }
+
+        var oldName = entity.ExecutorName;
+        var stamp = _time.FromUtc(DateTime.UtcNow).ToString("dd.MM.yyyy HH:mm");
+
+        // Если была бронь после accept — снимаем (статус снова Подана).
+        await _reservations.ReleaseAsync(entity, cancellationToken);
+
+        entity.ExecutorUserId = newExecutor.Id;
+        entity.ExecutorName = DisplayOf(newExecutor);
+        entity.Status = ServiceRequestStatus.Submitted;
+        entity.Acknowledged = false;
+        entity.CompletedAt = null;
+        entity.Body = string.IsNullOrWhiteSpace(entity.Body)
+            ? $"Перенаправлена из «{oldName}» {stamp}"
+            : entity.Body.TrimEnd() + $"\nПеренаправлена из «{oldName}» {stamp}";
+        entity.ExecutorComment = request.Comment.Trim();
         entity.LastModifiedAt = DateTimeOffset.UtcNow;
         entity.LastModifiedByUserId = GetUserId();
         await _db.SaveChangesAsync(cancellationToken);
@@ -857,7 +1046,12 @@ public sealed class RequestsController : ControllerBase
             return null;
         }
 
-        return await _userManager.IsInRoleAsync(user, AppRoles.Initiator) ? user : null;
+        if (!await _userManager.IsInRoleAsync(user, AppRoles.Department) || !user.CanBeExecutor)
+        {
+            return null;
+        }
+
+        return user;
     }
 
     private Guid? GetUserId()
@@ -871,7 +1065,7 @@ public sealed class RequestsController : ControllerBase
             ? (user.UserName ?? string.Empty)
             : user.DisplayName;
 
-    private static bool TryEnsureStatus(
+    internal static bool TryEnsureStatus(
         ServiceRequest entity,
         out string? error,
         params ServiceRequestStatus[] allowed)
@@ -916,11 +1110,42 @@ public sealed class RequestsController : ControllerBase
             }
         }
 
+        string? equipmentLabel = null;
+        if (x.EquipmentAssetId is Guid assetId)
+        {
+            var asset = await _db.EquipmentAssets.IgnoreQueryFilters().AsNoTracking()
+                .Where(a => a.Id == assetId)
+                .Select(a => new { a.Name, a.InventoryNumber })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (asset is not null)
+            {
+                equipmentLabel = $"{asset.Name} ({asset.InventoryNumber})";
+            }
+        }
+
+        string? specLabel = null;
+        if (x.SpecialVehicleUnitId is Guid unitId)
+        {
+            var unit = await _db.SpecialVehicleUnits.AsNoTracking()
+                .Where(u => u.Id == unitId)
+                .Select(u => new { u.Name, u.PlateOrNote })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (unit is not null)
+            {
+                specLabel = string.IsNullOrWhiteSpace(unit.PlateOrNote)
+                    ? unit.Name
+                    : $"{unit.Name} ({unit.PlateOrNote})";
+            }
+        }
+
         return new ServiceRequestDetailResponse
         {
             Id = x.Id,
             Status = x.Status,
             StatusLabel = StatusLabel(x.Status),
+            Kind = x.Kind,
+            KindLabel = KindLabel(x.Kind),
+            IsUrgent = x.IsUrgent,
             Acknowledged = x.Acknowledged,
             SubmittedAt = x.SubmittedAt,
             Phone = x.Phone,
@@ -934,6 +1159,14 @@ public sealed class RequestsController : ControllerBase
             ExecutorComment = x.ExecutorComment,
             ReactionAt = x.ReactionAt,
             CompletedAt = x.CompletedAt,
+            EquipmentAssetId = x.EquipmentAssetId,
+            EquipmentAssetLabel = equipmentLabel,
+            SpecialVehicleUnitId = x.SpecialVehicleUnitId,
+            SpecialVehicleLabel = specLabel,
+            SpecOperation = x.SpecOperation,
+            SpecPlannedAt = x.SpecPlannedAt,
+            SpecArrivedAt = x.SpecArrivedAt,
+            SpecReleasedAt = x.SpecReleasedAt,
             RowVersion = x.Xmin.ToString(),
             HasComplaint = !string.IsNullOrWhiteSpace(x.ComplaintText),
             ComplaintText = x.ComplaintText,
@@ -954,6 +1187,69 @@ public sealed class RequestsController : ControllerBase
         };
     }
 
+    private async Task<string?> ValidateKindSelectionAsync(
+        ServiceRequestKind kind,
+        CreateServiceRequestRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (kind == ServiceRequestKind.Equipment)
+        {
+            if (request.EquipmentAssetId is not Guid assetId || assetId == Guid.Empty)
+            {
+                return "Выберите единицу оборудования.";
+            }
+
+            var asset = await _db.EquipmentAssets.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == assetId, cancellationToken);
+            if (asset is null)
+            {
+                return "Единица оборудования не найдена.";
+            }
+
+            // Создание не бронирует — но уже Reserved/недоступную выбирать нельзя.
+            if (asset.Availability != EquipmentAvailability.Free)
+            {
+                return "Единица оборудования уже забронирована.";
+            }
+
+            return null;
+        }
+
+        if (kind == ServiceRequestKind.SpecTech)
+        {
+            if (request.SpecialVehicleUnitId is not Guid unitId || unitId == Guid.Empty)
+            {
+                return "Выберите единицу спецтехники.";
+            }
+
+            if (string.IsNullOrWhiteSpace(request.SpecOperation))
+            {
+                return "Укажите операцию для спецтехники.";
+            }
+
+            if (request.SpecPlannedAt is null)
+            {
+                return "Укажите плановое время для спецтехники.";
+            }
+
+            var unit = await _db.SpecialVehicleUnits.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == unitId && x.IsActive, cancellationToken);
+            if (unit is null)
+            {
+                return "Единица спецтехники не найдена.";
+            }
+
+            if (unit.Availability != SpecialVehicleAvailability.Free)
+            {
+                return "Единица спецтехники уже занята или забронирована.";
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
     internal static string StatusLabel(ServiceRequestStatus status) => status switch
     {
         ServiceRequestStatus.Submitted => "Подана",
@@ -963,5 +1259,12 @@ public sealed class RequestsController : ControllerBase
         ServiceRequestStatus.Completed => "Выполнена",
         ServiceRequestStatus.Cancelled => "Отменена",
         _ => status.ToString()
+    };
+
+    internal static string KindLabel(ServiceRequestKind kind) => kind switch
+    {
+        ServiceRequestKind.Equipment => "Оборудование",
+        ServiceRequestKind.SpecTech => "Спецтехника",
+        _ => "Другое"
     };
 }

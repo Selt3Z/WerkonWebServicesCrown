@@ -7,6 +7,9 @@ public sealed class ServiceRequestListItemResponse
     public long Id { get; set; }
     public ServiceRequestStatus Status { get; set; }
     public string StatusLabel { get; set; } = string.Empty;
+    public ServiceRequestKind Kind { get; set; }
+    public string KindLabel { get; set; } = string.Empty;
+    public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
     public string InitiatorName { get; set; } = string.Empty;
     public Guid? InitiatorUserId { get; set; }
@@ -27,6 +30,9 @@ public sealed class ServiceRequestDetailResponse
     public long Id { get; set; }
     public ServiceRequestStatus Status { get; set; }
     public string StatusLabel { get; set; } = string.Empty;
+    public ServiceRequestKind Kind { get; set; }
+    public string KindLabel { get; set; } = string.Empty;
+    public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
     public string Phone { get; set; } = string.Empty;
@@ -40,6 +46,14 @@ public sealed class ServiceRequestDetailResponse
     public string? ExecutorComment { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public Guid? EquipmentAssetId { get; set; }
+    public string? EquipmentAssetLabel { get; set; }
+    public Guid? SpecialVehicleUnitId { get; set; }
+    public string? SpecialVehicleLabel { get; set; }
+    public string? SpecOperation { get; set; }
+    public DateTimeOffset? SpecPlannedAt { get; set; }
+    public DateTimeOffset? SpecArrivedAt { get; set; }
+    public DateTimeOffset? SpecReleasedAt { get; set; }
     public string? RowVersion { get; set; }
     public bool HasComplaint { get; set; }
     public string? ComplaintText { get; set; }
@@ -58,7 +72,7 @@ public sealed class RequestAttachmentResponse
     public DateTimeOffset UploadedAt { get; set; }
 }
 
-/// <summary>Активный пользователь с ролью Initiator — для выбора исполнителя/фильтров.</summary>
+/// <summary>Активный пользователь с ролью Department — для выбора исполнителя/фильтров.</summary>
 public sealed class RequestAssigneeResponse
 {
     public Guid Id { get; set; }
@@ -74,11 +88,17 @@ public sealed class CreateServiceRequestRequest
     /// <summary>Админ указывает пользователя-инициатора; остальные — текущий user на сервере.</summary>
     public Guid? InitiatorUserId { get; set; }
 
-    /// <summary>Кому направлена заявка (пользователь с ролью Initiator).</summary>
+    /// <summary>Кому направлена заявка (пользователь с ролью Department).</summary>
     public Guid ExecutorUserId { get; set; }
 
     public string? TransportType { get; set; }
     public string Body { get; set; } = string.Empty;
+    public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
+    public bool IsUrgent { get; set; }
+    public Guid? EquipmentAssetId { get; set; }
+    public Guid? SpecialVehicleUnitId { get; set; }
+    public string? SpecOperation { get; set; }
+    public DateTimeOffset? SpecPlannedAt { get; set; }
 }
 
 public sealed class TransitionServiceRequestRequest
@@ -90,6 +110,13 @@ public sealed class TransitionServiceRequestRequest
     public DateTimeOffset? NewDueAt { get; set; }
     public string? RowVersion { get; set; }
     public bool? Acknowledged { get; set; }
+}
+
+public sealed class ReassignServiceRequestRequest
+{
+    public Guid ExecutorUserId { get; set; }
+    public string Comment { get; set; } = string.Empty;
+    public string? RowVersion { get; set; }
 }
 
 public sealed class FileComplaintRequest

@@ -763,7 +763,7 @@ public sealed class TransportController : ControllerBase
 
     private async Task<List<TransportBorrowerOption>> LoadBorrowersAsync()
     {
-        var users = await _users.GetUsersInRoleAsync(AppRoles.Initiator);
+        var users = await _users.GetUsersInRoleAsync(AppRoles.Department);
         return users
             .Where(x => x.IsActive)
             .OrderBy(x => x.DisplayName)

@@ -1,0 +1,121 @@
+@page "/equipment/{id:guid}"
+@model Crown.Web.Pages.EquipmentDetailModel
+@inject AppTime Time
+@{
+    var item = Model.Item;
+    ViewData["Title"] = item is null ? "Оборудование" : item.Name;
+}
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (item is null)
+{
+    <a class="btn btn-outline-secondary" href="/equipment">&larr; К списку</a>
+    return;
+}
+
+<div class="detail-page">
+    <div class="entity-panel">
+        <div class="entity-header">
+            <div class="entity-header-leading">
+                <h2 class="section-title">@item.Name</h2>
+                @if (item.IsArchived)
+                {
+                    <span class="badge bg-secondary">архив</span>
+                }
+                <div class="entity-header-actions">
+                    <a class="btn btn-sm btn-outline-secondary" href="/equipment/edit/@item.Id">Изменить</a>
+                    <form method="post" asp-page-handler="Archive" asp-route-id="@item.Id" class="crown-op-form">
+                        <input type="hidden" name="archive" value="@((!item.IsArchived).ToString().ToLowerInvariant())" />
+                        <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                data-confirm="@(item.IsArchived ? "Вернуть из архива?" : "В архив?")">
+                            @(item.IsArchived ? "Из архива" : "В архив")
+                        </button>
+                    </form>
+                    <a class="btn btn-sm btn-outline-secondary" href="/equipment">&larr; К списку</a>
+                </div>
+            </div>
+        </div>
+
+        <dl class="entity-meta visit-entity-meta">
+            <div class="entity-meta-item">
+                <dt>Инв. №</dt>
+                <dd>@item.InventoryNumber</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Категория</dt>
+                <dd>@(string.IsNullOrWhiteSpace(item.Category) ? "—" : item.Category)</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Принадлежит</dt>
+                <dd>@(string.IsNullOrWhiteSpace(item.OwnerLabel) ? "—" : item.OwnerLabel)</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Текущее местоположение</dt>
+                <dd>@(string.IsNullOrWhiteSpace(item.CurrentLocationLabel) ? "—" : item.CurrentLocationLabel)</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Статус</dt>
+                <dd>
+                    @(item.Availability == EquipmentAvailability.Reserved ? "Забронировано" : "Свободно")
+                    @if (item.ReservedByRequestId is long rid)
+                    {
+                        <text> — <a href="/requests/@rid">заявка №@rid</a></text>
+                    }
+                </dd>
+            </div>
+            <div class="entity-meta-item entity-meta-wide">
+                <dt>Описание</dt>
+                <dd>@(string.IsNullOrWhiteSpace(item.Description) ? "—" : item.Description)</dd>
+            </div>
+        </dl>
+    </div>
+
+    <h3 class="section-title mt-4">История перемещений</h3>
+    <div class="table-responsive crown-table-wrap">
+        <table class="table crown-table">
+            <thead>
+                <tr>
+                    <th>Когда</th>
+                    <th>Откуда</th>
+                    <th>Куда</th>
+                    <th>Заявка</th>
+                    <th>Кто</th>
+                    <th>Заметка</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (item.Movements.Count == 0)
+            {
+                <tr><td colspan="6" class="text-muted">Пока нет записей.</td></tr>
+            }
+            else
+            {
+                foreach (var m in item.Movements)
+                {
+                    <tr>
+                        <td>@Time.Format(m.OccurredAt)</td>
+                        <td>@(m.FromLocationLabel ?? "—")</td>
+                        <td>@(m.ToLocationLabel ?? "—")</td>
+                        <td>
+                            @if (m.ServiceRequestId is long sid)
+                            {
+                                <a href="/requests/@sid">№@sid</a>
+                            }
+                            else
+                            {
+                                <text>—</text>
+                            }
+                        </td>
+                        <td>@(m.ByUserDisplayName ?? "—")</td>
+                        <td>@(m.Note ?? "—")</td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

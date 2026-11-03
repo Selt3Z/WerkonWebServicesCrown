@@ -1,0 +1,50 @@
+@page "/documentation"
+@model DocumentationModel
+@{
+    ViewData["Title"] = "Документация";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Документация</h1>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (Model.Sections.Count == 0 && string.IsNullOrEmpty(Model.Error))
+{
+    <p class="text-muted">Нет доступных подразделений в документации.</p>
+}
+else
+{
+    <div class="crown-table-wrap">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>Подразделение</th>
+                <th class="num">Файлов</th>
+                <th class="num">Объём</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var s in Model.Sections)
+            {
+                <tr class="table-row-action" data-href="/documentation/@s.UserId" tabindex="0" role="link"
+                    aria-label="Документация: @s.DisplayName">
+                    <td>
+                        @s.DisplayName
+                        @if (User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == s.UserId.ToString())
+                        {
+                            <span class="badge text-bg-secondary ms-1">ваше</span>
+                        }
+                    </td>
+                    <td class="num">@s.FileCount</td>
+                    <td class="num">@(s.FileCount == 0 ? "—" : UiHelpers.FormatBytes(s.TotalSizeBytes))</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

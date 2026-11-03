@@ -15,7 +15,18 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
 
     public List<RequestAssignee> Assignees { get; private set; } = [];
 
+    public List<EquipmentAsset> FreeEquipment { get; private set; } = [];
+
+    public List<SpecialVehicleUnit> FreeSpecUnits { get; private set; } = [];
+
+    public List<SpecialVehicleTypeAvailability> SpecTypeAvailability { get; private set; } = [];
+
     public bool CanPickInitiator => User.IsInRole(AppRoles.Administrator);
+
+    public bool CanCreateTransport =>
+        User.IsInRole(AppRoles.Administrator)
+        || User.IsInRole(AppRoles.Dispatcher)
+        || User.FindFirst(CrownAuthHandler.CanCreateTransportClaim)?.Value == "1";
 
     public string CurrentUserDisplayName { get; private set; } = string.Empty;
 
@@ -31,6 +42,12 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         public string BodyMode { get; set; } = "manual";
         public Guid? CatalogPartId { get; set; }
         public string? Body { get; set; }
+        public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
+        public bool IsUrgent { get; set; }
+        public Guid? EquipmentAssetId { get; set; }
+        public Guid? SpecialVehicleUnitId { get; set; }
+        public string? SpecOperation { get; set; }
+        public string? SpecPlannedAt { get; set; }
     }
 
     public async Task<IActionResult> OnGetAsync()
@@ -40,7 +57,7 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         return await LoadLookupsAsync() ?? Page();
     }
 
-    /// <summary>Активные услуги каталога исполнителя — для второго выпадающего списка.</summary>
+    /// <summary>Активные услуги/узлы каталога исполнителя — для второго выпадающего списка.</summary>
     public async Task<IActionResult> OnGetServicesJsonAsync(Guid ownerUserId)
     {
         if (ownerUserId == Guid.Empty)
@@ -111,12 +128,49 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
             return Page();
         }
 
+        if (Input.Kind == ServiceRequestKind.Equipment
+            && (Input.EquipmentAssetId is null || Input.EquipmentAssetId == Guid.Empty))
+        {
+            Error = "Выберите единицу оборудования.";
+            return Page();
+        }
+
+        DateTimeOffset? specPlanned = null;
+        if (Input.Kind == ServiceRequestKind.SpecTech)
+        {
+            if (!CanCreateTransport)
+            {
+                Error = "Нет права создавать транспортные заявки.";
+                return Page();
+            }
+
+            if (Input.SpecialVehicleUnitId is null || Input.SpecialVehicleUnitId == Guid.Empty)
+            {
+                Error = "Выберите единицу спецтехники.";
+                return Page();
+            }
+
+            if (string.IsNullOrWhiteSpace(Input.SpecOperation))
+            {
+                Error = "Укажите операцию.";
+                return Page();
+            }
+
+            if (!time.TryParseInput(Input.SpecPlannedAt, out var planned))
+            {
+                Error = "Укажите плановое время.";
+                return Page();
+            }
+
+            specPlanned = planned;
+        }
+
         var fromCatalog = string.Equals(Input.BodyMode, "catalog", StringComparison.OrdinalIgnoreCase);
         if (fromCatalog)
         {
             if (Input.CatalogPartId is null || Input.CatalogPartId == Guid.Empty)
             {
-                Error = "Выберите услугу из каталога исполнителя.";
+                Error = "Выберите услугу/узел из каталога исполнителя.";
                 return Page();
             }
 
@@ -130,23 +184,22 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
 
             if (!part.Ok || part.Data is null)
             {
-                Error = part.Error ?? "Услуга не найдена.";
+                Error = part.Error ?? "Услуга/узел не найдены.";
                 return Page();
             }
 
             if (part.Data.OwnerUserId != Input.ExecutorUserId.Value)
             {
-                Error = "Услуга не из каталога выбранного исполнителя.";
+                Error = "Услуга/узел не из каталога выбранного исполнителя.";
                 return Page();
             }
 
             if (!part.Data.IsActive)
             {
-                Error = "Услуга неактивна.";
+                Error = "Услуга/узел неактивны.";
                 return Page();
             }
 
-            // Если клиент не успел подставить текст — собираем с сервера.
             if (string.IsNullOrWhiteSpace(Input.Body))
             {
                 Input.Body = string.IsNullOrWhiteSpace(part.Data.Description)
@@ -169,7 +222,13 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
                 DueAt = dueAt,
                 InitiatorUserId = CanPickInitiator ? Input.InitiatorUserId : null,
                 ExecutorUserId = Input.ExecutorUserId.Value,
-                Body = Input.Body.Trim()
+                Body = Input.Body.Trim(),
+                Kind = Input.Kind,
+                IsUrgent = Input.IsUrgent,
+                EquipmentAssetId = Input.Kind == ServiceRequestKind.Equipment ? Input.EquipmentAssetId : null,
+                SpecialVehicleUnitId = Input.Kind == ServiceRequestKind.SpecTech ? Input.SpecialVehicleUnitId : null,
+                SpecOperation = Input.Kind == ServiceRequestKind.SpecTech ? Input.SpecOperation?.Trim() : null,
+                SpecPlannedAt = specPlanned
             },
             HttpContext.RequestAborted);
 
@@ -226,8 +285,24 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
 
         if (CanPickInitiator && Assignees.Count == 0)
         {
-            // Админ тоже может выбрать инициатора только из Initiator-роли.
-            Error ??= "Нет активных пользователей с ролью «Инициатор».";
+            Error ??= "Нет активных пользователей с ролью «Подразделение».";
+        }
+
+        var eq = await api.GetAsync<PagedResponse<EquipmentAsset>>(
+            UiHelpers.BuildUrl("api/equipment", ("freeOnly", "true"), ("skip", "0"), ("take", "500")),
+            HttpContext.RequestAborted);
+        if (eq.Ok && eq.Data is not null)
+        {
+            FreeEquipment = eq.Data.Items;
+        }
+
+        var avail = await api.GetAsync<SpecialVehicleAvailabilityPayload>(
+            "api/special-vehicles/availability",
+            HttpContext.RequestAborted);
+        if (avail.Ok && avail.Data is not null)
+        {
+            FreeSpecUnits = avail.Data.FreeUnits;
+            SpecTypeAvailability = avail.Data.Types;
         }
 
         return null;

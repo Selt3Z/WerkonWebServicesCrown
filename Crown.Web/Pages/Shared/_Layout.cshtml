@@ -2,6 +2,16 @@
     var path = Context.Request.Path.Value ?? "/";
     var isAdmin = User.IsInRole(AppRoles.Administrator);
     var isStaff = isAdmin || User.IsInRole(AppRoles.Dispatcher);
+    var canManageEquipment = isStaff
+        || User.FindFirst(CrownAuthHandler.CanManageEquipmentClaim)?.Value == "1";
+    var canViewTransport = isStaff
+        || User.FindFirst(CrownAuthHandler.CanViewTransportClaim)?.Value == "1";
+    var canViewSpecialVehicles = isStaff
+        || User.FindFirst(CrownAuthHandler.CanViewSpecialVehiclesClaim)?.Value == "1";
+    var canViewWarehouse = isStaff
+        || User.FindFirst(CrownAuthHandler.CanViewWarehouseClaim)?.Value == "1";
+    var canViewSummary = isStaff
+        || User.FindFirst(CrownAuthHandler.CanViewSummaryClaim)?.Value == "1";
     var displayName = User.FindFirst(CrownAuthHandler.DisplayNameClaim)?.Value ?? string.Empty;
     var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
     var theme = Context.Request.Cookies[Crown.Web.Pages.SettingsModel.ThemeCookieName];
@@ -68,13 +78,34 @@
                         <span class="nav-menu-text">Добавить заявку</span>
                     </a>
                 </div>
-                <div class="nav-item">
-                    <a class="nav-link @Active("/transport")" href="/transport">
-                        <span class="bi bi-car-side-nav-menu nav-menu-icon" aria-hidden="true"></span>
-                        <span class="nav-menu-text">Транспорт</span>
-                    </a>
-                </div>
-                @if (isStaff)
+                @if (canViewTransport)
+                {
+                    <div class="nav-item">
+                        <a class="nav-link @Active("/transport")" href="/transport">
+                            <span class="bi bi-car-side-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                            <span class="nav-menu-text">Транспорт</span>
+                        </a>
+                    </div>
+                }
+                @if (canManageEquipment)
+                {
+                    <div class="nav-item">
+                        <a class="nav-link @Active("/equipment")" href="/equipment">
+                            <span class="bi bi-tools-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                            <span class="nav-menu-text">Оборудование</span>
+                        </a>
+                    </div>
+                }
+                @if (canViewSpecialVehicles)
+                {
+                    <div class="nav-item">
+                        <a class="nav-link @Active("/special-vehicles")" href="/special-vehicles">
+                            <span class="bi bi-truck-front-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                            <span class="nav-menu-text">Спецтехника</span>
+                        </a>
+                    </div>
+                }
+                @if (canViewWarehouse)
                 {
                     <div class="nav-item">
                         <a class="nav-link @Active("/warehouse")" href="/warehouse">
@@ -84,17 +115,26 @@
                     </div>
                 }
                 <div class="nav-item">
+                    <a class="nav-link @Active("/documentation")" href="/documentation">
+                        <span class="bi bi-journal-bookmark-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                        <span class="nav-menu-text">Документация</span>
+                    </a>
+                </div>
+                <div class="nav-item">
                     <a class="nav-link @Active("/catalog-parts")" href="/catalog-parts">
                         <span class="bi bi-journal-text-nav-menu nav-menu-icon" aria-hidden="true"></span>
                         <span class="nav-menu-text">Каталог</span>
                     </a>
                 </div>
-                <div class="nav-item">
-                    <a class="nav-link @Active("/summary")" href="/summary">
-                        <span class="bi bi-bar-chart-nav-menu nav-menu-icon" aria-hidden="true"></span>
-                        <span class="nav-menu-text">Сводка</span>
-                    </a>
-                </div>
+                @if (canViewSummary)
+                {
+                    <div class="nav-item">
+                        <a class="nav-link @Active("/summary")" href="/summary">
+                            <span class="bi bi-bar-chart-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                            <span class="nav-menu-text">Сводка</span>
+                        </a>
+                    </div>
+                }
             </nav>
         </div>
 

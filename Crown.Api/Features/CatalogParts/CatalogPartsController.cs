@@ -354,7 +354,7 @@ public sealed class CatalogPartsController : ControllerBase
     private async Task<bool> IsInitiatorUserAsync(Guid userId)
     {
         var user = await _users.FindByIdAsync(userId.ToString());
-        return user is not null && await _users.IsInRoleAsync(user, AppRoles.Initiator);
+        return user is not null && await _users.IsInRoleAsync(user, AppRoles.Department);
     }
 
     private async Task<string> ResolveOwnerNameAsync(Guid ownerUserId, CancellationToken cancellationToken)

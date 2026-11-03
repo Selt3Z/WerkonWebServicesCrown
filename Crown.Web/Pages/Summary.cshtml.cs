@@ -10,6 +10,11 @@ namespace Crown.Web.Pages;
 [Authorize]
 public sealed class SummaryModel(CrownApiClient api) : PageModel
 {
+    private bool CanAccess =>
+        User.IsInRole(AppRoles.Administrator)
+        || User.IsInRole(AppRoles.Dispatcher)
+        || User.FindFirst(CrownAuthHandler.CanViewSummaryClaim)?.Value == "1";
+
     [BindProperty(SupportsGet = true)]
     public string Period { get; set; } = "today";
 
@@ -45,6 +50,11 @@ public sealed class SummaryModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
         Period = SummaryReportPeriods.Normalize(Period);
         var today = DateTime.Now;
         Year ??= today.Year;

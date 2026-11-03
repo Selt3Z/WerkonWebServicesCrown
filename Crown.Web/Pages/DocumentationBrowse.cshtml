@@ -1,0 +1,134 @@
+@page "/documentation/{ownerUserId:guid}"
+@model DocumentationBrowseModel
+@inject AppTime Time
+@{
+    ViewData["Title"] = Model.Browse?.OwnerDisplayName ?? "Документация";
+    var b = Model.Browse;
+    var backHere = $"/documentation/{Model.OwnerUserId}" + (Model.FolderId is Guid f ? $"?folderId={f}" : "");
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">@(b?.OwnerDisplayName ?? "Документация")</h1>
+    <a class="btn btn-outline-secondary" href="/documentation">К списку</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (b is not null)
+{
+    <nav class="mb-3" aria-label="Путь">
+        <a href="/documentation/@b.OwnerUserId">Корень</a>
+        @if (b.FolderId is Guid currentFolder)
+        {
+            <span class="text-muted"> / </span>
+            @if (b.ParentFolderId is Guid parentId)
+            {
+                <a href="/documentation/@b.OwnerUserId?folderId=@parentId">↑ вверх</a>
+                <span class="text-muted"> / </span>
+            }
+            <span>@(b.FolderName ?? "Папка")</span>
+        }
+    </nav>
+
+    @if (b.CanWrite)
+    {
+        <div class="list-filters mb-3">
+            <form method="post" asp-page-handler="CreateFolder" class="filter-field filter-field-inline">
+                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                <label class="form-label" for="new-folder">Новая папка</label>
+                <div class="d-flex gap-2 flex-wrap">
+                    <input id="new-folder" class="form-control" name="NewFolderName" maxlength="200" required placeholder="Имя папки" />
+                    <button type="submit" class="btn btn-success">Создать</button>
+                </div>
+            </form>
+            <form method="post" enctype="multipart/form-data" asp-page-handler="Upload" class="filter-field filter-field-inline">
+                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                <label class="form-label" for="doc-file">Загрузить файл</label>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <input id="doc-file" class="form-control" type="file" name="UploadFile" required />
+                    <button type="submit" class="btn btn-primary">Загрузить</button>
+                </div>
+            </form>
+        </div>
+    }
+
+    <div class="crown-table-wrap">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>Имя</th>
+                <th class="col-date">Размер</th>
+                <th class="col-date">Дата</th>
+                @if (b.CanWrite)
+                {
+                    <th class="col-actions"></th>
+                }
+            </tr>
+            </thead>
+            <tbody>
+            @if (b.Folders.Count == 0 && b.Files.Count == 0)
+            {
+                <tr class="crown-empty-row"><td colspan="@(b.CanWrite ? 4 : 3)" class="text-muted text-center">Пусто.</td></tr>
+            }
+            @foreach (var folder in b.Folders)
+            {
+                <tr>
+                    <td>
+                        <a class="doc-entry-link" href="/documentation/@b.OwnerUserId?folderId=@folder.Id">
+                            <span class="doc-icon doc-icon-folder" aria-hidden="true"></span>
+                            <span>@folder.Name</span>
+                        </a>
+                    </td>
+                    <td class="col-date text-muted">—</td>
+                    <td class="col-date">@Time.Format(folder.CreatedAt)</td>
+                    @if (b.CanWrite)
+                    {
+                        <td class="col-actions">
+                            <form method="post" asp-page-handler="DeleteFolder" class="d-inline"
+                                  onsubmit="return confirm('Удалить папку «@folder.Name» со всем содержимым?');">
+                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                                <input type="hidden" name="folderId" value="@folder.Id" />
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Удалить</button>
+                            </form>
+                        </td>
+                    }
+                </tr>
+            }
+            @foreach (var file in b.Files)
+            {
+                <tr>
+                    <td>
+                        <a class="doc-entry-link" href="/documentation/preview?fileId=@file.Id&amp;back=@Uri.EscapeDataString(backHere)">
+                            <span class="doc-icon doc-icon-file" aria-hidden="true"></span>
+                            <span>@file.FileName</span>
+                        </a>
+                        <a class="ms-2 text-muted"
+                           href="/documentation/@b.OwnerUserId?handler=Download&amp;fileId=@file.Id"
+                           download title="Скачать">↓</a>
+                    </td>
+                    <td class="col-date nowrap">@UiHelpers.FormatBytes(file.SizeBytes)</td>
+                    <td class="col-date">@Time.Format(file.UploadedAt)</td>
+                    @if (b.CanWrite)
+                    {
+                        <td class="col-actions">
+                            <form method="post" asp-page-handler="DeleteFile" class="d-inline"
+                                  onsubmit="return confirm('Удалить файл «@file.FileName»?');">
+                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                                <input type="hidden" name="fileId" value="@file.Id" />
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Удалить</button>
+                            </form>
+                        </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

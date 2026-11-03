@@ -11,7 +11,7 @@ namespace Crown.Web.Pages.Users;
 public sealed class UserEditModel(CrownApiClient api) : PageModel
 {
     [BindProperty]
-    public InputModel Input { get; set; } = new() { Role = AppRoles.Initiator, IsActive = true };
+    public InputModel Input { get; set; } = new() { Role = AppRoles.Department, IsActive = true };
 
     public Guid? UserId { get; private set; }
 

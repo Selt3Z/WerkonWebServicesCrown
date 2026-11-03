@@ -24,6 +24,11 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     public DbSet<VehicleTrip> VehicleTrips => Set<VehicleTrip>();
     public DbSet<VehicleFuelRefuel> VehicleFuelRefuels => Set<VehicleFuelRefuel>();
     public DbSet<VehicleRepair> VehicleRepairs => Set<VehicleRepair>();
+    public DbSet<DocumentationFolder> DocumentationFolders => Set<DocumentationFolder>();
+    public DbSet<DocumentationFile> DocumentationFiles => Set<DocumentationFile>();
+    public DbSet<EquipmentAsset> EquipmentAssets => Set<EquipmentAsset>();
+    public DbSet<EquipmentMovement> EquipmentMovements => Set<EquipmentMovement>();
+    public DbSet<SpecialVehicleUnit> SpecialVehicleUnits => Set<SpecialVehicleUnit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,18 +45,24 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.ExecutorComment).HasColumnType("text");
             entity.Property(x => x.ComplaintText).HasColumnType("text");
             entity.Property(x => x.ComplaintByName).HasMaxLength(200);
+            entity.Property(x => x.SpecOperation).HasMaxLength(200);
             entity.Property(x => x.Status).HasConversion<int>();
+            entity.Property(x => x.Kind).HasConversion<int>();
             entity.Property(x => x.Xmin)
                 .HasColumnName("xmin")
                 .HasColumnType("xid")
                 .ValueGeneratedOnAddOrUpdate()
                 .IsConcurrencyToken();
             entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.Kind);
+            entity.HasIndex(x => x.IsUrgent);
             entity.HasIndex(x => x.SubmittedAt);
             entity.HasIndex(x => x.IsArchived);
             entity.HasQueryFilter(x => !x.IsArchived);
             entity.HasIndex(x => x.InitiatorUserId);
             entity.HasIndex(x => x.ExecutorUserId);
+            entity.HasIndex(x => x.EquipmentAssetId);
+            entity.HasIndex(x => x.SpecialVehicleUnitId);
             // SetNull: заявка остаётся, имя — снимок текстом.
             entity.HasOne<ApplicationUser>()
                 .WithMany()
@@ -60,6 +71,14 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.HasOne<ApplicationUser>()
                 .WithMany()
                 .HasForeignKey(x => x.ExecutorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<EquipmentAsset>()
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentAssetId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<SpecialVehicleUnit>()
+                .WithMany()
+                .HasForeignKey(x => x.SpecialVehicleUnitId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -150,6 +169,46 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
         modelBuilder.Entity<ApplicationUser>(entity =>
         {
             entity.Property(x => x.DisplayName).HasMaxLength(200);
+            entity.Property(x => x.CanBeExecutor).HasDefaultValue(true);
+            entity.Property(x => x.CanCreateTransportRequests).HasDefaultValue(false);
+            entity.Property(x => x.CanManageEquipment).HasDefaultValue(false);
+            entity.Property(x => x.CanViewTransport).HasDefaultValue(false);
+            entity.Property(x => x.CanViewSpecialVehicles).HasDefaultValue(false);
+            entity.Property(x => x.CanViewWarehouse).HasDefaultValue(false);
+            entity.Property(x => x.CanViewSummary).HasDefaultValue(false);
+            entity.Property(x => x.DocumentationEnabled).HasDefaultValue(true);
+        });
+
+        modelBuilder.Entity<DocumentationFolder>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.HasIndex(x => x.OwnerUserId);
+            entity.HasIndex(x => new { x.OwnerUserId, x.ParentFolderId, x.Name });
+            entity.HasOne(x => x.ParentFolder)
+                .WithMany(x => x.Children)
+                .HasForeignKey(x => x.ParentFolderId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DocumentationFile>(entity =>
+        {
+            entity.Property(x => x.FileName).HasMaxLength(260).IsRequired();
+            entity.Property(x => x.ContentType).HasMaxLength(120);
+            entity.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
+            entity.HasIndex(x => x.OwnerUserId);
+            entity.HasIndex(x => x.FolderId);
+            entity.HasOne(x => x.Folder)
+                .WithMany(x => x.Files)
+                .HasForeignKey(x => x.FolderId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ParkingLot>(entity =>
@@ -227,6 +286,56 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
                 .WithMany()
                 .HasForeignKey(x => x.VehicleId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EquipmentAsset>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.InventoryNumber).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Category).HasMaxLength(100);
+            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.Property(x => x.CurrentLocationLabel).HasMaxLength(200);
+            entity.Property(x => x.OwnerLabel).HasMaxLength(200);
+            entity.Property(x => x.Availability).HasConversion<int>();
+            entity.HasIndex(x => x.InventoryNumber).IsUnique();
+            entity.HasIndex(x => x.IsArchived);
+            entity.HasIndex(x => x.Availability);
+            entity.HasIndex(x => x.CurrentLocationUserId);
+            entity.HasIndex(x => x.OwnerUserId);
+            entity.HasQueryFilter(x => !x.IsArchived);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CurrentLocationUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<EquipmentMovement>(entity =>
+        {
+            entity.Property(x => x.FromLocationLabel).HasMaxLength(200);
+            entity.Property(x => x.ToLocationLabel).HasMaxLength(200);
+            entity.Property(x => x.Note).HasMaxLength(500);
+            entity.Property(x => x.ByUserDisplayName).HasMaxLength(200);
+            entity.HasIndex(x => x.EquipmentAssetId);
+            entity.HasIndex(x => x.OccurredAt);
+            entity.HasIndex(x => x.ServiceRequestId);
+            entity.HasOne(x => x.EquipmentAsset)
+                .WithMany(x => x.Movements)
+                .HasForeignKey(x => x.EquipmentAssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SpecialVehicleUnit>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.PlateOrNote).HasMaxLength(120);
+            entity.Property(x => x.Availability).HasConversion<int>();
+            entity.HasIndex(x => x.Name);
+            entity.HasIndex(x => x.Availability);
+            entity.HasIndex(x => x.IsActive);
         });
     }
 }

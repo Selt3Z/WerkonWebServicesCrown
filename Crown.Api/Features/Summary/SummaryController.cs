@@ -2,14 +2,17 @@ using System.Security.Claims;
 using Crown.Contracts.Summary;
 using Crown.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Crown.Features.Summary;
 
 [ApiController]
 [Route("api/summary")]
-[Authorize(Roles = $"{AppRoles.Administrator},{AppRoles.Dispatcher},{AppRoles.Initiator}")]
-public sealed class SummaryController(SummaryReportService summary) : ControllerBase
+[Authorize]
+public sealed class SummaryController(
+    SummaryReportService summary,
+    UserManager<ApplicationUser> users) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<SummaryResponse>> Get(
@@ -26,6 +29,20 @@ public sealed class SummaryController(SummaryReportService summary) : Controller
         }
 
         var canPickUser = User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+        if (!canPickUser)
+        {
+            if (!User.IsInRole(AppRoles.Department))
+            {
+                return Forbid();
+            }
+
+            var actor = await users.GetUserAsync(User);
+            if (actor is null || !actor.CanViewSummary)
+            {
+                return Forbid();
+            }
+        }
+
         var targetId = userId is Guid id && id != Guid.Empty ? id : currentId.Value;
 
         if (targetId != currentId.Value && !canPickUser)

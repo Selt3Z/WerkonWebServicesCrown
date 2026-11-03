@@ -38,6 +38,8 @@ document.addEventListener('keydown', function (e) {
 
 // Infinite scroll списков (как ratchetInfiniteScroll): догрузка кусков при появлении sentinel.
 (function () {
+    var mqMobile = window.matchMedia('(max-width: 640px)');
+
     function bind(host) {
         if (host.dataset.infiniteBound === '1') {
             return;
@@ -49,11 +51,11 @@ document.addEventListener('keydown', function (e) {
         }
 
         var skip = parseInt(host.getAttribute('data-skip') || '0', 10) || 0;
-        var hasMore = host.getAttribute('data-has-more') === 'true';
         var loading = false;
         var isCards = host.classList.contains('schedule-mobile-cards');
         var wrap = host.closest('.crown-table-wrap') || host;
         var sentinel = document.querySelector('.infinite-scroll-sentinel');
+        var observer = null;
         if (!sentinel) {
             sentinel = document.createElement('div');
             sentinel.className = 'infinite-scroll-sentinel';
@@ -64,36 +66,50 @@ document.addEventListener('keydown', function (e) {
             }
         }
 
-        function setSentinel() {
+        function isActive() {
             // На мобиле крутим карточки, на десктопе — tbody; sentinel общий.
-            var active = isCards
-                ? window.matchMedia('(max-width: 640px)').matches
-                : !window.matchMedia('(max-width: 640px)').matches;
-            if (!active) {
+            return isCards ? mqMobile.matches : !mqMobile.matches;
+        }
+
+        function readHasMore() {
+            return host.getAttribute('data-has-more') === 'true';
+        }
+
+        // Таблица и карточки — один список: общий флаг, иначе спиннер зависает на парном host.
+        function publishHasMore(value) {
+            document.querySelectorAll('[data-infinite-scroll]').forEach(function (el) {
+                el.setAttribute('data-has-more', value ? 'true' : 'false');
+            });
+        }
+
+        function setSentinel() {
+            if (!isActive()) {
                 return;
             }
 
-            if (hasMore) {
+            if (readHasMore()) {
                 sentinel.hidden = false;
                 sentinel.innerHTML = loading
                     ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="ms-2">Загрузка…</span>'
                     : '';
-            } else if (!document.querySelector('[data-infinite-scroll][data-has-more="true"]')) {
+            } else {
                 sentinel.hidden = true;
                 sentinel.innerHTML = '';
+                if (observer) {
+                    observer.disconnect();
+                    observer = null;
+                }
             }
         }
 
         async function loadMore() {
-            var active = isCards
-                ? window.matchMedia('(max-width: 640px)').matches
-                : !window.matchMedia('(max-width: 640px)').matches;
-            if (!active || !hasMore || loading) {
+            if (!isActive() || !readHasMore() || loading) {
                 return;
             }
 
             loading = true;
             setSentinel();
+            var prevSkip = skip;
             try {
                 var url = new URL(moreUrl, window.location.origin);
                 url.searchParams.set('skip', String(skip));
@@ -102,12 +118,12 @@ document.addEventListener('keydown', function (e) {
                     headers: { 'Accept': 'text/html' }
                 });
                 if (!res.ok) {
-                    hasMore = false;
+                    publishHasMore(false);
                     return;
                 }
 
                 var html = await res.text();
-                hasMore = (res.headers.get('X-Has-More') || '').toLowerCase() === 'true';
+                var more = (res.headers.get('X-Has-More') || '').toLowerCase() === 'true';
                 if (html && html.trim()) {
                     if (isCards) {
                         var empty = host.querySelector('p.text-muted');
@@ -125,33 +141,51 @@ document.addEventListener('keydown', function (e) {
                         skip = host.querySelectorAll('tr:not(.crown-empty-row)').length;
                     }
                     host.setAttribute('data-skip', String(skip));
+                    // skip не вырос — ответ пустой/дубль, стоп (иначе вечный спиннер).
+                    if (skip <= prevSkip) {
+                        more = false;
+                    }
+                    publishHasMore(more);
                 } else {
-                    hasMore = false;
+                    publishHasMore(false);
                 }
             } catch (err) {
                 console.warn('infinite scroll', err);
-                hasMore = false;
+                publishHasMore(false);
             } finally {
                 loading = false;
-                host.setAttribute('data-has-more', hasMore ? 'true' : 'false');
                 setSentinel();
             }
         }
 
         host.dataset.infiniteBound = '1';
         setSentinel();
-        if (!hasMore) {
+        if (!readHasMore()) {
             return;
         }
 
-        var observer = new IntersectionObserver(function (entries) {
-            for (var i = 0; i < entries.length; i++) {
-                if (entries[i].isIntersecting) {
-                    loadMore();
-                }
+        function ensureObserver() {
+            if (observer || !readHasMore()) {
+                return;
             }
-        }, { rootMargin: '300px' });
-        observer.observe(sentinel);
+            observer = new IntersectionObserver(function (entries) {
+                for (var i = 0; i < entries.length; i++) {
+                    if (entries[i].isIntersecting) {
+                        loadMore();
+                    }
+                }
+            }, { rootMargin: '300px' });
+            observer.observe(sentinel);
+        }
+
+        ensureObserver();
+
+        mqMobile.addEventListener('change', function () {
+            setSentinel();
+            if (isActive()) {
+                ensureObserver();
+            }
+        });
     }
 
     function initAll() {

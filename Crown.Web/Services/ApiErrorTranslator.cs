@@ -49,7 +49,9 @@ public static class ApiErrorTranslator
 
         ["unsupported_currency"] = "Валюта не поддерживается.",
         ["invalid_time_zone"] = "Неизвестный часовой пояс.",
-        ["warehouse_disabled"] = "Складской учёт отключён в настройках.",
+        ["warehouse_disabled"] = "Учёт оборудования отключён в настройках.",
+        ["invalid_folder_name"] = "Некорректное имя папки.",
+        ["folder_exists"] = "Папка с таким именем уже есть.",
         ["backup_already_running"] = "Резервное копирование уже выполняется.",
         ["backup_failed"] = "Не удалось создать резервную копию.",
         ["internal_server_error"] = "Внутренняя ошибка сервера. Возможно, действие недоступно в текущем состоянии."

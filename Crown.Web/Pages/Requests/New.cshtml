@@ -12,6 +12,41 @@
 }
 
 <form method="post" enctype="multipart/form-data" class="crown-form form-panel">
+    <div class="mb-3">
+        <label class="form-label">Тип заявки</label>
+        <div class="d-flex flex-wrap gap-3">
+            @if (Model.CanCreateTransport)
+            {
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.SpecTech)" id="kind-spec" />
+                    <label class="form-check-label" for="kind-spec">Запрос спецтехники</label>
+                </div>
+            }
+            <div class="form-check">
+                <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Equipment)" id="kind-eq" />
+                <label class="form-check-label" for="kind-eq">Запрос оборудования</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Other)" id="kind-other" />
+                <label class="form-check-label" for="kind-other">Другое</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Срочность</label>
+        <div class="d-flex flex-wrap gap-3">
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="Input.IsUrgent" value="false" id="urg-plan" checked="@(!Model.Input.IsUrgent)" />
+                <label class="form-check-label" for="urg-plan">Плановая</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="Input.IsUrgent" value="true" id="urg-fast" checked="@Model.Input.IsUrgent" />
+                <label class="form-check-label" for="urg-fast">Срочная</label>
+            </div>
+        </div>
+    </div>
+
     <div class="crown-form-grid">
         <div class="mb-3">
             <label class="form-label" asp-for="Input.Phone">Телефон <span class="crown-req">*</span></label>
@@ -54,6 +89,47 @@
         </div>
     </div>
 
+    <div class="mb-3" id="equipment-wrap" hidden>
+        <label class="form-label" asp-for="Input.EquipmentAssetId">Единица оборудования <span class="crown-req">*</span></label>
+        <select class="form-select" asp-for="Input.EquipmentAssetId" id="equipment-asset">
+            <option value="">— выберите свободную —</option>
+            @foreach (var a in Model.FreeEquipment)
+            {
+                <option value="@a.Id">@a.Name (@a.InventoryNumber)@(string.IsNullOrWhiteSpace(a.CurrentLocationLabel) ? "" : $" · {a.CurrentLocationLabel}")</option>
+            }
+        </select>
+    </div>
+
+    <div id="spectech-wrap" hidden>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.SpecialVehicleUnitId">Спецтехника <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.SpecialVehicleUnitId" id="spec-unit">
+                <option value="">— выберите свободную —</option>
+                @foreach (var u in Model.FreeSpecUnits)
+                {
+                    <option value="@u.Id">@u.Name@(string.IsNullOrWhiteSpace(u.PlateOrNote) ? "" : $" ({u.PlateOrNote})")</option>
+                }
+            </select>
+            @if (Model.SpecTypeAvailability.Count > 0)
+            {
+                <div class="form-text">
+                    Свободно по типу:
+                    @string.Join("; ", Model.SpecTypeAvailability.Select(t => $"{t.Name}: {t.FreeCount}/{t.TotalActive}"))
+                </div>
+            }
+        </div>
+        <div class="crown-form-grid">
+            <div class="mb-3">
+                <label class="form-label" asp-for="Input.SpecOperation">Операция <span class="crown-req">*</span></label>
+                <input class="form-control" asp-for="Input.SpecOperation" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" asp-for="Input.SpecPlannedAt">Плановое время <span class="crown-req">*</span></label>
+                <input class="form-control" type="datetime-local" asp-for="Input.SpecPlannedAt" />
+            </div>
+        </div>
+    </div>
+
     <div class="mb-3" id="body-mode-wrap" hidden>
         <label class="form-label" asp-for="Input.BodyMode">Текст заявки</label>
         <select class="form-select" asp-for="Input.BodyMode" id="body-mode">
@@ -63,11 +139,11 @@
     </div>
 
     <div class="mb-3" id="catalog-service-wrap" hidden>
-        <label class="form-label" for="catalog-service">Услуга из каталога</label>
+        <label class="form-label" for="catalog-service">Услуга/узел из каталога</label>
         <select class="form-select" id="catalog-service" asp-for="Input.CatalogPartId">
-            <option value="">— выберите услугу —</option>
+            <option value="">— выберите услугу/узел —</option>
         </select>
-        <div class="form-text">Список — активные услуги из каталога выбранного исполнителя.</div>
+        <div class="form-text">Список — активные услуги/узлы из каталога выбранного исполнителя.</div>
     </div>
 
     <div class="mb-3">
@@ -96,82 +172,94 @@
   var service = document.getElementById('catalog-service');
   var body = document.getElementById('request-body');
   var due = document.getElementById('Input_DueAt') || document.querySelector('[name="Input.DueAt"]');
+  var eqWrap = document.getElementById('equipment-wrap');
+  var specWrap = document.getElementById('spectech-wrap');
   var cache = {};
   var hasCatalog = false;
 
-  function pad(n) { return String(n).padStart(2, '0'); }
-
-  function applySlaHours(hours) {
-    if (!due || !hours || hours <= 0) return;
-    var d = new Date();
-    d.setHours(d.getHours() + Number(hours));
-    due.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
-      + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  function kindValue() {
+    var checked = document.querySelector('input[name="Input.Kind"]:checked');
+    return checked ? checked.value : '0';
   }
 
-  function syncCatalogUi() {
-    var fromCatalog = hasCatalog && mode && mode.value === 'catalog';
-    if (wrap) wrap.hidden = !fromCatalog;
-    if (fromCatalog) fillServiceOptions();
+  function syncKind() {
+    var k = kindValue();
+    eqWrap.hidden = k !== '1';
+    specWrap.hidden = k !== '2';
   }
 
-  function fillServiceOptions() {
-    if (!service || !executor) return;
-    var ownerId = executor.value;
-    var items = cache[ownerId] || [];
-    service.innerHTML = '<option value="">— выберите услугу —</option>';
-    items.forEach(function (x) {
+  document.querySelectorAll('input[name="Input.Kind"]').forEach(function (el) {
+    el.addEventListener('change', syncKind);
+  });
+  syncKind();
+
+  function setCatalogVisible(show) {
+    hasCatalog = !!show;
+    modeWrap.hidden = !show;
+    if (!show) {
+      mode.value = 'manual';
+      wrap.hidden = true;
+      service.innerHTML = '<option value="">— выберите услугу/узел —</option>';
+      return;
+    }
+    syncMode();
+  }
+
+  function syncMode() {
+    var fromCatalog = mode.value === 'catalog';
+    wrap.hidden = !fromCatalog;
+    body.readOnly = fromCatalog;
+    if (!fromCatalog) body.removeAttribute('readonly');
+  }
+
+  mode.addEventListener('change', syncMode);
+
+  function fillServices(items) {
+    service.innerHTML = '<option value="">— выберите услугу/узел —</option>';
+    (items || []).forEach(function (x) {
       var opt = document.createElement('option');
       opt.value = x.id;
-      opt.textContent = (x.code ? x.code + ' · ' : '') + x.name;
-      opt.dataset.name = x.name || '';
+      opt.textContent = x.name + (x.code ? ' (' + x.code + ')' : '');
       opt.dataset.description = x.description || '';
-      if (x.slaHours) opt.dataset.sla = String(x.slaHours);
+      opt.dataset.slaHours = x.slaHours || '';
       service.appendChild(opt);
     });
   }
 
-  async function onExecutorChanged() {
-    hasCatalog = false;
-    if (modeWrap) modeWrap.hidden = true;
-    if (wrap) wrap.hidden = true;
-    if (mode) mode.value = 'manual';
-    if (!service || !executor) return;
-
-    var ownerId = executor.value;
-    if (!ownerId) return;
-
-    if (!cache[ownerId]) {
-      try {
-        var url = '?handler=ServicesJson&ownerUserId=' + encodeURIComponent(ownerId);
-        var res = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
-        if (!res.ok) throw new Error('fail');
-        cache[ownerId] = await res.json();
-      } catch (e) {
-        cache[ownerId] = [];
-      }
+  function loadServices() {
+    var id = executor.value;
+    if (!id) { setCatalogVisible(false); return; }
+    if (cache[id]) {
+      fillServices(cache[id]);
+      setCatalogVisible(cache[id].length > 0);
+      return;
     }
-
-    var items = cache[ownerId] || [];
-    hasCatalog = items.length > 0;
-    if (modeWrap) modeWrap.hidden = !hasCatalog;
-    if (!hasCatalog && mode) mode.value = 'manual';
-    syncCatalogUi();
+    fetch('/requests/new?handler=ServicesJson&ownerUserId=' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (items) {
+        cache[id] = items || [];
+        fillServices(cache[id]);
+        setCatalogVisible(cache[id].length > 0);
+      })
+      .catch(function () { setCatalogVisible(false); });
   }
 
-  service?.addEventListener('change', function () {
-    var opt = service.options[service.selectedIndex];
-    if (!opt || !opt.value) return;
-    if (body) {
-      var name = opt.dataset.name || '';
-      var desc = opt.dataset.description || '';
-      body.value = desc ? (name + '\n' + desc) : name;
-    }
-    if (opt.dataset.sla) applySlaHours(opt.dataset.sla);
-  });
+  executor.addEventListener('change', loadServices);
+  loadServices();
 
-  mode?.addEventListener('change', syncCatalogUi);
-  executor?.addEventListener('change', onExecutorChanged);
-  onExecutorChanged();
+  service.addEventListener('change', function () {
+    var opt = service.selectedOptions[0];
+    if (!opt || !opt.value) return;
+    var desc = opt.dataset.description || '';
+    body.value = desc ? (opt.textContent + '\n' + desc) : opt.textContent;
+    var hours = parseInt(opt.dataset.slaHours || '', 10);
+    if (hours > 0 && due) {
+      var d = new Date();
+      d.setHours(d.getHours() + hours);
+      var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+      due.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+        + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+  });
 })();
 </script>

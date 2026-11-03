@@ -1,0 +1,100 @@
+@page "/settings/department-permissions"
+@model DepartmentPermissionsModel
+@{
+    ViewData["Title"] = "Права подразделений";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Права роли «Подразделение»</h1>
+    <a class="btn btn-outline-secondary" href="/settings">К настройкам</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Ok))
+{
+    <div class="alert alert-success">@Model.Ok</div>
+}
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<p class="text-muted mb-3">
+    Галочки только у учёток с ролью «Подразделение».
+    Без «своего оборудования» можно запрашивать единицы и держать чужие на балансе.
+    Без документации — раздел скрыт, чужие файлы всё ещё можно смотреть.
+</p>
+
+<form method="post" class="department-permissions-form">
+    <div class="crown-table-wrap department-permissions-wrap mb-3">
+        <table class="table crown-table department-permissions-table">
+            <thead>
+            <tr>
+                <th>Подразделение</th>
+                <th class="text-center" title="В списке исполнителей заявок">Исполнитель</th>
+                <th class="text-center" title="Может подавать заявки RequestKind.SpecTech">Заявки на спецтехнику</th>
+                <th class="text-center" title="CRUD единиц оборудования">Своё оборудование</th>
+                <th class="text-center" title="Просмотр страницы Транспорт">Транспорт</th>
+                <th class="text-center" title="Просмотр страницы Спецтехника">Спецтехника</th>
+                <th class="text-center" title="Просмотр страницы Склад">Склад</th>
+                <th class="text-center" title="Просмотр страницы Сводка">Сводка</th>
+                <th class="text-center" title="Раздел документации + запись">Документация</th>
+            </tr>
+            </thead>
+            <tbody>
+            @for (var i = 0; i < Model.Users.Count; i++)
+            {
+                var u = Model.Users[i];
+                var row = Model.Rows.ElementAtOrDefault(i) ?? new DepartmentPermissionsModel.DepartmentPermissionRowInput { UserId = u.UserId };
+                <tr class="@(!u.IsActive ? "crown-row-archived" : null)">
+                    <td>
+                        @u.DisplayName
+                        @if (!u.IsActive)
+                        {
+                            <span class="badge bg-secondary ms-1">выкл.</span>
+                        }
+                        <input type="hidden" name="Rows[@i].UserId" value="@u.UserId" />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].CanBeExecutor" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanBeExecutor" value="true" @(row.CanBeExecutor ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].CanCreateTransportRequests" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanCreateTransportRequests" value="true" @(row.CanCreateTransportRequests ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].CanManageEquipment" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanManageEquipment" value="true" @(row.CanManageEquipment ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].CanViewTransport" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanViewTransport" value="true" @(row.CanViewTransport ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].CanViewSpecialVehicles" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanViewSpecialVehicles" value="true" @(row.CanViewSpecialVehicles ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].CanViewWarehouse" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanViewWarehouse" value="true" @(row.CanViewWarehouse ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].CanViewSummary" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanViewSummary" value="true" @(row.CanViewSummary ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input type="hidden" name="Rows[@i].DocumentationEnabled" value="false" />
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].DocumentationEnabled" value="true" @(row.DocumentationEnabled ? "checked" : null) />
+                    </td>
+                </tr>
+            }
+            @if (Model.Users.Count == 0)
+            {
+                <tr><td colspan="9" class="text-muted text-center">Нет пользователей с ролью «Подразделение».</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <button type="submit" class="btn btn-save">Сохранить</button>
+    <a class="btn btn-outline-secondary" href="/settings">Отмена</a>
+</form>

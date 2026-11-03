@@ -1,3 +1,5 @@
+using Crown.Domain;
+
 namespace Crown.Domain.Entities;
 
 public sealed class ServiceRequest
@@ -23,6 +25,14 @@ public sealed class ServiceRequest
     public string Body { get; set; } = string.Empty;
     public string? ExecutorComment { get; set; }
     public ServiceRequestStatus Status { get; set; } = ServiceRequestStatus.Submitted;
+    public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
+    public bool IsUrgent { get; set; }
+    public Guid? EquipmentAssetId { get; set; }
+    public Guid? SpecialVehicleUnitId { get; set; }
+    public string? SpecOperation { get; set; }
+    public DateTimeOffset? SpecPlannedAt { get; set; }
+    public DateTimeOffset? SpecArrivedAt { get; set; }
+    public DateTimeOffset? SpecReleasedAt { get; set; }
     public bool Acknowledged { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }

@@ -1,13 +1,13 @@
 @page "/catalog-parts/edit/{id:guid?}"
 @model CatalogPartSaveModel
 @{
-    ViewData["Title"] = Model.IsEdit ? "Редактирование услуги" : "Новая услуга";
+    ViewData["Title"] = Model.IsEdit ? "Редактирование услуги/узла" : "Новая услуга/узел";
     var backHref = Model.IsStaff && (Model.Input.OwnerUserId ?? Model.OwnerUserId) is Guid oid
         ? $"/catalog-parts?ownerUserId={oid}"
         : "/catalog-parts";
 }
 
-<h1 class="section-title">@(Model.IsEdit ? "Редактирование услуги" : "Новая услуга")</h1>
+<h1 class="section-title">@(Model.IsEdit ? "Редактирование услуги/узла" : "Новая услуга/узел")</h1>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
@@ -22,7 +22,7 @@
             <input type="hidden" asp-for="OwnerUserId" />
             <input type="hidden" asp-for="Input.OwnerUserId" />
             <div class="mb-3">
-                <label class="form-label">Подразделение (инициатор)</label>
+                <label class="form-label">Подразделение</label>
                 <input class="form-control form-control-locked" readonly tabindex="-1"
                        value="@(Model.Owners.FirstOrDefault(x => x.Id == (Model.Input.OwnerUserId ?? Model.OwnerUserId))?.DisplayName
                                ?? (Model.Input.OwnerUserId ?? Model.OwnerUserId)?.ToString()
@@ -32,7 +32,7 @@
         else
         {
             <div class="mb-3">
-                <label class="form-label">Инициатор</label>
+                <label class="form-label">Подразделение</label>
                 <input class="form-control form-control-locked" readonly tabindex="-1"
                        value="@(User.FindFirst(CrownAuthHandler.DisplayNameClaim)?.Value
                                ?? User.Identity?.Name

@@ -4,24 +4,27 @@ public static class AppRoles
 {
     public const string Administrator = "Administrator";
 
-    /// <summary>Диспетчер: ведёт заявки, склад и чужие каталоги услуг.</summary>
+    /// <summary>Диспетчер: ведёт заявки, склад и чужие каталоги услуг/узлов.</summary>
     public const string Dispatcher = "Dispatcher";
 
-    /// <summary>Инициатор: подаёт заявки другим инициаторам и исполняет назначенные ему.</summary>
-    public const string Initiator = "Initiator";
+    /// <summary>Подразделение: подаёт заявки другим подразделениям и исполняет назначенные.</summary>
+    public const string Department = "Department";
+
+    /// <summary>Старое имя роли — только для миграций/совместимости чтения.</summary>
+    public const string InitiatorLegacy = "Initiator";
 
     public static readonly string[] All =
     [
         Administrator,
         Dispatcher,
-        Initiator
+        Department
     ];
 
     public static readonly string[] BusinessUsers =
     [
         Administrator,
         Dispatcher,
-        Initiator
+        Department
     ];
 
     public static readonly string[] CanManageUsers =

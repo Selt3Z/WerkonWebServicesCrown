@@ -54,12 +54,9 @@
                 <div class="form-text">В списках архив скрыт, пока не включат «Показать архивные».</div>
             </div>
 
-            <div class="settings-field settings-field-check">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" asp-for="Input.WarehouseEnabled" id="warehouseEnabled" />
-                    <label class="form-check-label" for="warehouseEnabled" asp-for="Input.WarehouseEnabled">Складской учёт включён</label>
-                </div>
-                <div class="form-text">Показывает склад в меню. Каталог услуг доступен всем ролям.</div>
+            <div class="settings-field">
+                <a class="btn btn-outline-primary" href="/settings/department-permissions">Права подразделений</a>
+                <div class="form-text">Исполнитель, транспорт/спецтехника, своё оборудование, документация.</div>
             </div>
         </section>
 
@@ -85,8 +82,7 @@
                 <div class="form-text">Без галочки hard-delete только у администратора.</div>
             </div>
 
-            <div class="settings-field" id="brand-logo-field">
-                <label class="form-label">Логотип</label>
+            <div class="settings-field settings-field-check" id="brand-logo-field">
                 <div class="form-check">
                     <input class="form-check-input" type="radio" name="Input.BrandLogoMode" id="logo-standard"
                            value="standard" @(Model.Input.BrandLogoMode != "custom" ? "checked" : null) />
@@ -155,7 +151,7 @@
 </script>
 
 <section class="entity-panel mt-4">
-    <h2 class="section-title">Вложения заявок</h2>
+    <h2 class="section-title">Файловое хранилище</h2>
     <dl class="entity-meta">
         <div class="entity-meta-item entity-meta-wide">
             <dt>Путь на сервере (хост)</dt>
@@ -176,7 +172,8 @@
     <p class="system-status-note mb-0">
         Диск и каталог задаются в <code>.env</code> переменной <code>ATTACHMENTS_HOST_PATH</code>,
         затем <code>docker compose up -d</code>. Из UI путь не меняется — контейнеру нужен remount.
-        Иерархия: <code>&#123;номер_заявки&#125;/&#123;guid&#125;_имя.файла</code>.
+        Иерархия заявок: <code>&#123;номер_заявки&#125;/&#123;guid&#125;_имя.файла</code>.
+        Документация: <code>docs/&#123;userId&#125;/&#123;folder|root&#125;/&#123;guid&#125;_имя</code>.
     </p>
     <p class="system-status-note mb-0 mt-2">
         <strong>Смена диска:</strong>

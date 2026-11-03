@@ -1,0 +1,42 @@
+@model List<SpecialVehicleUnit>
+@foreach (var p in Model)
+{
+    var canEdit = User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+    var status = p.Availability switch
+    {
+        SpecialVehicleAvailability.Reserved => "Бронь",
+        SpecialVehicleAvailability.InUse => "В работе",
+        _ => "Свободна"
+    };
+    var statusTitle = p.Availability switch
+    {
+        SpecialVehicleAvailability.Reserved => p.ReservedByRequestId is long rid ? $"Забронирована (№{rid})" : "Забронирована",
+        SpecialVehicleAvailability.InUse => p.ReservedByRequestId is long rid2 ? $"В работе (№{rid2})" : "В работе",
+        _ => "Свободна"
+    };
+    if (!p.IsActive)
+    {
+        statusTitle += " · выкл.";
+    }
+
+    if (canEdit)
+    {
+        <tr class="table-row-action @(!p.IsActive ? "crown-row-archived" : null)"
+            data-href="/special-vehicles/edit/@p.Id"
+            tabindex="0"
+            role="link"
+            aria-label="Спецтехника: @p.Name">
+            <td class="col-name" title="@p.Name">@p.Name</td>
+            <td class="col-note">@(string.IsNullOrWhiteSpace(p.PlateOrNote) ? "—" : p.PlateOrNote)</td>
+            <td class="col-status" title="@statusTitle">@status@(!p.IsActive ? "·выкл" : "")</td>
+        </tr>
+    }
+    else
+    {
+        <tr class="@(!p.IsActive ? "crown-row-archived" : null)" aria-label="Спецтехника: @p.Name">
+            <td class="col-name" title="@p.Name">@p.Name</td>
+            <td class="col-note">@(string.IsNullOrWhiteSpace(p.PlateOrNote) ? "—" : p.PlateOrNote)</td>
+            <td class="col-status" title="@statusTitle">@status@(!p.IsActive ? "·выкл" : "")</td>
+        </tr>
+    }
+}

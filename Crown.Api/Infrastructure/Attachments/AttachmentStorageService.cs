@@ -77,6 +77,27 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
         return (relative.Replace('\\', '/'), size);
     }
 
+    /// <summary>Документация: docs/{ownerUserId}/{folderOrRoot}/{guid}_{name}.</summary>
+    public async Task<(string RelativePath, long Size)> SaveDocumentationAsync(
+        Guid ownerUserId,
+        Guid? folderId,
+        string originalFileName,
+        Stream content,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_options.RootPath);
+        var safeName = SanitizeFileName(originalFileName);
+        var folderKey = folderId?.ToString("N") ?? "root";
+        var relative = Path.Combine("docs", ownerUserId.ToString("N"), folderKey, $"{Guid.NewGuid():N}_{safeName}");
+        var absolute = GetAbsolutePath(relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
+
+        await using var fs = File.Create(absolute);
+        await content.CopyToAsync(fs, cancellationToken);
+        var size = fs.Length;
+        return (relative.Replace('\\', '/'), size);
+    }
+
     public void DeleteIfExists(string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath))

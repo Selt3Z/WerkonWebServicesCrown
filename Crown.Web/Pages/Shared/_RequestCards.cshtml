@@ -2,7 +2,7 @@
 @inject AppTime Time
 @foreach (var r in Model)
 {
-    <div class="schedule-card table-row-action @(r.IsArchived ? "crown-row-archived" : null)"
+    <div class="schedule-card table-row-action @(r.IsUrgent ? "request-row-urgent" : null) @(r.IsArchived ? "crown-row-archived" : null)"
          data-href="/requests/@r.Id"
          tabindex="0"
          role="link"
@@ -14,6 +14,14 @@
                     <span class="crown-warn-badge" title="По заявке подана жалоба" aria-label="Жалоба">!</span>
                 }
                 № @r.Id
+                @if (r.Kind != ServiceRequestKind.Other)
+                {
+                    <span class="badge bg-secondary">@r.KindLabel</span>
+                }
+                @if (r.IsUrgent)
+                {
+                    <span class="badge text-bg-warning">срочная</span>
+                }
             </span>
             <span class="schedule-card-header-trailing">
                 <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"

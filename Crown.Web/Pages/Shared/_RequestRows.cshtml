@@ -2,7 +2,7 @@
 @inject AppTime Time
 @foreach (var r in Model)
 {
-    <tr class="table-row-action @(r.IsArchived ? "crown-row-archived" : null)"
+    <tr class="table-row-action @(r.IsUrgent ? "request-row-urgent" : null) @(r.IsArchived ? "crown-row-archived" : null)"
         data-href="/requests/@r.Id" tabindex="0" role="link" aria-label="Заявка № @r.Id">
         <td class="col-num">
             <span class="crown-id-cell">
@@ -15,8 +15,14 @@
                 <span class="crown-id">@r.Id</span>
             </span>
         </td>
-        <td class="crown-status-cell">
-            <span class="crown-status-pill @UiHelpers.StatusClass(r.Status)">@r.StatusLabel</span>
+        <td class="crown-status-cell col-status">
+            @{
+                var statusTitleParts = new List<string>();
+                if (r.Kind != ServiceRequestKind.Other) statusTitleParts.Add(r.KindLabel);
+                if (r.IsUrgent) statusTitleParts.Add("срочная");
+                var statusTitle = statusTitleParts.Count > 0 ? string.Join(" · ", statusTitleParts) : null;
+            }
+            <span class="crown-status-pill @UiHelpers.StatusClass(r.Status)" title="@statusTitle">@r.StatusLabel</span>
         </td>
         <td class="col-op">
             <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
@@ -38,6 +44,12 @@
         </td>
         <td class="col-dept">@r.ExecutorName</td>
         <td class="col-phone">@UiHelpers.FormatPhone(r.Phone)</td>
-        <td class="col-body">@r.BodyPreview</td>
+        <td class="col-body">
+            @if (r.Kind != ServiceRequestKind.Other)
+            {
+                <span class="text-muted">[@r.KindLabel] </span>
+            }
+            @r.BodyPreview
+        </td>
     </tr>
 }

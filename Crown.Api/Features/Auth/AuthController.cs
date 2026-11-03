@@ -127,7 +127,15 @@ public sealed class AuthController : ControllerBase
             DisplayName = string.IsNullOrWhiteSpace(user.DisplayName)
                 ? user.UserName ?? string.Empty
                 : user.DisplayName,
-            Roles = roles.OrderBy(x => x).ToList()
+            Roles = roles.OrderBy(x => x).ToList(),
+            CanBeExecutor = user.CanBeExecutor,
+            CanCreateTransportRequests = user.CanCreateTransportRequests,
+            CanManageEquipment = user.CanManageEquipment,
+            CanViewTransport = user.CanViewTransport,
+            CanViewSpecialVehicles = user.CanViewSpecialVehicles,
+            CanViewWarehouse = user.CanViewWarehouse,
+            CanViewSummary = user.CanViewSummary,
+            DocumentationEnabled = user.DocumentationEnabled
         };
     }
 }

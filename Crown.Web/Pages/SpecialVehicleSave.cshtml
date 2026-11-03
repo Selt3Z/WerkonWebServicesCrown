@@ -1,0 +1,41 @@
+@page "/special-vehicles/edit/{id:guid?}"
+@model Crown.Web.Pages.SpecialVehicleSaveModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Редактирование спецтехники" : "Новая спецтехника";
+}
+
+<h1 class="section-title">@(Model.IsEdit ? "Редактирование спецтехники" : "Новая спецтехника")</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" class="crown-form form-panel">
+    <div class="transport-form-grid">
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.Name">Тип / название <span class="crown-req">*</span></label>
+            <input class="form-control" asp-for="Input.Name" required placeholder="кран, ППУ, бочка…" />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.PlateOrNote">Номер / заметка</label>
+            <input class="form-control" asp-for="Input.PlateOrNote" />
+        </div>
+        <div class="mb-2">
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" asp-for="Input.IsActive" />
+                <label class="form-check-label" asp-for="Input.IsActive">Активна</label>
+            </div>
+        </div>
+    </div>
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
+        <a class="btn btn-outline-secondary btn-lg" href="/special-vehicles">Отмена</a>
+        @if (Model.IsEdit)
+        {
+            <button type="submit" formaction="?handler=Delete&id=@Model.Id" formmethod="post"
+                    class="btn btn-outline-danger btn-lg"
+                    data-confirm="Удалить единицу спецтехники?">Удалить</button>
+        }
+    </div>
+</form>

@@ -6,18 +6,19 @@ public static class AppRoles
 {
     public const string Administrator = "Administrator";
     public const string Dispatcher = "Dispatcher";
-    public const string Initiator = "Initiator";
+    public const string Department = "Department";
 
-    /// <summary>Админ или диспетчер — ведут заявки, склад, каталог, журнал.</summary>
+    /// <summary>Админ или диспетчер — ведут заявки, оборудование, каталог, журнал.</summary>
     public const string Staff = Administrator + "," + Dispatcher;
 
-    public static readonly string[] All = [Administrator, Dispatcher, Initiator];
+    public static readonly string[] All = [Administrator, Dispatcher, Department];
 
     public static string Display(string? role) => role switch
     {
         Administrator => "Администратор",
         Dispatcher => "Диспетчер",
-        Initiator => "Инициатор",
+        Department => "Подразделение",
+        "Initiator" => "Подразделение",
         _ => role ?? string.Empty
     };
 }
@@ -34,6 +35,14 @@ public sealed class CurrentUserResponse
     public string UserName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public List<string> Roles { get; set; } = [];
+    public bool CanBeExecutor { get; set; }
+    public bool CanCreateTransportRequests { get; set; }
+    public bool CanManageEquipment { get; set; }
+    public bool CanViewTransport { get; set; }
+    public bool CanViewSpecialVehicles { get; set; }
+    public bool CanViewWarehouse { get; set; }
+    public bool CanViewSummary { get; set; }
+    public bool DocumentationEnabled { get; set; }
 }
 
 public sealed class LoginRequest
@@ -58,11 +67,34 @@ public enum ServiceRequestStatus
     Cancelled = 6
 }
 
+public enum ServiceRequestKind
+{
+    Other = 0,
+    Equipment = 1,
+    SpecTech = 2
+}
+
+public enum EquipmentAvailability
+{
+    Free = 0,
+    Reserved = 1
+}
+
+public enum SpecialVehicleAvailability
+{
+    Free = 0,
+    Reserved = 1,
+    InUse = 2
+}
+
 public sealed class ServiceRequestListItem
 {
     public long Id { get; set; }
     public ServiceRequestStatus Status { get; set; }
     public string StatusLabel { get; set; } = string.Empty;
+    public ServiceRequestKind Kind { get; set; }
+    public string KindLabel { get; set; } = string.Empty;
+    public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
     public string InitiatorName { get; set; } = string.Empty;
     public Guid? InitiatorUserId { get; set; }
@@ -83,6 +115,9 @@ public sealed class ServiceRequestDetail
     public long Id { get; set; }
     public ServiceRequestStatus Status { get; set; }
     public string StatusLabel { get; set; } = string.Empty;
+    public ServiceRequestKind Kind { get; set; }
+    public string KindLabel { get; set; } = string.Empty;
+    public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
     public string Phone { get; set; } = string.Empty;
@@ -96,6 +131,14 @@ public sealed class ServiceRequestDetail
     public string? ExecutorComment { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public Guid? EquipmentAssetId { get; set; }
+    public string? EquipmentAssetLabel { get; set; }
+    public Guid? SpecialVehicleUnitId { get; set; }
+    public string? SpecialVehicleLabel { get; set; }
+    public string? SpecOperation { get; set; }
+    public DateTimeOffset? SpecPlannedAt { get; set; }
+    public DateTimeOffset? SpecArrivedAt { get; set; }
+    public DateTimeOffset? SpecReleasedAt { get; set; }
     public string? RowVersion { get; set; }
     public bool HasComplaint { get; set; }
     public string? ComplaintText { get; set; }
@@ -166,6 +209,12 @@ public sealed class CreateServiceRequestRequest
     public Guid ExecutorUserId { get; set; }
     public string? TransportType { get; set; }
     public string Body { get; set; } = string.Empty;
+    public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
+    public bool IsUrgent { get; set; }
+    public Guid? EquipmentAssetId { get; set; }
+    public Guid? SpecialVehicleUnitId { get; set; }
+    public string? SpecOperation { get; set; }
+    public DateTimeOffset? SpecPlannedAt { get; set; }
 }
 
 public sealed class TransitionServiceRequestRequest
@@ -177,6 +226,97 @@ public sealed class TransitionServiceRequestRequest
     public DateTimeOffset? NewDueAt { get; set; }
     public string? RowVersion { get; set; }
     public bool? Acknowledged { get; set; }
+}
+
+public sealed class ReassignServiceRequestRequest
+{
+    public Guid ExecutorUserId { get; set; }
+    public string Comment { get; set; } = string.Empty;
+    public string? RowVersion { get; set; }
+}
+
+public class EquipmentAsset
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string InventoryNumber { get; set; } = string.Empty;
+    public string? Category { get; set; }
+    public string? Description { get; set; }
+    public Guid? CurrentLocationUserId { get; set; }
+    public string? CurrentLocationLabel { get; set; }
+    public Guid? OwnerUserId { get; set; }
+    public string? OwnerLabel { get; set; }
+    public EquipmentAvailability Availability { get; set; }
+    public long? ReservedByRequestId { get; set; }
+    public bool IsArchived { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class EquipmentMovement
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+    public Guid? FromLocationUserId { get; set; }
+    public string? FromLocationLabel { get; set; }
+    public Guid? ToLocationUserId { get; set; }
+    public string? ToLocationLabel { get; set; }
+    public long? ServiceRequestId { get; set; }
+    public string? Note { get; set; }
+    public string? ByUserDisplayName { get; set; }
+}
+
+public sealed class EquipmentAssetDetail : EquipmentAsset
+{
+    public List<EquipmentMovement> Movements { get; set; } = [];
+}
+
+public sealed class SaveEquipmentAssetRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string InventoryNumber { get; set; } = string.Empty;
+    public string? Category { get; set; }
+    public string? Description { get; set; }
+    public Guid? CurrentLocationUserId { get; set; }
+    public string? CurrentLocationLabel { get; set; }
+    public Guid? OwnerUserId { get; set; }
+    public string? OwnerLabel { get; set; }
+}
+
+public sealed class EquipmentLocationOption
+{
+    public Guid Id { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+}
+
+public sealed class SpecialVehicleUnit
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? PlateOrNote { get; set; }
+    public SpecialVehicleAvailability Availability { get; set; }
+    public long? ReservedByRequestId { get; set; }
+    public bool IsActive { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class SaveSpecialVehicleUnitRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string? PlateOrNote { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class SpecialVehicleAvailabilityPayload
+{
+    public List<SpecialVehicleTypeAvailability> Types { get; set; } = [];
+    public List<SpecialVehicleUnit> FreeUnits { get; set; } = [];
+}
+
+public sealed class SpecialVehicleTypeAvailability
+{
+    public string Name { get; set; } = string.Empty;
+    public int FreeCount { get; set; }
+    public int TotalActive { get; set; }
 }
 
 public sealed class WarehousePart
@@ -267,6 +407,130 @@ public sealed class UserListItem
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public DateTime? LastActivityAtUtc { get; set; }
+}
+
+public sealed class DocumentationSection
+{
+    public Guid UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public bool CanWrite { get; set; }
+    public int FileCount { get; set; }
+    public long TotalSizeBytes { get; set; }
+}
+
+public sealed class DocumentationFolderItem
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public Guid? ParentFolderId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class DocumentationFileItem
+{
+    public Guid Id { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public Guid? FolderId { get; set; }
+    public DateTimeOffset UploadedAt { get; set; }
+}
+
+public sealed class DocumentationBrowse
+{
+    public Guid OwnerUserId { get; set; }
+    public string OwnerDisplayName { get; set; } = string.Empty;
+    public Guid? FolderId { get; set; }
+    public string? FolderName { get; set; }
+    public Guid? ParentFolderId { get; set; }
+    public bool CanWrite { get; set; }
+    public List<DocumentationFolderItem> Folders { get; set; } = [];
+    public List<DocumentationFileItem> Files { get; set; } = [];
+}
+
+public sealed class DocumentationAdminUser
+{
+    public Guid UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public bool DocumentationEnabled { get; set; }
+}
+
+public sealed class UpdateDocumentationSettingsRequest
+{
+    public List<DocumentationAdminUserToggle> Users { get; set; } = [];
+}
+
+public sealed class DocumentationAdminUserToggle
+{
+    public Guid UserId { get; set; }
+    public bool DocumentationEnabled { get; set; }
+}
+
+public sealed class DepartmentPermissionUser
+{
+    public Guid UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public bool CanBeExecutor { get; set; }
+    public bool CanCreateTransportRequests { get; set; }
+    public bool CanManageEquipment { get; set; }
+    public bool CanViewTransport { get; set; }
+    public bool CanViewSpecialVehicles { get; set; }
+    public bool CanViewWarehouse { get; set; }
+    public bool CanViewSummary { get; set; }
+    public bool DocumentationEnabled { get; set; }
+}
+
+public sealed class UpdateDepartmentPermissionsRequest
+{
+    public List<DepartmentPermissionUserToggle> Users { get; set; } = [];
+}
+
+public sealed class DepartmentPermissionUserToggle
+{
+    public Guid UserId { get; set; }
+    public bool CanBeExecutor { get; set; }
+    public bool CanCreateTransportRequests { get; set; }
+    public bool CanManageEquipment { get; set; }
+    public bool CanViewTransport { get; set; }
+    public bool CanViewSpecialVehicles { get; set; }
+    public bool CanViewWarehouse { get; set; }
+    public bool CanViewSummary { get; set; }
+    public bool DocumentationEnabled { get; set; }
+}
+
+public sealed class SpreadsheetImportPreview
+{
+    public List<string> Headers { get; set; } = [];
+    public List<List<string>> SampleRows { get; set; } = [];
+    public int TotalRows { get; set; }
+}
+
+public sealed class SpreadsheetImportCommitRequest
+{
+    public string FileBase64 { get; set; } = string.Empty;
+    public int? NameColumn { get; set; }
+    public int? InventoryNumberColumn { get; set; }
+    public int? CategoryColumn { get; set; }
+    public int? DescriptionColumn { get; set; }
+    public int? LocationColumn { get; set; }
+}
+
+public sealed class SpreadsheetImportCommitResult
+{
+    public int Created { get; set; }
+    public int Skipped { get; set; }
+    public int Errors { get; set; }
+    public List<SpreadsheetImportRowError> ErrorRows { get; set; } = [];
+}
+
+public sealed class SpreadsheetImportRowError
+{
+    public int RowNumber { get; set; }
+    public string Code { get; set; } = string.Empty;
 }
 
 public sealed class SaveUserRequest

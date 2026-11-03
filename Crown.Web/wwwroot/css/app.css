@@ -577,6 +577,13 @@ h1:focus, h2:focus, h3:focus {
     pointer-events: none;
 }
 
+/* Заголовок + кнопка: линия на всю ширину ряда (Оборудование / Каталог / Пользователи). */
+.crown-page-head > h1 {
+    margin-bottom: 0;
+    flex: 1 1 auto;
+    min-width: 8rem;
+}
+
 /* Filter panels */
 .list-filters {
     display: flex;
@@ -1244,18 +1251,21 @@ h1:focus, h2:focus, h3:focus {
 
 .table > tbody > tr.table-row-action > td:last-child:not(.table-row-actions) {
     position: relative;
+    /* Место под «» при hover — текст (объём и т.п.) не пересекается со стрелкой. */
+    padding-right: 1.85rem;
 }
 
 .table > tbody > tr.table-row-action:hover > td:last-child:not(.table-row-actions)::after {
     content: "»";
     position: absolute;
-    right: 0.75rem;
+    right: 0.55rem;
     top: 50%;
     transform: translateY(-50%);
     color: var(--r-brand);
     font-weight: 700;
     font-size: 1rem;
     opacity: 0.75;
+    pointer-events: none;
 }
 
 .table-row-actions {
@@ -1710,6 +1720,36 @@ h1:focus, h2:focus, h3:focus {
 .history-table .history-record-cell {
     white-space: normal;
     word-break: break-word;
+}
+
+tr.request-row-urgent > td {
+    background-color: rgba(234, 132, 36, 0.18);
+}
+
+tr.request-row-urgent:hover > td {
+    background-color: rgba(234, 132, 36, 0.28);
+}
+
+.schedule-card.request-row-urgent {
+    background-color: rgba(234, 132, 36, 0.18);
+}
+
+[data-theme="dark"] tr.request-row-urgent > td,
+[data-theme="green-dark"] tr.request-row-urgent > td,
+[data-theme="gray"] tr.request-row-urgent > td {
+    background-color: rgba(234, 132, 36, 0.22);
+}
+
+[data-theme="dark"] tr.request-row-urgent:hover > td,
+[data-theme="green-dark"] tr.request-row-urgent:hover > td,
+[data-theme="gray"] tr.request-row-urgent:hover > td {
+    background-color: rgba(234, 132, 36, 0.32);
+}
+
+[data-theme="dark"] .schedule-card.request-row-urgent,
+[data-theme="green-dark"] .schedule-card.request-row-urgent,
+[data-theme="gray"] .schedule-card.request-row-urgent {
+    background-color: rgba(234, 132, 36, 0.22);
 }
 
 tr.warehouse-row-shortage > td {
@@ -3593,9 +3633,71 @@ h4.section-title::after {
     line-height: 1.2;
 }
 
+/* Как «Диспетчер может удалять…» — radio логотипа тем же кеглем. */
+#brand-logo-field .form-check-label {
+    font-size: 0.74rem;
+    line-height: 1.2;
+}
+
 .settings-field-check .form-text {
     margin-top: 0.08rem;
     padding-left: 0;
+}
+
+/* Права подразделений — таблица на всю ширину (не 680px формы). */
+.page-content form.department-permissions-form,
+.content form.department-permissions-form {
+    max-width: none;
+    width: 100%;
+}
+
+.department-permissions-wrap {
+    max-width: none;
+    width: 100%;
+    overflow-x: auto;
+}
+
+.department-permissions-table {
+    min-width: 64rem;
+    width: 100%;
+}
+
+.department-permissions-table th,
+.department-permissions-table td {
+    white-space: nowrap;
+}
+
+.doc-entry-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: inherit;
+    text-decoration: none;
+}
+
+.doc-entry-link:hover {
+    text-decoration: underline;
+}
+
+.doc-icon {
+    display: inline-block;
+    width: 1.2rem;
+    height: 1.2rem;
+    flex-shrink: 0;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    vertical-align: -0.2em;
+}
+
+/* Открытая папка: вкладка + раскрытое тело. */
+.doc-icon-folder {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23475569' viewBox='0 0 16 16'%3E%3Cpath d='M.5 3A1.5 1.5 0 0 1 2 1.5h3.586a1.5 1.5 0 0 1 1.06.44l.708.707A.5.5 0 0 0 7.707 2.8H14A1.5 1.5 0 0 1 15.5 4.3v.7H.5V3z'/%3E%3Cpath d='M.5 5.5h15l-1.2 7.4A1.5 1.5 0 0 1 12.82 14.5H3.18A1.5 1.5 0 0 1 1.7 12.9L.5 5.5z'/%3E%3C/svg%3E");
+}
+
+/* File-earmark-text — загнутый уголок + строки текста. */
+.doc-icon-file {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23475569' viewBox='0 0 16 16'%3E%3Cpath d='M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM4.5 9a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z'/%3E%3C/svg%3E");
 }
 
 button.app-user-role.app-user-role-link {

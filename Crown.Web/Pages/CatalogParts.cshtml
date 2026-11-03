@@ -1,7 +1,7 @@
 @page "/catalog-parts"
 @model CatalogPartsModel
 @{
-    ViewData["Title"] = "Каталог услуг";
+    ViewData["Title"] = "Каталог услуг/узлов";
     var addHref = Model.IsStaff && Model.OwnerUserId is Guid oid
         ? $"/catalog-parts/edit?ownerUserId={oid}"
         : "/catalog-parts/edit";
@@ -11,10 +11,10 @@
 }
 
 <div class="crown-page-head">
-    <h1 class="section-title">Каталог услуг</h1>
+    <h1 class="section-title">Каталог услуг/узлов</h1>
     @if (Model.CanEdit)
     {
-        <a class="btn btn-success" href="@addHref">Добавить услугу</a>
+        <a class="btn btn-success" href="@addHref">Добавить услугу/узел</a>
     }
 </div>
 
@@ -46,7 +46,7 @@
 
 @if (Model.IsStaff && Model.OwnerUserId is null)
 {
-    <p class="text-muted">Выберите подразделение, чтобы посмотреть и править его каталог услуг. Своего каталога у администратора и диспетчера нет.</p>
+    <p class="text-muted">Выберите подразделение, чтобы посмотреть и править его каталог услуг/узлов. Своего каталога у администратора и диспетчера нет.</p>
 }
 else
 {
@@ -146,7 +146,7 @@ else
                    data-has-more="@(Model.HasMore ? "true" : "false")">
             @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
             {
-                <tr class="crown-empty-row"><td colspan="6" class="text-muted text-center">Услуг нет.</td></tr>
+                <tr class="crown-empty-row"><td colspan="6" class="text-muted text-center">Услуг/узлов нет.</td></tr>
             }
             else
             {

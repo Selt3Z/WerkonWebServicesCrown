@@ -1,0 +1,56 @@
+@page "/equipment"
+@model Crown.Web.Pages.EquipmentModel
+@{
+    ViewData["Title"] = "Оборудование";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Оборудование</h1>
+    <a class="btn btn-success" href="/equipment/edit">Добавить</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="get" class="list-filters clients-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-search">
+        <label class="form-label" for="eq-q">Поиск</label>
+        <input id="eq-q" class="form-control" type="search" name="q" value="@Model.Q" placeholder="имя, инв.№…" />
+    </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="freeOnly" name="freeOnly" value="true" checked="@Model.FreeOnly" />
+            <label class="form-check-label" for="freeOnly">Только свободные</label>
+        </div>
+    </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="archived" name="archived" value="true" checked="@Model.Archived" />
+            <label class="form-check-label" for="archived">С архивом</label>
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Найти</button>
+    <a class="btn btn-secondary" href="/equipment">Сбросить</a>
+</form>
+
+<div class="crown-table-wrap">
+    <table class="table crown-table crown-equipment-table">
+        <thead>
+            <tr>
+                <th class="col-inv">Инв. №</th>
+                <th class="col-name">Название</th>
+                <th class="col-owner">Принадлежит</th>
+                <th class="col-loc">Текущее местоположение</th>
+                <th class="col-status">Статус</th>
+            </tr>
+        </thead>
+        <tbody data-infinite-scroll
+               data-more-url="@UiHelpers.BuildUrl("/equipment", ("handler", "More"), ("q", Model.Q), ("freeOnly", Model.FreeOnly ? "true" : null), ("archived", Model.Archived ? "true" : null))"
+               data-skip="@Model.Items.Count"
+               data-has-more="@(Model.HasMore ? "true" : "false")">
+            <partial name="_EquipmentRows" model="Model.Items" />
+        </tbody>
+    </table>
+</div>

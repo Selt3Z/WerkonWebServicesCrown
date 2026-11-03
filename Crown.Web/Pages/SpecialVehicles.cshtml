@@ -1,0 +1,57 @@
+@page "/special-vehicles"
+@model Crown.Web.Pages.SpecialVehiclesModel
+@{
+    ViewData["Title"] = "Спецтехника";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Спецтехника</h1>
+    @if (Model.CanManage)
+    {
+        <a class="btn btn-success" href="/special-vehicles/edit">Добавить</a>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="get" class="list-filters clients-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-search">
+        <label class="form-label" for="sv-q">Поиск</label>
+        <input id="sv-q" class="form-control" type="search" name="q" value="@Model.Q" placeholder="тип, номер…" />
+    </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="freeOnly" name="freeOnly" value="true" checked="@Model.FreeOnly" />
+            <label class="form-check-label" for="freeOnly">Только свободные</label>
+        </div>
+    </div>
+    <div class="filter-field filter-field-check">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="includeInactive" name="includeInactive" value="true" checked="@Model.IncludeInactive" />
+            <label class="form-check-label" for="includeInactive">С неактивными</label>
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Найти</button>
+    <a class="btn btn-secondary" href="/special-vehicles">Сбросить</a>
+</form>
+
+<div class="crown-table-wrap">
+    <table class="table crown-table crown-spectech-table">
+        <thead>
+            <tr>
+                <th class="col-name">Тип</th>
+                <th class="col-note">Номер / заметка</th>
+                <th class="col-status">Статус</th>
+            </tr>
+        </thead>
+        <tbody data-infinite-scroll
+               data-more-url="@UiHelpers.BuildUrl("/special-vehicles", ("handler", "More"), ("q", Model.Q), ("freeOnly", Model.FreeOnly ? "true" : null), ("includeInactive", Model.IncludeInactive ? "true" : null))"
+               data-skip="@Model.Items.Count"
+               data-has-more="@(Model.HasMore ? "true" : "false")">
+            <partial name="_SpecialVehicleRows" model="Model.Items" />
+        </tbody>
+    </table>
+</div>

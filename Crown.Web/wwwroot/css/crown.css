@@ -104,14 +104,20 @@ a.history-user-link:hover {
 
 .crown-page-head {
     display: flex;
-    align-items: center;
+    /* flex-end: линия h1 снизу, не по центру кнопки «Добавить» */
+    align-items: flex-end;
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
     margin-bottom: 0.75rem;
 }
 
-.crown-page-head .section-title { margin: 0; }
+/* линия на всю ширину до кнопки; specificity бьёт app.css .crown-page-head > h1 */
+.crown-page-head > h1.section-title {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 8rem;
+}
 
 .crown-page-head-actions {
     display: flex;
@@ -164,11 +170,44 @@ a.history-user-link:hover {
     table-layout: fixed;
     width: 100%;
 }
-.crown-requests-table .col-num { width: 4.5rem; text-align: right; }
-.crown-requests-table .col-status { width: 9.5rem; }
+.crown-requests-table .col-num { width: 3.5rem; text-align: right; }
+.crown-requests-table .col-status { width: 7.5rem; }
+/* В статусе только pill — без бейджей «срочная»/вид, иначе fixed-колонка режет их в «...». */
+.crown-requests-table .crown-status-cell {
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+.crown-requests-table .crown-status-cell .crown-status-pill {
+    max-width: 100%;
+}
+
+/* Оборудование / спецтехника: узкий инв.№ и статус, название тянется. */
+.crown-equipment-table,
+.crown-spectech-table {
+    table-layout: fixed;
+    width: 100%;
+}
+.crown-equipment-table .col-inv { width: 5.5rem; }
+.crown-equipment-table .col-name,
+.crown-spectech-table .col-name { width: auto; }
+.crown-equipment-table .col-owner { width: 9rem; }
+.crown-equipment-table .col-loc { width: 9rem; }
+.crown-equipment-table .col-status,
+.crown-spectech-table .col-status { width: 5.75rem; }
+.crown-spectech-table .col-note { width: 10rem; }
+.crown-equipment-table .col-name,
+.crown-equipment-table .col-owner,
+.crown-equipment-table .col-loc,
+.crown-spectech-table .col-name,
+.crown-spectech-table .col-note {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .crown-requests-table .col-op { width: 2.8rem; text-align: center; }
 .crown-requests-table .col-init { width: 9rem; }
-.crown-requests-table .col-date { width: 9.6rem; }
+.crown-requests-table .col-date { width: 8.2rem; }
 .crown-requests-table .col-dept { width: 7.5rem; }
 .crown-requests-table .col-phone { width: 8.2rem; }
 .crown-requests-table .col-body { width: auto; }

@@ -31,6 +31,33 @@ public sealed class IdentitySeedHostedService : IHostedService
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
+        // Переименование Initiator → Department (миграция + страховка на старте).
+        var legacyRole = await roleManager.FindByNameAsync(AppRoles.InitiatorLegacy);
+        var departmentRole = await roleManager.FindByNameAsync(AppRoles.Department);
+        if (legacyRole is not null && departmentRole is not null && legacyRole.Id != departmentRole.Id)
+        {
+            var legacyUsers = await userManager.GetUsersInRoleAsync(AppRoles.InitiatorLegacy);
+            foreach (var user in legacyUsers)
+            {
+                if (!await userManager.IsInRoleAsync(user, AppRoles.Department))
+                {
+                    await userManager.AddToRoleAsync(user, AppRoles.Department);
+                }
+
+                await userManager.RemoveFromRoleAsync(user, AppRoles.InitiatorLegacy);
+            }
+
+            await roleManager.DeleteAsync(legacyRole);
+            _logger.LogInformation("Merged role {Old} into {New}.", AppRoles.InitiatorLegacy, AppRoles.Department);
+        }
+        else if (legacyRole is not null)
+        {
+            legacyRole.Name = AppRoles.Department;
+            legacyRole.NormalizedName = AppRoles.Department.ToUpperInvariant();
+            await roleManager.UpdateAsync(legacyRole);
+            _logger.LogInformation("Role {Old} renamed to {New}.", AppRoles.InitiatorLegacy, AppRoles.Department);
+        }
+
         foreach (var roleName in AppRoles.All)
         {
             if (!await roleManager.RoleExistsAsync(roleName))

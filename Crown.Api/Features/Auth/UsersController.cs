@@ -295,8 +295,8 @@ public sealed class UsersController : ControllerBase
             return true;
         }
 
-        // Dispatcher / Initiator — только свой профиль
-        if (!User.IsInRole(AppRoles.Dispatcher) && !User.IsInRole(AppRoles.Initiator))
+        // Dispatcher / Department — только свой профиль
+        if (!User.IsInRole(AppRoles.Dispatcher) && !User.IsInRole(AppRoles.Department))
         {
             return false;
         }

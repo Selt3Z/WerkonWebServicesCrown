@@ -26,7 +26,7 @@ public sealed class WarehouseSaveModel(CrownApiClient api) : PageModel
         var categories = await api.GetAsync<List<string>>("api/warehouse-parts/categories", HttpContext.RequestAborted);
         if (categories.Status == 404)
         {
-            Error = "Складской учёт отключён. Включите его в разделе «Настройки».";
+            Error = "Учёт оборудования отключён. Включите его в разделе «Настройки».";
             return Page();
         }
 
@@ -85,7 +85,7 @@ public sealed class WarehouseSaveModel(CrownApiClient api) : PageModel
 
         if (result.Status == 404)
         {
-            Error = "Складской учёт отключён. Включите его в разделе «Настройки».";
+            Error = "Учёт оборудования отключён. Включите его в разделе «Настройки».";
             return Page();
         }
 
@@ -95,7 +95,7 @@ public sealed class WarehouseSaveModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        TempData["Ok"] = IsEdit ? "Позиция склада обновлена." : "Позиция склада добавлена.";
+        TempData["Ok"] = IsEdit ? "Позиция оборудования обновлена." : "Позиция оборудования добавлена.";
         return RedirectToPage("/Warehouse");
     }
 }

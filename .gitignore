@@ -400,3 +400,7 @@ Crown.Api/.docker-cli/docker
 Crown.Api/.docker-cli/docker-compose
 Crown.Api/.docker-cli/.prepared
 desktop.ini
+
+# k6 stress reports
+tools/load/reports/
+

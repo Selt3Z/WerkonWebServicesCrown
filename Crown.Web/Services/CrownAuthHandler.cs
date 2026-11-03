@@ -13,6 +13,14 @@ public sealed class CrownAuthHandler : AuthenticationHandler<AuthenticationSchem
 {
     public const string SchemeName = "CrownApi";
     public const string DisplayNameClaim = "display_name";
+    public const string CanCreateTransportClaim = "perm_transport";
+    public const string CanManageEquipmentClaim = "perm_equipment";
+    public const string CanBeExecutorClaim = "perm_executor";
+    public const string CanViewTransportClaim = "perm_view_transport";
+    public const string CanViewSpecialVehiclesClaim = "perm_view_spectech";
+    public const string CanViewWarehouseClaim = "perm_view_warehouse";
+    public const string CanViewSummaryClaim = "perm_view_summary";
+    public const string DocumentationEnabledClaim = "perm_docs";
 
     private readonly CrownApiClient _api;
 
@@ -38,7 +46,15 @@ public sealed class CrownAuthHandler : AuthenticationHandler<AuthenticationSchem
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.UserName),
-            new(DisplayNameClaim, user.DisplayName)
+            new(DisplayNameClaim, user.DisplayName),
+            new(CanBeExecutorClaim, user.CanBeExecutor ? "1" : "0"),
+            new(CanCreateTransportClaim, user.CanCreateTransportRequests ? "1" : "0"),
+            new(CanManageEquipmentClaim, user.CanManageEquipment ? "1" : "0"),
+            new(CanViewTransportClaim, user.CanViewTransport ? "1" : "0"),
+            new(CanViewSpecialVehiclesClaim, user.CanViewSpecialVehicles ? "1" : "0"),
+            new(CanViewWarehouseClaim, user.CanViewWarehouse ? "1" : "0"),
+            new(CanViewSummaryClaim, user.CanViewSummary ? "1" : "0"),
+            new(DocumentationEnabledClaim, user.DocumentationEnabled ? "1" : "0")
         };
         claims.AddRange(user.Roles.Select(r => new Claim(ClaimTypes.Role, r)));
 

@@ -100,6 +100,16 @@
                     <dd>@item.InitiatorName</dd>
                 </div>
                 <div class="entity-meta-item">
+                    <dt>Тип</dt>
+                    <dd>
+                        @item.KindLabel
+                        @if (item.IsUrgent)
+                        {
+                            <span class="badge text-bg-warning ms-1">срочная</span>
+                        }
+                    </dd>
+                </div>
+                <div class="entity-meta-item">
                     <dt>Телефон</dt>
                     <dd>@UiHelpers.FormatPhone(item.Phone)</dd>
                 </div>
@@ -107,6 +117,45 @@
                     <dt>Исполнитель</dt>
                     <dd>@(string.IsNullOrWhiteSpace(item.ExecutorName) ? "—" : item.ExecutorName)</dd>
                 </div>
+                @if (item.Kind == ServiceRequestKind.Equipment)
+                {
+                    <div class="entity-meta-item entity-meta-wide">
+                        <dt>Оборудование</dt>
+                        <dd>
+                            @if (item.EquipmentAssetId is Guid eid)
+                            {
+                                <a href="/equipment/@eid">@(item.EquipmentAssetLabel ?? eid.ToString())</a>
+                            }
+                            else
+                            {
+                                <text>—</text>
+                            }
+                        </dd>
+                    </div>
+                }
+                @if (item.Kind == ServiceRequestKind.SpecTech)
+                {
+                    <div class="entity-meta-item">
+                        <dt>Спецтехника</dt>
+                        <dd>@(item.SpecialVehicleLabel ?? "—")</dd>
+                    </div>
+                    <div class="entity-meta-item">
+                        <dt>Операция</dt>
+                        <dd>@(item.SpecOperation ?? "—")</dd>
+                    </div>
+                    <div class="entity-meta-item">
+                        <dt>План</dt>
+                        <dd>@Time.Format(item.SpecPlannedAt)</dd>
+                    </div>
+                    <div class="entity-meta-item">
+                        <dt>Прибытие</dt>
+                        <dd>@Time.Format(item.SpecArrivedAt)</dd>
+                    </div>
+                    <div class="entity-meta-item">
+                        <dt>Освобождение</dt>
+                        <dd>@Time.Format(item.SpecReleasedAt)</dd>
+                    </div>
+                }
                 <div class="entity-meta-item">
                     <dt>Реакция</dt>
                     <dd>@Time.Format(item.ReactionAt)</dd>
@@ -168,6 +217,15 @@
                 {
                     <button type="submit" name="action" value="accept" class="btn btn-act btn-act-accept">Принять в работу</button>
                 }
+                @if (Model.CanSpecArrive)
+                {
+                    <button type="submit" name="action" value="spec-arrive" class="btn btn-act btn-act-accept">Прибыла</button>
+                }
+                @if (Model.CanSpecRelease)
+                {
+                    <button type="submit" name="action" value="spec-release" class="btn btn-act btn-act-accept"
+                            data-confirm="Отметить освобождение спецтехники?">Освободилась</button>
+                }
                 @if (actions.Contains("complete"))
                 {
                     <button type="submit" name="action" value="complete" class="btn btn-act btn-act-accept"
@@ -206,6 +264,41 @@
                 }
             </div>
         </form>
+
+        @if (Model.CanReassign)
+        {
+            <form method="post" asp-page-handler="Reassign" asp-route-id="@item.Id" class="crown-entity-form mt-4">
+                <input type="hidden" name="rowVersion" value="@item.RowVersion" />
+                <h3 class="h6 text-uppercase text-muted mb-2">Перенаправить</h3>
+                <div class="transport-form-grid">
+                    <div class="mb-2">
+                        <label class="form-label" for="reassign-executor">Новый исполнитель <span class="crown-req">*</span></label>
+                        <select class="form-select" id="reassign-executor" name="executorUserId" required>
+                            <option value="">— выберите —</option>
+                            @foreach (var u in Model.Assignees)
+                            {
+                                var selected = Model.ReassignExecutorUserId == u.Id
+                                    || (Model.ReassignExecutorUserId is null && item.ExecutorUserId != u.Id && false);
+                                if (item.ExecutorUserId == u.Id)
+                                {
+                                    continue;
+                                }
+                                <option value="@u.Id" selected="@selected">@u.DisplayName (@u.UserName)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="reassign-comment">Комментарий <span class="crown-req">*</span></label>
+                        <textarea class="form-control" id="reassign-comment" name="comment" rows="2" required
+                                  placeholder="Причина перенаправления">@Model.ReassignCommentInput</textarea>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-outline-primary btn-sm"
+                        data-confirm="Перенаправить заявку? Бронь единицы будет снята, статус — «Подана».">
+                    Перенаправить
+                </button>
+            </form>
+        }
     </div>
 
     @if (item.HasComplaint)

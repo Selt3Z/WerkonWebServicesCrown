@@ -82,7 +82,7 @@ public sealed class SummaryReportService
         if (includeUserPicker)
         {
             // В выборе сводки — только инициаторы (как субъекты исходящих заявок).
-            var initiators = await _users.GetUsersInRoleAsync(AppRoles.Initiator);
+            var initiators = await _users.GetUsersInRoleAsync(AppRoles.Department);
             availableUsers = initiators
                 .Where(x => x.IsActive)
                 .OrderBy(x => x.DisplayName)

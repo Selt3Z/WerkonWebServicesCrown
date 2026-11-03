@@ -1,0 +1,261 @@
+@page "/equipment/edit/{id:guid?}"
+@model Crown.Web.Pages.EquipmentSaveModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Редактирование оборудования" : "Новое оборудование";
+}
+
+<h1 class="section-title">@(Model.IsEdit ? "Редактирование оборудования" : "Новое оборудование")</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+@if (!string.IsNullOrEmpty(Model.Ok))
+{
+    <div class="alert alert-success">@Model.Ok</div>
+}
+
+@if (!Model.IsEdit)
+{
+    @Html.AntiForgeryToken()
+    <div class="form-panel mb-3" id="equipment-import-panel">
+        <h2 class="h6 text-uppercase text-muted mb-2">Импорт из Excel</h2>
+        <p class="form-text mb-2">Первая строка — заголовки. Нужны «Название», «Инв. №» и «Текущее местоположение» (имя подразделения); остальное опционально.</p>
+        <div class="mb-2">
+            <input class="form-control" type="file" id="eq-import-file" accept=".xlsx,.xls,.csv" />
+        </div>
+        <div id="eq-import-map" class="transport-form-grid" hidden>
+            <div class="mb-2">
+                <label class="form-label" for="eq-map-name">Название <span class="crown-req">*</span></label>
+                <select class="form-select" id="eq-map-name"></select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="eq-map-inv">Инв. № <span class="crown-req">*</span></label>
+                <select class="form-select" id="eq-map-inv"></select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="eq-map-cat">Категория</label>
+                <select class="form-select" id="eq-map-cat"><option value="">—</option></select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="eq-map-loc">Текущее местоположение <span class="crown-req">*</span></label>
+                <select class="form-select" id="eq-map-loc"></select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="eq-map-desc">Описание</label>
+                <select class="form-select" id="eq-map-desc"><option value="">—</option></select>
+            </div>
+        </div>
+        <div id="eq-import-sample" class="table-responsive mb-2" hidden></div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-primary" id="eq-import-preview">Прочитать файл</button>
+            <button type="button" class="btn btn-save" id="eq-import-commit" hidden>Импортировать</button>
+        </div>
+        <div id="eq-import-status" class="form-text mt-2"></div>
+    </div>
+}
+
+<form method="post" class="crown-form form-panel">
+    <div class="transport-form-grid">
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.InventoryNumber">Инв. № <span class="crown-req">*</span></label>
+            <input class="form-control" asp-for="Input.InventoryNumber" required />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.Name">Название <span class="crown-req">*</span></label>
+            <input class="form-control" asp-for="Input.Name" required />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.Category">Категория</label>
+            <input class="form-control" asp-for="Input.Category" />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.OwnerUserId">Принадлежит <span class="crown-req">*</span></label>
+            @if (Model.CanEditOwner)
+            {
+                <select class="form-select" asp-for="Input.OwnerUserId" required>
+                    <option value="">— подразделение-владелец —</option>
+                    @foreach (var loc in Model.LocationOptions)
+                    {
+                        <option value="@loc.Id">@loc.DisplayName</option>
+                    }
+                </select>
+            }
+            else if (Model.IsEdit)
+            {
+                <input type="hidden" asp-for="Input.OwnerUserId" />
+                <div class="form-control" style="background: var(--bs-secondary-bg, #f8f9fa);" readonly>
+                    @(string.IsNullOrWhiteSpace(Model.Input.OwnerLabel) ? "—" : Model.Input.OwnerLabel)
+                </div>
+                <div class="form-text">Меняет только диспетчер или администратор.</div>
+            }
+            else
+            {
+                <input type="hidden" asp-for="Input.OwnerUserId" />
+                <div class="form-control" style="background: var(--bs-secondary-bg, #f8f9fa);" readonly>
+                    @(Model.LocationOptions.FirstOrDefault(x => x.Id == Model.Input.OwnerUserId)?.DisplayName ?? "текущее подразделение")
+                </div>
+                <div class="form-text">Закрепляется за вашим подразделением при создании.</div>
+            }
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.CurrentLocationUserId">Текущее местоположение <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.CurrentLocationUserId" required>
+                <option value="">— выберите подразделение —</option>
+                @foreach (var loc in Model.LocationOptions)
+                {
+                    <option value="@loc.Id">@loc.DisplayName</option>
+                }
+            </select>
+        </div>
+    </div>
+    <div class="mb-2">
+        <label class="form-label" asp-for="Input.Description">Описание</label>
+        <textarea class="form-control" asp-for="Input.Description" rows="3"></textarea>
+    </div>
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
+        <a class="btn btn-outline-secondary btn-lg" href="/equipment">Отмена</a>
+    </div>
+</form>
+
+@if (!Model.IsEdit)
+{
+<script>
+(function () {
+  var fileInput = document.getElementById('eq-import-file');
+  var mapWrap = document.getElementById('eq-import-map');
+  var sample = document.getElementById('eq-import-sample');
+  var previewBtn = document.getElementById('eq-import-preview');
+  var commitBtn = document.getElementById('eq-import-commit');
+  var status = document.getElementById('eq-import-status');
+  var fileB64 = null;
+  var headers = [];
+
+  function fillSelect(sel, withEmpty) {
+    sel.innerHTML = withEmpty ? '<option value="">—</option>' : '';
+    headers.forEach(function (h, i) {
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = (h || ('Столбец ' + (i + 1)));
+      sel.appendChild(opt);
+    });
+  }
+
+  function guess(name) {
+    var n = (name || '').toLowerCase();
+    for (var i = 0; i < headers.length; i++) {
+      var h = (headers[i] || '').toLowerCase();
+      if (h.indexOf(n) >= 0) return i;
+    }
+    return -1;
+  }
+
+  function antiforgery() {
+    var t = document.querySelector('input[name="__RequestVerificationToken"]');
+    return t ? t.value : '';
+  }
+
+  previewBtn.addEventListener('click', function () {
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) { status.textContent = 'Выберите файл.'; return; }
+    status.textContent = 'Читаю…';
+    var fd = new FormData();
+    fd.append('file', f);
+    fd.append('__RequestVerificationToken', antiforgery());
+    fetch('/equipment/edit?handler=ImportPreview', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          status.textContent = (res.j && (res.j.message || res.j.error)) || 'Ошибка чтения файла.';
+          return;
+        }
+        headers = res.j.headers || [];
+        fillSelect(document.getElementById('eq-map-name'), false);
+        fillSelect(document.getElementById('eq-map-inv'), false);
+        fillSelect(document.getElementById('eq-map-cat'), true);
+        fillSelect(document.getElementById('eq-map-loc'), false);
+        fillSelect(document.getElementById('eq-map-desc'), true);
+        var gi = guess('назван'); if (gi >= 0) document.getElementById('eq-map-name').value = String(gi);
+        var ii = guess('инв'); if (ii < 0) ii = guess('номер'); if (ii >= 0) document.getElementById('eq-map-inv').value = String(ii);
+        var ci = guess('катег'); if (ci >= 0) document.getElementById('eq-map-cat').value = String(ci);
+        var li = guess('местополож'); if (li < 0) li = guess('где'); if (li < 0) li = guess('место'); if (li >= 0) document.getElementById('eq-map-loc').value = String(li);
+        var di = guess('опис'); if (di >= 0) document.getElementById('eq-map-desc').value = String(di);
+        mapWrap.hidden = false;
+        commitBtn.hidden = false;
+        var rows = res.j.sampleRows || [];
+        var html = '<table class="table crown-table"><thead><tr>';
+        headers.forEach(function (h) { html += '<th>' + (h || '') + '</th>'; });
+        html += '</tr></thead><tbody>';
+        rows.slice(0, 5).forEach(function (row) {
+          html += '<tr>';
+          (row || []).forEach(function (c) { html += '<td>' + (c || '') + '</td>'; });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        sample.innerHTML = html;
+        sample.hidden = false;
+        status.textContent = 'Строк данных: ' + (res.j.totalRows || 0) + '. Сопоставьте столбцы и нажмите «Импортировать».';
+        var reader = new FileReader();
+        reader.onload = function () {
+          var s = String(reader.result || '');
+          var i = s.indexOf(',');
+          fileB64 = i >= 0 ? s.slice(i + 1) : s;
+        };
+        reader.readAsDataURL(f);
+      })
+      .catch(function () { status.textContent = 'Сеть/сервер недоступны.'; });
+  });
+
+  commitBtn.addEventListener('click', function () {
+    if (!fileB64) { status.textContent = 'Сначала прочитайте файл.'; return; }
+    var nameCol = document.getElementById('eq-map-name').value;
+    var invCol = document.getElementById('eq-map-inv').value;
+    var locCol = document.getElementById('eq-map-loc').value;
+    if (nameCol === '' || invCol === '' || locCol === '' || nameCol === invCol) {
+      status.textContent = 'Укажите название, инв. № и текущее местоположение (разные столбцы).';
+      return;
+    }
+    function opt(id) {
+      var v = document.getElementById(id).value;
+      return v === '' ? null : parseInt(v, 10);
+    }
+    status.textContent = 'Импорт…';
+    fetch('/equipment/edit?handler=ImportCommit', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'RequestVerificationToken': antiforgery()
+      },
+      body: JSON.stringify({
+        fileBase64: fileB64,
+        nameColumn: parseInt(nameCol, 10),
+        inventoryNumberColumn: parseInt(invCol, 10),
+        categoryColumn: opt('eq-map-cat'),
+        locationColumn: parseInt(locCol, 10),
+        descriptionColumn: opt('eq-map-desc')
+      })
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          status.textContent = (res.j && (res.j.message || res.j.error)) || 'Ошибка импорта.';
+          return;
+        }
+        var created = res.j.created || 0;
+        var errors = res.j.errors || 0;
+        status.textContent = 'Готово: создано ' + created + (errors ? ', ошибок ' + errors : '') + '.';
+        if (created > 0) {
+          setTimeout(function () { location.href = '/equipment'; }, 800);
+        }
+      })
+      .catch(function () { status.textContent = 'Сеть/сервер недоступны.'; });
+  });
+})();
+</script>
+}
