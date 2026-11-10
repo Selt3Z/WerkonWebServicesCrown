@@ -151,6 +151,12 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(260)
@@ -178,6 +184,8 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DeletedAt");
+
                     b.HasIndex("FolderId");
 
                     b.HasIndex("OwnerUserId");
@@ -194,6 +202,12 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -207,11 +221,15 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DeletedAt");
+
                     b.HasIndex("OwnerUserId");
 
                     b.HasIndex("ParentFolderId");
 
-                    b.HasIndex("OwnerUserId", "ParentFolderId", "Name");
+                    b.HasIndex("OwnerUserId", "ParentFolderId", "Name")
+                        .IsUnique()
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.ToTable("DocumentationFolders");
                 });
@@ -417,6 +435,9 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<bool>("Acknowledged")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTimeOffset?>("AcknowledgedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Body")
                         .IsRequired()
                         .HasColumnType("text");
@@ -487,6 +508,12 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset?>("ReactionAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestedEquipmentCategory")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RequestedSpecialVehicleType")
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset?>("SpecArrivedAt")
                         .HasColumnType("timestamp with time zone");

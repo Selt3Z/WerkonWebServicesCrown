@@ -96,6 +96,7 @@ public sealed class ServiceRequestListItem
     public string KindLabel { get; set; } = string.Empty;
     public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
+    public DateTimeOffset? AcknowledgedAt { get; set; }
     public string InitiatorName { get; set; } = string.Empty;
     public Guid? InitiatorUserId { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
@@ -119,6 +120,7 @@ public sealed class ServiceRequestDetail
     public string KindLabel { get; set; } = string.Empty;
     public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
+    public DateTimeOffset? AcknowledgedAt { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
     public string Phone { get; set; } = string.Empty;
     public DateTimeOffset DueAt { get; set; }
@@ -131,10 +133,13 @@ public sealed class ServiceRequestDetail
     public string? ExecutorComment { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public string? RequestedEquipmentCategory { get; set; }
     public Guid? EquipmentAssetId { get; set; }
     public string? EquipmentAssetLabel { get; set; }
+    public string? RequestedSpecialVehicleType { get; set; }
     public Guid? SpecialVehicleUnitId { get; set; }
     public string? SpecialVehicleLabel { get; set; }
+    public int QueueAheadCount { get; set; }
     public string? SpecOperation { get; set; }
     public DateTimeOffset? SpecPlannedAt { get; set; }
     public DateTimeOffset? SpecArrivedAt { get; set; }
@@ -211,8 +216,8 @@ public sealed class CreateServiceRequestRequest
     public string Body { get; set; } = string.Empty;
     public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
     public bool IsUrgent { get; set; }
-    public Guid? EquipmentAssetId { get; set; }
-    public Guid? SpecialVehicleUnitId { get; set; }
+    public string? RequestedEquipmentCategory { get; set; }
+    public string? RequestedSpecialVehicleType { get; set; }
     public string? SpecOperation { get; set; }
     public DateTimeOffset? SpecPlannedAt { get; set; }
 }
@@ -226,6 +231,8 @@ public sealed class TransitionServiceRequestRequest
     public DateTimeOffset? NewDueAt { get; set; }
     public string? RowVersion { get; set; }
     public bool? Acknowledged { get; set; }
+    public Guid? EquipmentAssetId { get; set; }
+    public Guid? SpecialVehicleUnitId { get; set; }
 }
 
 public sealed class ReassignServiceRequestRequest
@@ -268,6 +275,13 @@ public sealed class EquipmentMovement
 public sealed class EquipmentAssetDetail : EquipmentAsset
 {
     public List<EquipmentMovement> Movements { get; set; } = [];
+}
+
+public sealed class EquipmentRequestCategory
+{
+    public string Name { get; set; } = string.Empty;
+    public int FreeCount { get; set; }
+    public int TotalActive { get; set; }
 }
 
 public sealed class SaveEquipmentAssetRequest
@@ -425,6 +439,7 @@ public sealed class DocumentationFolderItem
     public string Name { get; set; } = string.Empty;
     public Guid? ParentFolderId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public string? PathLabel { get; set; }
 }
 
 public sealed class DocumentationFileItem
@@ -435,6 +450,7 @@ public sealed class DocumentationFileItem
     public long SizeBytes { get; set; }
     public Guid? FolderId { get; set; }
     public DateTimeOffset UploadedAt { get; set; }
+    public string? PathLabel { get; set; }
 }
 
 public sealed class DocumentationBrowse
@@ -445,8 +461,31 @@ public sealed class DocumentationBrowse
     public string? FolderName { get; set; }
     public Guid? ParentFolderId { get; set; }
     public bool CanWrite { get; set; }
+    public bool DeletesPermanently { get; set; }
+    public bool CanViewTrash { get; set; }
+    public bool CanClearTrash { get; set; }
+    public string? SearchQuery { get; set; }
     public List<DocumentationFolderItem> Folders { get; set; } = [];
     public List<DocumentationFileItem> Files { get; set; } = [];
+}
+
+public sealed class DocumentationTrashItem
+{
+    public Guid Id { get; set; }
+    public bool IsFolder { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public long? SizeBytes { get; set; }
+    public DateTimeOffset DeletedAt { get; set; }
+    public string? PathLabel { get; set; }
+}
+
+public sealed class DocumentationTrash
+{
+    public Guid OwnerUserId { get; set; }
+    public string OwnerDisplayName { get; set; } = string.Empty;
+    public bool CanClearTrash { get; set; }
+    public int RetentionDays { get; set; }
+    public List<DocumentationTrashItem> Items { get; set; } = [];
 }
 
 public sealed class DocumentationAdminUser
@@ -553,6 +592,7 @@ public sealed class SettingsResponse
     public bool DispatcherCanHardDelete { get; set; }
     public bool WarehouseEnabled { get; set; }
     public int AuditRetentionDays { get; set; } = 30;
+    public int DocumentationTrashRetentionDays { get; set; } = 7;
     public int ListPageSize { get; set; } = 30;
     public string BrandLogoMode { get; set; } = "standard";
     public bool HasCustomLogo { get; set; }
@@ -572,6 +612,7 @@ public sealed class UpdateSettingsRequest
     public bool? DispatcherCanHardDelete { get; set; }
     public bool? WarehouseEnabled { get; set; }
     public int? AuditRetentionDays { get; set; }
+    public int? DocumentationTrashRetentionDays { get; set; }
     public int? ListPageSize { get; set; }
     public string? BrandLogoMode { get; set; }
 }
@@ -724,9 +765,16 @@ public sealed class SummaryResponse
     public int OpenIncomingCount { get; set; }
     public int OverdueOutgoingCount { get; set; }
     public int OverdueIncomingCount { get; set; }
+    public int WaitingAcceptIncomingCount { get; set; }
     public int UnacknowledgedIncomingCount { get; set; }
+    public int ReturnedOutgoingCount { get; set; }
+    public int UrgentPeriodCount { get; set; }
+    public int OpenUrgentCount { get; set; }
+    public int ComplaintsPeriodCount { get; set; }
+    public decimal? AverageCompletionHours { get; set; }
     public SummaryStatusBreakdown OutgoingStatusBreakdown { get; set; } = new();
     public SummaryStatusBreakdown IncomingStatusBreakdown { get; set; } = new();
+    public SummaryKindBreakdown KindBreakdown { get; set; } = new();
     public SummaryPeriodComparison PeriodComparison { get; set; } = new();
     public List<SummaryDailyTrendItem> DailyTrend { get; set; } = [];
 }
@@ -746,6 +794,13 @@ public sealed class SummaryStatusBreakdown
     public int RejectedCount { get; set; }
     public int CompletedCount { get; set; }
     public int CancelledCount { get; set; }
+}
+
+public sealed class SummaryKindBreakdown
+{
+    public int OtherCount { get; set; }
+    public int EquipmentCount { get; set; }
+    public int SpecTechCount { get; set; }
 }
 
 public sealed class SummaryPeriodComparison

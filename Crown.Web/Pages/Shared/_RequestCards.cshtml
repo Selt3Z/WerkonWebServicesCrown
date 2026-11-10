@@ -25,8 +25,8 @@
             </span>
             <span class="schedule-card-header-trailing">
                 <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
-                      title="@(r.Acknowledged ? "Ознак.: ознакомлен" : "Ознак.: не ознакомлен")"
-                      aria-label="@(r.Acknowledged ? "Исполнитель ознакомился" : "Исполнитель ещё не ознакомился")"></span>
+                      title="@Time.AckTitle(r.Acknowledged, r.AcknowledgedAt)"
+                      aria-label="@Time.AckTitle(r.Acknowledged, r.AcknowledgedAt)"></span>
                 <span class="crown-status-pill @UiHelpers.StatusClass(r.Status)">@r.StatusLabel</span>
             </span>
         </div>

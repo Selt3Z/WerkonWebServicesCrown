@@ -163,6 +163,7 @@ public sealed class RequestsController : ControllerBase
                 KindLabel = KindLabel(x.Kind),
                 IsUrgent = x.IsUrgent,
                 Acknowledged = x.Acknowledged,
+                AcknowledgedAt = x.AcknowledgedAt,
                 InitiatorUserId = x.InitiatorUserId,
                 InitiatorName = iu != null
                     ? (iu.DisplayName != "" ? iu.DisplayName : iu.UserName ?? x.InitiatorName)
@@ -186,13 +187,12 @@ public sealed class RequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Очередь «Сегодня»: заявки с действием для текущего пользователя.
-    /// Исключаем выполненные/отменённые; Returned только если пользователь — инициатор
-    /// (возврат исполнителем уже сделан — во входящих не показываем).
-    /// Срок: сегодня и дальше + просроченные (ещё требуют действия).
+    /// Очередь дня для «Сегодня» и «Календарь»: DueAt в выбранную дату (TZ приложения).
+    /// Без date — сегодня. Исключаем Completed/Cancelled; Returned только у инициатора.
     /// </summary>
     [HttpGet("today")]
     public async Task<ActionResult<TodayRequestsResponse>> GetToday(
+        [FromQuery] DateOnly? date,
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
@@ -202,11 +202,25 @@ public sealed class RequestsController : ControllerBase
         }
 
         var today = _time.GetToday();
+        var day = date ?? today;
+        var (startUtc, endUtc) = _time.GetDayRangeUtc(day);
+        var start = new DateTimeOffset(startUtc, TimeSpan.Zero);
+        var end = new DateTimeOffset(endUtc, TimeSpan.Zero);
 
         // Архив режется query filter. Терминальные статусы — нет действия.
         var baseQuery = _db.ServiceRequests.AsNoTracking()
             .Where(x => x.Status != ServiceRequestStatus.Completed
                         && x.Status != ServiceRequestStatus.Cancelled);
+
+        // Сегодня = очередь: просроченные + срок сегодня. Другой день — только этот день.
+        if (day == today)
+        {
+            baseQuery = baseQuery.Where(x => x.DueAt < end);
+        }
+        else
+        {
+            baseQuery = baseQuery.Where(x => x.DueAt >= start && x.DueAt < end);
+        }
 
         // Входящие: я исполнитель; Returned не берём — возврат уже сделан исполнителем.
         var incomingQuery = baseQuery.Where(x =>
@@ -223,7 +237,7 @@ public sealed class RequestsController : ControllerBase
 
         return Ok(new TodayRequestsResponse
         {
-            Date = today,
+            Date = day,
             Incoming = incoming,
             Outgoing = outgoing
         });
@@ -245,6 +259,7 @@ public sealed class RequestsController : ControllerBase
             KindLabel = KindLabel(x.Kind),
             IsUrgent = x.IsUrgent,
             Acknowledged = x.Acknowledged,
+            AcknowledgedAt = x.AcknowledgedAt,
             InitiatorUserId = x.InitiatorUserId,
             InitiatorName = iu != null
                 ? (iu.DisplayName != "" ? iu.DisplayName : iu.UserName ?? x.InitiatorName)
@@ -280,7 +295,7 @@ public sealed class RequestsController : ControllerBase
             && entity.ExecutorUserId == userId
             && !entity.Acknowledged)
         {
-            entity.Acknowledged = true;
+            SetAcknowledged(entity, true);
             entity.LastModifiedAt = DateTimeOffset.UtcNow;
             entity.LastModifiedByUserId = userId;
             await _db.SaveChangesAsync(cancellationToken);
@@ -338,6 +353,15 @@ public sealed class RequestsController : ControllerBase
             });
         }
 
+        if (initiatorUser.Id == executorUser.Id)
+        {
+            return BadRequest(new
+            {
+                error = "executor_is_initiator",
+                message = "Исполнитель не может совпадать с инициатором."
+            });
+        }
+
         var kind = Enum.IsDefined(typeof(ServiceRequestKind), request.Kind)
             ? request.Kind
             : ServiceRequestKind.Other;
@@ -385,8 +409,14 @@ public sealed class RequestsController : ControllerBase
             Status = ServiceRequestStatus.Submitted,
             Kind = kind,
             IsUrgent = request.IsUrgent,
-            EquipmentAssetId = kind == ServiceRequestKind.Equipment ? request.EquipmentAssetId : null,
-            SpecialVehicleUnitId = kind == ServiceRequestKind.SpecTech ? request.SpecialVehicleUnitId : null,
+            RequestedEquipmentCategory = kind == ServiceRequestKind.Equipment
+                ? request.RequestedEquipmentCategory?.Trim()
+                : null,
+            EquipmentAssetId = null,
+            RequestedSpecialVehicleType = kind == ServiceRequestKind.SpecTech
+                ? request.RequestedSpecialVehicleType?.Trim()
+                : null,
+            SpecialVehicleUnitId = null,
             SpecOperation = kind == ServiceRequestKind.SpecTech
                 ? (string.IsNullOrWhiteSpace(request.SpecOperation) ? null : request.SpecOperation.Trim())
                 : null,
@@ -456,6 +486,12 @@ public sealed class RequestsController : ControllerBase
                     return BadRequest(new { error = "invalid_status", message = acceptErr });
                 }
 
+                var assignErr = await ApplyAssignmentOnAcceptAsync(entity, request, cancellationToken);
+                if (assignErr is not null)
+                {
+                    return BadRequest(new { error = "assign_failed", message = assignErr });
+                }
+
                 var (reserveOk, reserveErr) = await _reservations.TryReserveAsync(entity, cancellationToken);
                 if (!reserveOk)
                 {
@@ -465,7 +501,7 @@ public sealed class RequestsController : ControllerBase
                 entity.Status = ServiceRequestStatus.InProgress;
                 entity.ReactionAt ??= DateTimeOffset.UtcNow;
                 entity.CompletedAt = null;
-                entity.Acknowledged = true;
+                SetAcknowledged(entity, true);
                 break;
             case "reject":
                 if (!isAdmin
@@ -610,7 +646,7 @@ public sealed class RequestsController : ControllerBase
 
                 entity.Body = request.Body.Trim();
                 entity.Status = ServiceRequestStatus.Submitted;
-                entity.Acknowledged = false;
+                SetAcknowledged(entity, false);
                 entity.CompletedAt = null;
                 break;
             case "reschedule":
@@ -639,7 +675,44 @@ public sealed class RequestsController : ControllerBase
                     return Forbid();
                 }
 
-                entity.Acknowledged = request.Acknowledged ?? true;
+                SetAcknowledged(entity, request.Acknowledged ?? true);
+                break;
+            case "assign-spec":
+                // Назначение единицы спецтехники отдельно от accept (accept больше не требует единицу).
+                if (!isAdmin
+                    && !TryEnsureStatus(entity, out var assignSpecErr,
+                        ServiceRequestStatus.Submitted,
+                        ServiceRequestStatus.Returned,
+                        ServiceRequestStatus.InProgress))
+                {
+                    return BadRequest(new { error = "invalid_status", message = assignSpecErr });
+                }
+
+                if (entity.Kind != ServiceRequestKind.SpecTech)
+                {
+                    return BadRequest(new { error = "kind_invalid", message = "Действие только для заявки спецтехники." });
+                }
+
+                if (entity.SpecialVehicleUnitId is not null)
+                {
+                    return BadRequest(new { error = "already_assigned", message = "Спецтехника уже назначена." });
+                }
+
+                var assignOnlyErr = await ApplySpecUnitAssignmentAsync(entity, request.SpecialVehicleUnitId, cancellationToken);
+                if (assignOnlyErr is not null)
+                {
+                    return BadRequest(new { error = "assign_failed", message = assignOnlyErr });
+                }
+
+                if (entity.Status == ServiceRequestStatus.InProgress)
+                {
+                    var (reserveAssignOk, reserveAssignErr) = await _reservations.TryReserveAsync(entity, cancellationToken);
+                    if (!reserveAssignOk)
+                    {
+                        return BadRequest(new { error = "reserve_failed", message = reserveAssignErr });
+                    }
+                }
+
                 break;
             default:
                 return BadRequest(new { error = "action_unknown", message = "Неизвестное действие." });
@@ -706,6 +779,15 @@ public sealed class RequestsController : ControllerBase
             return BadRequest(new { error = "executor_same", message = "Выберите другого исполнителя." });
         }
 
+        if (entity.InitiatorUserId == newExecutor.Id)
+        {
+            return BadRequest(new
+            {
+                error = "executor_is_initiator",
+                message = "Исполнитель не может совпадать с инициатором."
+            });
+        }
+
         var oldName = entity.ExecutorName;
         var stamp = _time.FromUtc(DateTime.UtcNow).ToString("dd.MM.yyyy HH:mm");
 
@@ -715,7 +797,7 @@ public sealed class RequestsController : ControllerBase
         entity.ExecutorUserId = newExecutor.Id;
         entity.ExecutorName = DisplayOf(newExecutor);
         entity.Status = ServiceRequestStatus.Submitted;
-        entity.Acknowledged = false;
+        SetAcknowledged(entity, false);
         entity.CompletedAt = null;
         entity.Body = string.IsNullOrWhiteSpace(entity.Body)
             ? $"Перенаправлена из «{oldName}» {stamp}"
@@ -1138,6 +1220,39 @@ public sealed class RequestsController : ControllerBase
             }
         }
 
+        var queueAhead = 0;
+        if (x.Status is ServiceRequestStatus.Submitted or ServiceRequestStatus.Returned)
+        {
+            if (x.Kind == ServiceRequestKind.Equipment
+                && !string.IsNullOrWhiteSpace(x.RequestedEquipmentCategory))
+            {
+                var cat = x.RequestedEquipmentCategory;
+                queueAhead = await _db.ServiceRequests.AsNoTracking()
+                    .CountAsync(
+                        r => r.Id != x.Id
+                             && r.Kind == ServiceRequestKind.Equipment
+                             && r.Status == ServiceRequestStatus.Submitted
+                             && r.RequestedEquipmentCategory == cat
+                             && r.SubmittedAt < x.SubmittedAt
+                             && !r.IsArchived,
+                        cancellationToken);
+            }
+            else if (x.Kind == ServiceRequestKind.SpecTech
+                     && !string.IsNullOrWhiteSpace(x.RequestedSpecialVehicleType))
+            {
+                var type = x.RequestedSpecialVehicleType;
+                queueAhead = await _db.ServiceRequests.AsNoTracking()
+                    .CountAsync(
+                        r => r.Id != x.Id
+                             && r.Kind == ServiceRequestKind.SpecTech
+                             && r.Status == ServiceRequestStatus.Submitted
+                             && r.RequestedSpecialVehicleType == type
+                             && r.SubmittedAt < x.SubmittedAt
+                             && !r.IsArchived,
+                        cancellationToken);
+            }
+        }
+
         return new ServiceRequestDetailResponse
         {
             Id = x.Id,
@@ -1147,6 +1262,7 @@ public sealed class RequestsController : ControllerBase
             KindLabel = KindLabel(x.Kind),
             IsUrgent = x.IsUrgent,
             Acknowledged = x.Acknowledged,
+            AcknowledgedAt = x.AcknowledgedAt,
             SubmittedAt = x.SubmittedAt,
             Phone = x.Phone,
             DueAt = x.DueAt,
@@ -1159,10 +1275,13 @@ public sealed class RequestsController : ControllerBase
             ExecutorComment = x.ExecutorComment,
             ReactionAt = x.ReactionAt,
             CompletedAt = x.CompletedAt,
+            RequestedEquipmentCategory = x.RequestedEquipmentCategory,
             EquipmentAssetId = x.EquipmentAssetId,
             EquipmentAssetLabel = equipmentLabel,
+            RequestedSpecialVehicleType = x.RequestedSpecialVehicleType,
             SpecialVehicleUnitId = x.SpecialVehicleUnitId,
             SpecialVehicleLabel = specLabel,
+            QueueAheadCount = queueAhead,
             SpecOperation = x.SpecOperation,
             SpecPlannedAt = x.SpecPlannedAt,
             SpecArrivedAt = x.SpecArrivedAt,
@@ -1194,22 +1313,21 @@ public sealed class RequestsController : ControllerBase
     {
         if (kind == ServiceRequestKind.Equipment)
         {
-            if (request.EquipmentAssetId is not Guid assetId || assetId == Guid.Empty)
+            var category = request.RequestedEquipmentCategory?.Trim();
+            if (string.IsNullOrWhiteSpace(category))
             {
-                return "Выберите единицу оборудования.";
+                return "Выберите категорию оборудования.";
             }
 
-            var asset = await _db.EquipmentAssets.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == assetId, cancellationToken);
-            if (asset is null)
+            // Достаточно, что такая категория/имя есть среди активных единиц (свободна или нет — неважно).
+            var exists = await _db.EquipmentAssets.AsNoTracking()
+                .AnyAsync(
+                    x => !x.IsArchived
+                         && ((x.Category != null && x.Category == category) || x.Name == category),
+                    cancellationToken);
+            if (!exists)
             {
-                return "Единица оборудования не найдена.";
-            }
-
-            // Создание не бронирует — но уже Reserved/недоступную выбирать нельзя.
-            if (asset.Availability != EquipmentAvailability.Free)
-            {
-                return "Единица оборудования уже забронирована.";
+                return "Категория оборудования не найдена.";
             }
 
             return null;
@@ -1217,9 +1335,10 @@ public sealed class RequestsController : ControllerBase
 
         if (kind == ServiceRequestKind.SpecTech)
         {
-            if (request.SpecialVehicleUnitId is not Guid unitId || unitId == Guid.Empty)
+            var typeName = request.RequestedSpecialVehicleType?.Trim();
+            if (string.IsNullOrWhiteSpace(typeName))
             {
-                return "Выберите единицу спецтехники.";
+                return "Выберите тип спецтехники.";
             }
 
             if (string.IsNullOrWhiteSpace(request.SpecOperation))
@@ -1232,22 +1351,104 @@ public sealed class RequestsController : ControllerBase
                 return "Укажите плановое время для спецтехники.";
             }
 
-            var unit = await _db.SpecialVehicleUnits.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == unitId && x.IsActive, cancellationToken);
-            if (unit is null)
+            var typeExists = await _db.SpecialVehicleUnits.AsNoTracking()
+                .AnyAsync(x => x.IsActive && x.Name == typeName, cancellationToken);
+            if (!typeExists)
             {
-                return "Единица спецтехники не найдена.";
-            }
-
-            if (unit.Availability != SpecialVehicleAvailability.Free)
-            {
-                return "Единица спецтехники уже занята или забронирована.";
+                return "Тип спецтехники не найден.";
             }
 
             return null;
         }
 
         return null;
+    }
+
+    /// <summary>На accept исполнитель указывает конкретную свободную единицу нужной категории/типа.</summary>
+    private async Task<string?> ApplyAssignmentOnAcceptAsync(
+        ServiceRequest entity,
+        TransitionServiceRequestRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (entity.Kind == ServiceRequestKind.Equipment)
+        {
+            var assetId = request.EquipmentAssetId ?? entity.EquipmentAssetId;
+            if (assetId is null || assetId == Guid.Empty)
+            {
+                return "Назначьте единицу оборудования перед принятием в работу.";
+            }
+
+            var asset = await _db.EquipmentAssets.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == assetId && !x.IsArchived, cancellationToken);
+            if (asset is null)
+            {
+                return "Единица оборудования не найдена.";
+            }
+
+            var key = string.IsNullOrWhiteSpace(asset.Category) ? asset.Name : asset.Category!;
+            if (!string.IsNullOrWhiteSpace(entity.RequestedEquipmentCategory)
+                && !string.Equals(key.Trim(), entity.RequestedEquipmentCategory.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Единица не из запрошенной категории «{entity.RequestedEquipmentCategory}».";
+            }
+
+            entity.EquipmentAssetId = assetId;
+            return null;
+        }
+
+        if (entity.Kind == ServiceRequestKind.SpecTech)
+        {
+            var unitId = request.SpecialVehicleUnitId ?? entity.SpecialVehicleUnitId;
+            // Единицу можно не указывать на accept — назначить отдельной кнопкой.
+            if (unitId is null || unitId == Guid.Empty)
+            {
+                return null;
+            }
+
+            return await ApplySpecUnitAssignmentAsync(entity, unitId, cancellationToken);
+        }
+
+        return null;
+    }
+
+    private async Task<string?> ApplySpecUnitAssignmentAsync(
+        ServiceRequest entity,
+        Guid? unitId,
+        CancellationToken cancellationToken)
+    {
+        if (unitId is null || unitId == Guid.Empty)
+        {
+            return "Выберите единицу спецтехники.";
+        }
+
+        var unit = await _db.SpecialVehicleUnits.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == unitId && x.IsActive, cancellationToken);
+        if (unit is null)
+        {
+            return "Единица спецтехники не найдена.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(entity.RequestedSpecialVehicleType)
+            && !string.Equals(unit.Name.Trim(), entity.RequestedSpecialVehicleType.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Единица не типа «{entity.RequestedSpecialVehicleType}».";
+        }
+
+        entity.SpecialVehicleUnitId = unitId;
+        return null;
+    }
+
+    private static void SetAcknowledged(ServiceRequest entity, bool value)
+    {
+        entity.Acknowledged = value;
+        if (value)
+        {
+            entity.AcknowledgedAt ??= DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            entity.AcknowledgedAt = null;
+        }
     }
 
     internal static string StatusLabel(ServiceRequestStatus status) => status switch

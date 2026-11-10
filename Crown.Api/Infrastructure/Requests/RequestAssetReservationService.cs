@@ -39,9 +39,10 @@ public sealed class RequestAssetReservationService(AppDbContext db)
 
         if (request.Kind == ServiceRequestKind.SpecTech)
         {
+            // Accept без единицы разрешён — бронь только когда единица уже назначена.
             if (request.SpecialVehicleUnitId is not Guid unitId)
             {
-                return (false, "Выберите единицу спецтехники.");
+                return (true, null);
             }
 
             var unit = await db.SpecialVehicleUnits
@@ -165,9 +166,11 @@ public sealed class RequestAssetReservationService(AppDbContext db)
         ServiceRequest request,
         CancellationToken cancellationToken)
     {
+        // Завершение без назначенной единицы — ок (приняли в работу заранее).
         if (request.SpecialVehicleUnitId is not Guid unitId)
         {
-            return (false, "Единица спецтехники не указана.");
+            request.SpecReleasedAt ??= DateTimeOffset.UtcNow;
+            return (true, null);
         }
 
         var unit = await db.SpecialVehicleUnits

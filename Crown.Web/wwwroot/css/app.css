@@ -2504,12 +2504,11 @@ body:has(#nav-menu-toggle:checked) .navbar-toggler-btn {
     flex: 0 0 auto;
 }
 
-.schedule-page-header {
-    margin-bottom: 0.5rem;
-}
-
-.summary-header.schedule-page-header {
-    margin-bottom: 0.5rem;
+/* Отступ под пунктиром h1, иначе «Входящие» наезжает на линию. */
+.schedule-page-header,
+.summary-header.schedule-page-header,
+.dashboard-page > .summary-header.schedule-page-header {
+    margin-bottom: 1.25rem;
 }
 
 .schedule-date-toolbar {
@@ -3651,20 +3650,11 @@ h4.section-title::after {
     width: 100%;
 }
 
+/* overflow/sticky — в crown.css (.crown-table-wrap.department-permissions-wrap),
+   чтобы не перебивалось overflow-x: visible у .crown-table-wrap. */
 .department-permissions-wrap {
     max-width: none;
     width: 100%;
-    overflow-x: auto;
-}
-
-.department-permissions-table {
-    min-width: 64rem;
-    width: 100%;
-}
-
-.department-permissions-table th,
-.department-permissions-table td {
-    white-space: nowrap;
 }
 
 .doc-entry-link {

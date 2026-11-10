@@ -7,6 +7,8 @@ public static class ApiErrorCodes
     public const string ProtectedAdminLoginImmutable = "protected_admin_login_immutable";
     public const string ProtectedAdminRoleImmutable = "protected_admin_role_immutable";
     public const string ProtectedAdminCannotDelete = "protected_admin_cannot_delete";
+    /// <summary>Роль задаётся при создании и дальше не меняется (документация и права завязаны на роль).</summary>
+    public const string RoleImmutable = "role_immutable";
 
     public const string UserNameRequired = "user_name_required";
     public const string DisplayNameRequired = "display_name_required";

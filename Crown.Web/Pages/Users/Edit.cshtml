@@ -42,11 +42,15 @@
 
     <div class="mb-3">
         <label class="form-label" asp-for="Input.Role">Роль</label>
-        @if (Model.IsProtectedAdmin)
+        @if (!Model.IsNew)
         {
             <div class="form-control-plaintext">@AppRoles.Display(Model.Input.Role)</div>
             <input type="hidden" asp-for="Input.Role" />
-            <div class="form-text">Роль системного пользователя admin нельзя изменить.</div>
+            <div class="form-text">
+                @(Model.IsProtectedAdmin
+                    ? "Роль системного пользователя admin нельзя изменить."
+                    : "Роль задаётся при создании и не меняется (раздел документации и права завязаны на роль). Нужна другая роль — создайте нового пользователя.")
+            </div>
         }
         else
         {

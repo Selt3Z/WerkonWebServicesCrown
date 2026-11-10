@@ -83,6 +83,7 @@ public sealed class SettingsModel(CrownApiClient api, AppTime appTime) : PageMod
                 DispatcherCanHardDelete = Input.DispatcherCanHardDelete,
                 // WarehouseEnabled больше не в UI — не трогаем значение в API.
                 AuditRetentionDays = Input.AuditRetentionDays,
+                DocumentationTrashRetentionDays = Input.DocumentationTrashRetentionDays,
                 ListPageSize = Input.ListPageSize,
                 BrandLogoMode = mode
             },

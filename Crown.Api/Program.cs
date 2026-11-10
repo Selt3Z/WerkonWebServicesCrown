@@ -149,6 +149,8 @@ builder.Services.Configure<SupportOptions>(
 builder.Services.AddHttpClient(nameof(SystemDiagnosticsService));
 builder.Services.AddScoped<SystemDiagnosticsService>();
 builder.Services.AddHostedService<AuditRetentionHostedService>();
+builder.Services.AddScoped<Crown.Infrastructure.Documentation.DocumentationTrashPurgeService>();
+builder.Services.AddHostedService<Crown.Infrastructure.Documentation.DocumentationTrashRetentionHostedService>();
 
 builder.Services.AddSingleton<AppTimeZone>();
 builder.Services.AddSingleton<WarehouseInventoryPdfGenerator>();

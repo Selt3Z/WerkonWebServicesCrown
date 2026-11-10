@@ -18,6 +18,8 @@ public sealed class AppSettingsService
     private const int MaxListPageSize = 100;
     private const int MinAuditRetentionDays = 7;
     private const int MaxAuditRetentionDays = 3650;
+    private const int MinDocumentationTrashRetentionDays = 1;
+    private const int MaxDocumentationTrashRetentionDays = 365;
 
     private static readonly HashSet<string> AllowedCurrencyCodes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -87,6 +89,7 @@ public sealed class AppSettingsService
             DispatcherCanHardDelete = await GetDispatcherCanHardDeleteAsync(cancellationToken),
             WarehouseEnabled = await GetWarehouseEnabledAsync(cancellationToken),
             AuditRetentionDays = await GetAuditRetentionDaysAsync(cancellationToken),
+            DocumentationTrashRetentionDays = await GetDocumentationTrashRetentionDaysAsync(cancellationToken),
             ListPageSize = await GetListPageSizeAsync(cancellationToken),
             BrandLogoMode = await GetBrandLogoModeAsync(cancellationToken),
             HasCustomLogo = logoDataUrl is not null,
@@ -132,6 +135,13 @@ public sealed class AppSettingsService
         if (request.AuditRetentionDays.HasValue)
         {
             await SetAuditRetentionDaysAsync(request.AuditRetentionDays.Value, cancellationToken);
+        }
+
+        if (request.DocumentationTrashRetentionDays.HasValue)
+        {
+            await SetDocumentationTrashRetentionDaysAsync(
+                request.DocumentationTrashRetentionDays.Value,
+                cancellationToken);
         }
 
         if (request.ListPageSize.HasValue)
@@ -238,6 +248,18 @@ public sealed class AppSettingsService
         return ParseBoundedInt(storedValue, AppSettingsDefaults.AuditRetentionDays, MinAuditRetentionDays, MaxAuditRetentionDays);
     }
 
+    public async Task<int> GetDocumentationTrashRetentionDaysAsync(CancellationToken cancellationToken = default)
+    {
+        var storedValue = await GetSettingValueAsync(
+            AppSettingKeys.DocumentationTrashRetentionDays,
+            cancellationToken);
+        return ParseBoundedInt(
+            storedValue,
+            AppSettingsDefaults.DocumentationTrashRetentionDays,
+            MinDocumentationTrashRetentionDays,
+            MaxDocumentationTrashRetentionDays);
+    }
+
     public async Task<int> GetListPageSizeAsync(CancellationToken cancellationToken = default)
     {
         var storedValue = await GetSettingValueAsync(AppSettingKeys.ListPageSize, cancellationToken);
@@ -264,6 +286,19 @@ public sealed class AppSettingsService
     {
         var normalized = NormalizeBoundedInt(days, MinAuditRetentionDays, MaxAuditRetentionDays, nameof(days));
         return SaveAndReturnIntAsync(AppSettingKeys.AuditRetentionDays, normalized, cancellationToken);
+    }
+
+    public Task<int> SetDocumentationTrashRetentionDaysAsync(int days, CancellationToken cancellationToken = default)
+    {
+        var normalized = NormalizeBoundedInt(
+            days,
+            MinDocumentationTrashRetentionDays,
+            MaxDocumentationTrashRetentionDays,
+            nameof(days));
+        return SaveAndReturnIntAsync(
+            AppSettingKeys.DocumentationTrashRetentionDays,
+            normalized,
+            cancellationToken);
     }
 
     public Task<int> SetListPageSizeAsync(int pageSize, CancellationToken cancellationToken = default)

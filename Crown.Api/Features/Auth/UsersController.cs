@@ -222,16 +222,12 @@ public sealed class UsersController : ControllerBase
             return BadRequest(ApiErrors.FromIdentityErrors(updateResult.Errors));
         }
 
-        var targetRole = isProtectedAdmin ? currentRole : request.Role.Trim();
-
-        if (!currentRoles.Contains(targetRole))
+        // Роль фиксируется при создании: смена Department→другая orphan'ит раздел документации
+        // и ломает права/каталог. Нужна новая учётка, не переклейка роли.
+        if (!isProtectedAdmin
+            && !string.Equals(currentRole, request.Role.Trim(), StringComparison.Ordinal))
         {
-            if (currentRoles.Count > 0)
-            {
-                await _userManager.RemoveFromRolesAsync(user, currentRoles);
-            }
-
-            await _userManager.AddToRoleAsync(user, targetRole);
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.RoleImmutable));
         }
 
         return Ok(await MapListItemAsync(user));

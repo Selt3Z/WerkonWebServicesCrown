@@ -11,13 +11,6 @@ namespace Crown.Features.Summary;
 
 public sealed class SummaryReportService
 {
-    private static readonly ServiceRequestStatus[] OpenStatuses =
-    [
-        ServiceRequestStatus.Submitted,
-        ServiceRequestStatus.InProgress,
-        ServiceRequestStatus.Returned
-    ];
-
     private readonly AppDbContext _db;
     private readonly AppTimeZone _time;
     private readonly UserManager<ApplicationUser> _users;
@@ -57,7 +50,7 @@ public sealed class SummaryReportService
 
         var periodRows = await LoadInvolvedAsync(userId, start, end, cancellationToken);
         var previousRows = await LoadInvolvedAsync(userId, prevStart, prevEnd, cancellationToken);
-        var openRows = await LoadOpenAsync(userId, cancellationToken);
+        var openRows = await LoadOpenSnapshotAsync(userId, cancellationToken);
 
         var outgoing = periodRows.Where(x => x.InitiatorUserId == userId).ToList();
         var incoming = periodRows.Where(x => x.ExecutorUserId == userId).ToList();
@@ -71,12 +64,28 @@ public sealed class SummaryReportService
 
         var total = periodRows.Count;
         var prevTotal = previousRows.Count;
+        // Доли по «ролям» (исх+вх), чтобы полоска сходилась в 100% даже при самоназначении.
+        var roleTotal = outgoing.Count + incoming.Count;
 
         var reactionHours = incoming
             .Where(x => x.ReactionAt is not null)
             .Select(x => (decimal)(x.ReactionAt!.Value - x.SubmittedAt).TotalHours)
             .Where(h => h >= 0)
             .ToList();
+
+        var completionHours = incoming
+            .Where(x => x.Status == ServiceRequestStatus.Completed && x.CompletedAt is not null)
+            .Select(x => (decimal)(x.CompletedAt!.Value - x.SubmittedAt).TotalHours)
+            .Where(h => h >= 0)
+            .ToList();
+
+        // Как на календаре «Сегодня»: входящие без Returned; исходящие с Returned (надо переподать).
+        var openOutgoing = openRows.Where(x => x.InitiatorUserId == userId && IsOpenOutgoing(x.Status)).ToList();
+        var openIncoming = openRows.Where(x => x.ExecutorUserId == userId && IsOpenIncoming(x.Status)).ToList();
+        var waitingAccept = openIncoming.Count(x => x.Status == ServiceRequestStatus.Submitted);
+        // Ознакомление ≠ принятие: флаг Acknowledged ставится при открытии карточки исполнителем.
+        var unacknowledged = openIncoming.Count(x => !x.Acknowledged);
+        var returnedOutgoing = openOutgoing.Count(x => x.Status == ServiceRequestStatus.Returned);
 
         List<SummaryUserOptionResponse>? availableUsers = null;
         if (includeUserPicker)
@@ -115,18 +124,34 @@ public sealed class SummaryReportService
             CompletedIncomingCount = completedIncoming,
             CompletedTotalCount = completedTotal,
             CompletionRatePercent = Percent(completedTotal, total),
-            OutgoingSharePercent = Percent(outgoing.Count, total),
-            IncomingSharePercent = Percent(incoming.Count, total),
+            OutgoingSharePercent = Percent(outgoing.Count, roleTotal),
+            IncomingSharePercent = Percent(incoming.Count, roleTotal),
             AverageReactionHours = reactionHours.Count == 0
                 ? null
                 : Math.Round(reactionHours.Average(), 1),
-            OpenOutgoingCount = openRows.Count(x => x.InitiatorUserId == userId),
-            OpenIncomingCount = openRows.Count(x => x.ExecutorUserId == userId),
-            OverdueOutgoingCount = openRows.Count(x => x.InitiatorUserId == userId && x.DueAt < now),
-            OverdueIncomingCount = openRows.Count(x => x.ExecutorUserId == userId && x.DueAt < now),
-            UnacknowledgedIncomingCount = openRows.Count(x => x.ExecutorUserId == userId && !x.Acknowledged),
+            AverageCompletionHours = completionHours.Count == 0
+                ? null
+                : Math.Round(completionHours.Average(), 1),
+            OpenOutgoingCount = openOutgoing.Count,
+            OpenIncomingCount = openIncoming.Count,
+            OverdueOutgoingCount = openOutgoing.Count(x => x.DueAt < now),
+            OverdueIncomingCount = openIncoming.Count(x => x.DueAt < now),
+            WaitingAcceptIncomingCount = waitingAccept,
+            UnacknowledgedIncomingCount = unacknowledged,
+            ReturnedOutgoingCount = returnedOutgoing,
+            UrgentPeriodCount = periodRows.Count(x => x.IsUrgent),
+            OpenUrgentCount = openOutgoing.Concat(openIncoming)
+                .GroupBy(x => x.Id)
+                .Count(g => g.First().IsUrgent),
+            ComplaintsPeriodCount = periodRows.Count(x => x.HasComplaint),
             OutgoingStatusBreakdown = Breakdown(outgoing),
             IncomingStatusBreakdown = Breakdown(incoming),
+            KindBreakdown = new SummaryKindBreakdownResponse
+            {
+                OtherCount = periodRows.Count(x => x.Kind == ServiceRequestKind.Other),
+                EquipmentCount = periodRows.Count(x => x.Kind == ServiceRequestKind.Equipment),
+                SpecTechCount = periodRows.Count(x => x.Kind == ServiceRequestKind.SpecTech)
+            },
             PeriodComparison = new SummaryPeriodComparisonResponse
             {
                 PreviousPeriodStart = prevStartLocal,
@@ -150,6 +175,16 @@ public sealed class SummaryReportService
             _ => "today"
         };
 
+    /// <summary>Исходящие открыты, пока инициатору есть что делать (в т.ч. Returned).</summary>
+    private static bool IsOpenOutgoing(ServiceRequestStatus status) =>
+        status is ServiceRequestStatus.Submitted
+            or ServiceRequestStatus.InProgress
+            or ServiceRequestStatus.Returned;
+
+    /// <summary>Входящие: как календарь — Returned исполнителю уже «закрыт» возвратом.</summary>
+    private static bool IsOpenIncoming(ServiceRequestStatus status) =>
+        status is ServiceRequestStatus.Submitted or ServiceRequestStatus.InProgress;
+
     private async Task<List<RequestSnap>> LoadInvolvedAsync(
         Guid userId,
         DateTimeOffset start,
@@ -164,29 +199,37 @@ public sealed class SummaryReportService
                 x.InitiatorUserId,
                 x.ExecutorUserId,
                 x.Status,
+                x.Kind,
+                x.IsUrgent,
                 x.SubmittedAt,
                 x.DueAt,
                 x.ReactionAt,
                 x.CompletedAt,
-                x.Acknowledged))
+                x.Acknowledged,
+                x.ComplaintText != null && x.ComplaintText != ""))
             .ToListAsync(cancellationToken);
     }
 
-    private async Task<List<RequestSnap>> LoadOpenAsync(Guid userId, CancellationToken cancellationToken)
+    private async Task<List<RequestSnap>> LoadOpenSnapshotAsync(Guid userId, CancellationToken cancellationToken)
     {
         return await _db.ServiceRequests.AsNoTracking()
             .Where(x => x.InitiatorUserId == userId || x.ExecutorUserId == userId)
-            .Where(x => OpenStatuses.Contains(x.Status))
+            .Where(x => x.Status == ServiceRequestStatus.Submitted
+                        || x.Status == ServiceRequestStatus.InProgress
+                        || x.Status == ServiceRequestStatus.Returned)
             .Select(x => new RequestSnap(
                 x.Id,
                 x.InitiatorUserId,
                 x.ExecutorUserId,
                 x.Status,
+                x.Kind,
+                x.IsUrgent,
                 x.SubmittedAt,
                 x.DueAt,
                 x.ReactionAt,
                 x.CompletedAt,
-                x.Acknowledged))
+                x.Acknowledged,
+                x.ComplaintText != null && x.ComplaintText != ""))
             .ToListAsync(cancellationToken);
     }
 
@@ -396,9 +439,12 @@ public sealed class SummaryReportService
         Guid? InitiatorUserId,
         Guid? ExecutorUserId,
         ServiceRequestStatus Status,
+        ServiceRequestKind Kind,
+        bool IsUrgent,
         DateTimeOffset SubmittedAt,
         DateTimeOffset DueAt,
         DateTimeOffset? ReactionAt,
         DateTimeOffset? CompletedAt,
-        bool Acknowledged);
+        bool Acknowledged,
+        bool HasComplaint);
 }

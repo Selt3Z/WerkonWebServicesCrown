@@ -4,12 +4,25 @@
 @{
     ViewData["Title"] = Model.Browse?.OwnerDisplayName ?? "Документация";
     var b = Model.Browse;
-    var backHere = $"/documentation/{Model.OwnerUserId}" + (Model.FolderId is Guid f ? $"?folderId={f}" : "");
+    var isSearch = !string.IsNullOrWhiteSpace(b?.SearchQuery);
+    var backHere = $"/documentation/{Model.OwnerUserId}"
+        + (Model.FolderId is Guid f ? $"?folderId={f}" : "")
+        + (!string.IsNullOrWhiteSpace(Model.Q)
+            ? $"{(Model.FolderId is null ? "?" : "&")}q={Uri.EscapeDataString(Model.Q)}"
+            : "");
+    var resetHref = $"/documentation/{Model.OwnerUserId}"
+        + (Model.FolderId is Guid rf ? $"?folderId={rf}" : "");
 }
 
 <div class="crown-page-head">
     <h1 class="section-title">@(b?.OwnerDisplayName ?? "Документация")</h1>
-    <a class="btn btn-outline-secondary" href="/documentation">К списку</a>
+    <div class="d-flex gap-2 flex-wrap">
+        @if (b?.CanViewTrash == true)
+        {
+            <a class="btn btn-outline-secondary" href="/documentation/@Model.OwnerUserId/trash">Корзина</a>
+        }
+        <a class="btn btn-outline-secondary" href="/documentation">К списку</a>
+    </div>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
@@ -21,7 +34,7 @@
 {
     <nav class="mb-3" aria-label="Путь">
         <a href="/documentation/@b.OwnerUserId">Корень</a>
-        @if (b.FolderId is Guid currentFolder)
+        @if (b.FolderId is Guid currentFolder && !isSearch)
         {
             <span class="text-muted"> / </span>
             @if (b.ParentFolderId is Guid parentId)
@@ -31,9 +44,25 @@
             }
             <span>@(b.FolderName ?? "Папка")</span>
         }
+        @if (isSearch)
+        {
+            <span class="text-muted"> / </span>
+            <span>Поиск: «@b.SearchQuery»</span>
+        }
     </nav>
 
-    @if (b.CanWrite)
+    <form method="get" class="list-filters mb-3">
+        <input type="hidden" name="folderId" value="@Model.FolderId" />
+        <div class="filter-field filter-field-inline filter-field-search">
+            <label class="form-label" for="doc-q">Поиск</label>
+            <input id="doc-q" class="form-control" type="search" name="q" value="@Model.Q"
+                   placeholder="имя файла или папки…" />
+        </div>
+        <button type="submit" class="btn btn-primary">Найти</button>
+        <a class="btn btn-secondary" href="@resetHref">Сбросить</a>
+    </form>
+
+    @if (b.CanWrite && !isSearch)
     {
         <div class="list-filters mb-3">
             <form method="post" asp-page-handler="CreateFolder" class="filter-field filter-field-inline">
@@ -62,18 +91,25 @@
             <thead>
             <tr>
                 <th>Имя</th>
+                @if (isSearch)
+                {
+                    <th>Путь</th>
+                }
                 <th class="col-date">Размер</th>
                 <th class="col-date">Дата</th>
-                @if (b.CanWrite)
+                @if (b.CanWrite && !isSearch)
                 {
                     <th class="col-actions"></th>
                 }
             </tr>
             </thead>
             <tbody>
+            @{
+                var colCount = 3 + (isSearch ? 1 : 0) + (b.CanWrite && !isSearch ? 1 : 0);
+            }
             @if (b.Folders.Count == 0 && b.Files.Count == 0)
             {
-                <tr class="crown-empty-row"><td colspan="@(b.CanWrite ? 4 : 3)" class="text-muted text-center">Пусто.</td></tr>
+                <tr class="crown-empty-row"><td colspan="@colCount" class="text-muted text-center">@(isSearch ? "Ничего не найдено." : "Пусто.")</td></tr>
             }
             @foreach (var folder in b.Folders)
             {
@@ -84,17 +120,23 @@
                             <span>@folder.Name</span>
                         </a>
                     </td>
+                    @if (isSearch)
+                    {
+                        <td class="text-muted">@(folder.PathLabel ?? "Корень")</td>
+                    }
                     <td class="col-date text-muted">—</td>
                     <td class="col-date">@Time.Format(folder.CreatedAt)</td>
-                    @if (b.CanWrite)
+                    @if (b.CanWrite && !isSearch)
                     {
                         <td class="col-actions">
-                            <form method="post" asp-page-handler="DeleteFolder" class="d-inline"
-                                  onsubmit="return confirm('Удалить папку «@folder.Name» со всем содержимым?');">
+                            <form method="post" asp-page-handler="DeleteFolder" class="d-inline">
                                 <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
                                 <input type="hidden" name="FolderId" value="@Model.FolderId" />
-                                <input type="hidden" name="folderId" value="@folder.Id" />
-                                <button type="submit" class="btn btn-outline-danger btn-sm">Удалить</button>
+                                <input type="hidden" name="targetFolderId" value="@folder.Id" />
+                                <button type="submit" class="btn btn-outline-danger btn-sm"
+                                        data-confirm="@(b.DeletesPermanently
+                                            ? $"Удалить папку «{folder.Name}» безвозвратно со всем содержимым?"
+                                            : $"Переместить папку «{folder.Name}» со всем содержимым в корзину?")">Удалить</button>
                             </form>
                         </td>
                     }
@@ -112,17 +154,32 @@
                            href="/documentation/@b.OwnerUserId?handler=Download&amp;fileId=@file.Id"
                            download title="Скачать">↓</a>
                     </td>
+                    @if (isSearch)
+                    {
+                        <td>
+                            @if (file.FolderId is Guid fileFolderId)
+                            {
+                                <a class="text-muted" href="/documentation/@b.OwnerUserId?folderId=@fileFolderId">@(file.PathLabel ?? "Папка")</a>
+                            }
+                            else
+                            {
+                                <a class="text-muted" href="/documentation/@b.OwnerUserId">Корень</a>
+                            }
+                        </td>
+                    }
                     <td class="col-date nowrap">@UiHelpers.FormatBytes(file.SizeBytes)</td>
                     <td class="col-date">@Time.Format(file.UploadedAt)</td>
-                    @if (b.CanWrite)
+                    @if (b.CanWrite && !isSearch)
                     {
                         <td class="col-actions">
-                            <form method="post" asp-page-handler="DeleteFile" class="d-inline"
-                                  onsubmit="return confirm('Удалить файл «@file.FileName»?');">
+                            <form method="post" asp-page-handler="DeleteFile" class="d-inline">
                                 <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
                                 <input type="hidden" name="FolderId" value="@Model.FolderId" />
-                                <input type="hidden" name="fileId" value="@file.Id" />
-                                <button type="submit" class="btn btn-outline-danger btn-sm">Удалить</button>
+                                <input type="hidden" name="targetFileId" value="@file.Id" />
+                                <button type="submit" class="btn btn-outline-danger btn-sm"
+                                        data-confirm="@(b.DeletesPermanently
+                                            ? $"Удалить файл «{file.FileName}» безвозвратно?"
+                                            : $"Переместить файл «{file.FileName}» в корзину?")">Удалить</button>
                             </form>
                         </td>
                     }

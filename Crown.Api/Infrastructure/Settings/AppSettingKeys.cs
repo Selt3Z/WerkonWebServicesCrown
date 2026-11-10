@@ -23,5 +23,8 @@ public static class AppSettingKeys
 
     public const string AuditRetentionDays = "AuditRetentionDays";
 
+    /// <summary>Сколько дней файлы/папки документации лежат в корзине.</summary>
+    public const string DocumentationTrashRetentionDays = "DocumentationTrashRetentionDays";
+
     public const string ListPageSize = "ListPageSize";
 }

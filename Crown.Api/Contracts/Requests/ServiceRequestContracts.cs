@@ -11,6 +11,7 @@ public sealed class ServiceRequestListItemResponse
     public string KindLabel { get; set; } = string.Empty;
     public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
+    public DateTimeOffset? AcknowledgedAt { get; set; }
     public string InitiatorName { get; set; } = string.Empty;
     public Guid? InitiatorUserId { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
@@ -34,6 +35,7 @@ public sealed class ServiceRequestDetailResponse
     public string KindLabel { get; set; } = string.Empty;
     public bool IsUrgent { get; set; }
     public bool Acknowledged { get; set; }
+    public DateTimeOffset? AcknowledgedAt { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
     public string Phone { get; set; } = string.Empty;
     public DateTimeOffset DueAt { get; set; }
@@ -46,10 +48,14 @@ public sealed class ServiceRequestDetailResponse
     public string? ExecutorComment { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public string? RequestedEquipmentCategory { get; set; }
     public Guid? EquipmentAssetId { get; set; }
     public string? EquipmentAssetLabel { get; set; }
+    public string? RequestedSpecialVehicleType { get; set; }
     public Guid? SpecialVehicleUnitId { get; set; }
     public string? SpecialVehicleLabel { get; set; }
+    /// <summary>Сколько заявок того же типа/категории поданы раньше и ещё ждут принятия (очередь FIFO).</summary>
+    public int QueueAheadCount { get; set; }
     public string? SpecOperation { get; set; }
     public DateTimeOffset? SpecPlannedAt { get; set; }
     public DateTimeOffset? SpecArrivedAt { get; set; }
@@ -95,8 +101,10 @@ public sealed class CreateServiceRequestRequest
     public string Body { get; set; } = string.Empty;
     public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
     public bool IsUrgent { get; set; }
-    public Guid? EquipmentAssetId { get; set; }
-    public Guid? SpecialVehicleUnitId { get; set; }
+    /// <summary>Категория оборудования (не конкретная единица).</summary>
+    public string? RequestedEquipmentCategory { get; set; }
+    /// <summary>Тип спецтехники (Name), не конкретная единица.</summary>
+    public string? RequestedSpecialVehicleType { get; set; }
     public string? SpecOperation { get; set; }
     public DateTimeOffset? SpecPlannedAt { get; set; }
 }
@@ -110,6 +118,9 @@ public sealed class TransitionServiceRequestRequest
     public DateTimeOffset? NewDueAt { get; set; }
     public string? RowVersion { get; set; }
     public bool? Acknowledged { get; set; }
+    /// <summary>Назначение единицы при accept (оборудование / спецтехника).</summary>
+    public Guid? EquipmentAssetId { get; set; }
+    public Guid? SpecialVehicleUnitId { get; set; }
 }
 
 public sealed class ReassignServiceRequestRequest

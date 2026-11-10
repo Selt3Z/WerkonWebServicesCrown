@@ -45,11 +45,32 @@ public sealed class SummaryResponse
 
     public int OverdueIncomingCount { get; set; }
 
+    /// <summary>Входящие в статусе «Подана» — ждут принятия исполнителем (сейчас).</summary>
+    public int WaitingAcceptIncomingCount { get; set; }
+
+    /// <summary>Входящие открытые без ознакомления (исполнитель ещё не открыл карточку).</summary>
     public int UnacknowledgedIncomingCount { get; set; }
+
+    /// <summary>Исходящие в статусе «Возвращена» — инициатору надо править/переподать (сейчас).</summary>
+    public int ReturnedOutgoingCount { get; set; }
+
+    /// <summary>Срочные среди заявок периода (уникальные).</summary>
+    public int UrgentPeriodCount { get; set; }
+
+    /// <summary>Открытые срочные сейчас (исходящие+входящие по правилам open).</summary>
+    public int OpenUrgentCount { get; set; }
+
+    /// <summary>Заявки периода с жалобой инициатора.</summary>
+    public int ComplaintsPeriodCount { get; set; }
+
+    /// <summary>Среднее время до выполнения как исполнитель (часы), null если нечего считать.</summary>
+    public decimal? AverageCompletionHours { get; set; }
 
     public SummaryStatusBreakdownResponse OutgoingStatusBreakdown { get; set; } = new();
 
     public SummaryStatusBreakdownResponse IncomingStatusBreakdown { get; set; } = new();
+
+    public SummaryKindBreakdownResponse KindBreakdown { get; set; } = new();
 
     public SummaryPeriodComparisonResponse PeriodComparison { get; set; } = new();
 
@@ -78,6 +99,16 @@ public sealed class SummaryStatusBreakdownResponse
     public int CompletedCount { get; set; }
 
     public int CancelledCount { get; set; }
+}
+
+/// <summary>Типы заявок за период (уникальные, где пользователь инициатор или исполнитель).</summary>
+public sealed class SummaryKindBreakdownResponse
+{
+    public int OtherCount { get; set; }
+
+    public int EquipmentCount { get; set; }
+
+    public int SpecTechCount { get; set; }
 }
 
 public sealed class SummaryPeriodComparisonResponse

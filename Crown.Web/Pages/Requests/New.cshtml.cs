@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Crown.Web.Models;
 using Crown.Web.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -15,9 +16,7 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
 
     public List<RequestAssignee> Assignees { get; private set; } = [];
 
-    public List<EquipmentAsset> FreeEquipment { get; private set; } = [];
-
-    public List<SpecialVehicleUnit> FreeSpecUnits { get; private set; } = [];
+    public List<EquipmentRequestCategory> EquipmentCategories { get; private set; } = [];
 
     public List<SpecialVehicleTypeAvailability> SpecTypeAvailability { get; private set; } = [];
 
@@ -29,6 +28,8 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         || User.FindFirst(CrownAuthHandler.CanCreateTransportClaim)?.Value == "1";
 
     public string CurrentUserDisplayName { get; private set; } = string.Empty;
+
+    public Guid? CurrentUserId { get; private set; }
 
     public string? Error { get; private set; }
 
@@ -44,8 +45,8 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         public string? Body { get; set; }
         public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
         public bool IsUrgent { get; set; }
-        public Guid? EquipmentAssetId { get; set; }
-        public Guid? SpecialVehicleUnitId { get; set; }
+        public string? RequestedEquipmentCategory { get; set; }
+        public string? RequestedSpecialVehicleType { get; set; }
         public string? SpecOperation { get; set; }
         public string? SpecPlannedAt { get; set; }
     }
@@ -53,6 +54,7 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
     public async Task<IActionResult> OnGetAsync()
     {
         CurrentUserDisplayName = ResolveDisplayName();
+        CurrentUserId = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var me) ? me : null;
         Input.DueAt = time.ToInput(time.Now.AddDays(1));
         return await LoadLookupsAsync() ?? Page();
     }
@@ -98,6 +100,7 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
     public async Task<IActionResult> OnPostAsync()
     {
         CurrentUserDisplayName = ResolveDisplayName();
+        CurrentUserId = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var me) ? me : null;
         var redirect = await LoadLookupsAsync();
         if (redirect is not null)
         {
@@ -128,10 +131,18 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
             return Page();
         }
 
-        if (Input.Kind == ServiceRequestKind.Equipment
-            && (Input.EquipmentAssetId is null || Input.EquipmentAssetId == Guid.Empty))
+        // Инициатор ≠ исполнитель (админ выбирает обоих; подразделение — само инициатор).
+        Guid? initiatorId = CanPickInitiator ? Input.InitiatorUserId : CurrentUserId;
+        if (initiatorId is Guid iid && iid == Input.ExecutorUserId)
         {
-            Error = "Выберите единицу оборудования.";
+            Error = "Исполнитель не может совпадать с инициатором.";
+            return Page();
+        }
+
+        if (Input.Kind == ServiceRequestKind.Equipment
+            && string.IsNullOrWhiteSpace(Input.RequestedEquipmentCategory))
+        {
+            Error = "Выберите категорию оборудования.";
             return Page();
         }
 
@@ -144,9 +155,9 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
                 return Page();
             }
 
-            if (Input.SpecialVehicleUnitId is null || Input.SpecialVehicleUnitId == Guid.Empty)
+            if (string.IsNullOrWhiteSpace(Input.RequestedSpecialVehicleType))
             {
-                Error = "Выберите единицу спецтехники.";
+                Error = "Выберите тип спецтехники.";
                 return Page();
             }
 
@@ -225,8 +236,12 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
                 Body = Input.Body.Trim(),
                 Kind = Input.Kind,
                 IsUrgent = Input.IsUrgent,
-                EquipmentAssetId = Input.Kind == ServiceRequestKind.Equipment ? Input.EquipmentAssetId : null,
-                SpecialVehicleUnitId = Input.Kind == ServiceRequestKind.SpecTech ? Input.SpecialVehicleUnitId : null,
+                RequestedEquipmentCategory = Input.Kind == ServiceRequestKind.Equipment
+                    ? Input.RequestedEquipmentCategory?.Trim()
+                    : null,
+                RequestedSpecialVehicleType = Input.Kind == ServiceRequestKind.SpecTech
+                    ? Input.RequestedSpecialVehicleType?.Trim()
+                    : null,
                 SpecOperation = Input.Kind == ServiceRequestKind.SpecTech ? Input.SpecOperation?.Trim() : null,
                 SpecPlannedAt = specPlanned
             },
@@ -288,12 +303,12 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
             Error ??= "Нет активных пользователей с ролью «Подразделение».";
         }
 
-        var eq = await api.GetAsync<PagedResponse<EquipmentAsset>>(
-            UiHelpers.BuildUrl("api/equipment", ("freeOnly", "true"), ("skip", "0"), ("take", "500")),
+        var cats = await api.GetAsync<List<EquipmentRequestCategory>>(
+            "api/equipment/request-categories",
             HttpContext.RequestAborted);
-        if (eq.Ok && eq.Data is not null)
+        if (cats.Ok && cats.Data is not null)
         {
-            FreeEquipment = eq.Data.Items;
+            EquipmentCategories = cats.Data;
         }
 
         var avail = await api.GetAsync<SpecialVehicleAvailabilityPayload>(
@@ -301,7 +316,6 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
             HttpContext.RequestAborted);
         if (avail.Ok && avail.Data is not null)
         {
-            FreeSpecUnits = avail.Data.FreeUnits;
             SpecTypeAvailability = avail.Data.Types;
         }
 

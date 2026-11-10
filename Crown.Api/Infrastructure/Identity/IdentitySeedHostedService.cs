@@ -151,6 +151,11 @@ public sealed class IdentitySeedHostedService : IHostedService
         await SeedSettingIfMissingAsync(dbContext, AppSettingKeys.DispatcherCanHardDelete, AppSettingsDefaults.DispatcherCanHardDelete.ToString(), cancellationToken);
         await SeedSettingIfMissingAsync(dbContext, AppSettingKeys.WarehouseEnabled, AppSettingsDefaults.WarehouseEnabled.ToString(), cancellationToken);
         await SeedSettingIfMissingAsync(dbContext, AppSettingKeys.AuditRetentionDays, AppSettingsDefaults.AuditRetentionDays.ToString(), cancellationToken);
+        await SeedSettingIfMissingAsync(
+            dbContext,
+            AppSettingKeys.DocumentationTrashRetentionDays,
+            AppSettingsDefaults.DocumentationTrashRetentionDays.ToString(),
+            cancellationToken);
         await SeedSettingIfMissingAsync(dbContext, AppSettingKeys.ListPageSize, AppSettingsDefaults.ListPageSize.ToString(), cancellationToken);
         var appTimeZone = scope.ServiceProvider.GetRequiredService<AppTimeZone>();
         appTimeZone.SetTimeZoneId(timeZoneSetting.Value);

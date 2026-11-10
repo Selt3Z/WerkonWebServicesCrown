@@ -63,7 +63,7 @@
             <label class="form-label">Инициатор <span class="crown-req">*</span></label>
             @if (Model.CanPickInitiator)
             {
-                <select class="form-select" asp-for="Input.InitiatorUserId" required>
+                <select class="form-select" asp-for="Input.InitiatorUserId" id="initiator-user" required>
                     <option value="">— выберите —</option>
                     @foreach (var u in Model.Assignees)
                     {
@@ -83,6 +83,11 @@
                 <option value="">— выберите —</option>
                 @foreach (var u in Model.Assignees)
                 {
+                    // Себя как исполнителя нельзя; при смене инициатора (админ) — JS ниже.
+                    if (!Model.CanPickInitiator && Model.CurrentUserId == u.Id)
+                    {
+                        continue;
+                    }
                     <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
                 }
             </select>
@@ -90,33 +95,28 @@
     </div>
 
     <div class="mb-3" id="equipment-wrap" hidden>
-        <label class="form-label" asp-for="Input.EquipmentAssetId">Единица оборудования <span class="crown-req">*</span></label>
-        <select class="form-select" asp-for="Input.EquipmentAssetId" id="equipment-asset">
-            <option value="">— выберите свободную —</option>
-            @foreach (var a in Model.FreeEquipment)
+        <label class="form-label" asp-for="Input.RequestedEquipmentCategory">Категория оборудования <span class="crown-req">*</span></label>
+        <select class="form-select" asp-for="Input.RequestedEquipmentCategory" id="equipment-category">
+            <option value="">— выберите категорию —</option>
+            @foreach (var c in Model.EquipmentCategories)
             {
-                <option value="@a.Id">@a.Name (@a.InventoryNumber)@(string.IsNullOrWhiteSpace(a.CurrentLocationLabel) ? "" : $" · {a.CurrentLocationLabel}")</option>
+                <option value="@c.Name">@c.Name (свободно @c.FreeCount / @c.TotalActive)</option>
             }
         </select>
+        <div class="form-text">Можно подать даже если сейчас свободно 0 — исполнитель назначит единицу по очереди.</div>
     </div>
 
     <div id="spectech-wrap" hidden>
         <div class="mb-3">
-            <label class="form-label" asp-for="Input.SpecialVehicleUnitId">Спецтехника <span class="crown-req">*</span></label>
-            <select class="form-select" asp-for="Input.SpecialVehicleUnitId" id="spec-unit">
-                <option value="">— выберите свободную —</option>
-                @foreach (var u in Model.FreeSpecUnits)
+            <label class="form-label" asp-for="Input.RequestedSpecialVehicleType">Тип спецтехники <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.RequestedSpecialVehicleType" id="spec-type">
+                <option value="">— выберите тип —</option>
+                @foreach (var t in Model.SpecTypeAvailability)
                 {
-                    <option value="@u.Id">@u.Name@(string.IsNullOrWhiteSpace(u.PlateOrNote) ? "" : $" ({u.PlateOrNote})")</option>
+                    <option value="@t.Name">@t.Name (свободно @t.FreeCount / @t.TotalActive)</option>
                 }
             </select>
-            @if (Model.SpecTypeAvailability.Count > 0)
-            {
-                <div class="form-text">
-                    Свободно по типу:
-                    @string.Join("; ", Model.SpecTypeAvailability.Select(t => $"{t.Name}: {t.FreeCount}/{t.TotalActive}"))
-                </div>
-            }
+            <div class="form-text">Конкретную машину назначит исполнитель при принятии в работу (очередь по времени подачи).</div>
         </div>
         <div class="crown-form-grid">
             <div class="mb-3">
@@ -246,6 +246,26 @@
 
   executor.addEventListener('change', loadServices);
   loadServices();
+
+  // Админ: исполнитель ≠ выбранный инициатор (прячем option).
+  var initiator = document.getElementById('initiator-user');
+  if (initiator && executor) {
+    function syncExecutorVsInitiator() {
+      var iid = initiator.value;
+      Array.prototype.forEach.call(executor.options, function (opt) {
+        if (!opt.value) return;
+        var hide = iid && opt.value === iid;
+        opt.hidden = hide;
+        opt.disabled = hide;
+      });
+      if (executor.value && executor.value === iid) {
+        executor.value = '';
+        loadServices();
+      }
+    }
+    initiator.addEventListener('change', syncExecutorVsInitiator);
+    syncExecutorVsInitiator();
+  }
 
   service.addEventListener('change', function () {
     var opt = service.selectedOptions[0];

@@ -15,5 +15,6 @@
         <td class="col-owner" title="@(p.OwnerLabel ?? "")">@(string.IsNullOrWhiteSpace(p.OwnerLabel) ? "—" : p.OwnerLabel)</td>
         <td class="col-loc" title="@(p.CurrentLocationLabel ?? "")">@(string.IsNullOrWhiteSpace(p.CurrentLocationLabel) ? "—" : p.CurrentLocationLabel)</td>
         <td class="col-status" title="@(p.ReservedByRequestId is long rid ? $"Забронировано (№{rid})" : status)">@status</td>
+        <td class="col-pad" aria-hidden="true"></td>
     </tr>
 }

@@ -1,0 +1,100 @@
+@page "/documentation/{ownerUserId:guid}/trash"
+@model DocumentationTrashModel
+@inject AppTime Time
+@{
+    ViewData["Title"] = "Корзина — " + (Model.Trash?.OwnerDisplayName ?? "Документация");
+    var t = Model.Trash;
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Корзина@(t is null ? "" : $" — {t.OwnerDisplayName}")</h1>
+    <a class="btn btn-outline-secondary" href="/documentation/@Model.OwnerUserId">К разделу</a>
+</div>
+
+@* Ok/Warn уже в _Layout через TempData *@
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (t is not null)
+{
+    <p class="text-muted mb-3">
+        Хранение @t.RetentionDays дн. Восстановление доступно; удалить из корзины вручную нельзя —
+        просроченное очищается автоматически@(t.CanClearTrash ? ", админ может очистить сразу" : "").
+    </p>
+
+    @if (t.CanClearTrash)
+    {
+        <form method="post" asp-page-handler="Clear" class="list-filters mb-3">
+            <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="trash-confirm">Очистить корзину</label>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <input id="trash-confirm" class="form-control" name="ClearConfirmation"
+                           placeholder="Введите TRASH" autocomplete="off" required />
+                    <button type="submit" class="btn btn-danger"
+                            data-confirm="Очистить корзину безвозвратно?">Очистить</button>
+                </div>
+            </div>
+        </form>
+    }
+
+    <div class="crown-table-wrap">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>Имя</th>
+                <th>Путь</th>
+                <th class="col-date">Размер</th>
+                <th class="col-date">Удалено</th>
+                <th class="col-actions"></th>
+            </tr>
+            </thead>
+            <tbody>
+            @if (t.Items.Count == 0)
+            {
+                <tr class="crown-empty-row"><td colspan="5" class="text-muted text-center">Корзина пуста.</td></tr>
+            }
+            @foreach (var item in t.Items)
+            {
+                <tr>
+                    <td>
+                        <span class="doc-icon @(item.IsFolder ? "doc-icon-folder" : "doc-icon-file")" aria-hidden="true"></span>
+                        <span>@item.Name</span>
+                        @if (item.IsFolder)
+                        {
+                            <span class="text-muted"> (папка)</span>
+                        }
+                    </td>
+                    <td class="text-muted">@(item.PathLabel ?? "Корень")</td>
+                    <td class="col-date nowrap">
+                        @(item.SizeBytes is long sz ? UiHelpers.FormatBytes(sz) : "—")
+                    </td>
+                    <td class="col-date">@Time.Format(item.DeletedAt)</td>
+                    <td class="col-actions">
+                        @if (item.IsFolder)
+                        {
+                            <form method="post" asp-page-handler="RestoreFolder" class="d-inline">
+                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                <input type="hidden" name="itemId" value="@item.Id" />
+                                <button type="submit" class="btn btn-outline-primary btn-sm"
+                                        data-confirm="Восстановить папку «@item.Name»?">Восстановить</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form method="post" asp-page-handler="RestoreFile" class="d-inline">
+                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                <input type="hidden" name="itemId" value="@item.Id" />
+                                <button type="submit" class="btn btn-outline-primary btn-sm"
+                                        data-confirm="Восстановить файл «@item.Name»?">Восстановить</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

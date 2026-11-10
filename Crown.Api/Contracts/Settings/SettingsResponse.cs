@@ -18,6 +18,9 @@ public sealed class SettingsResponse
 
     public int AuditRetentionDays { get; set; } = 30;
 
+    /// <summary>Дней хранения удалённых файлов/папок документации в корзине.</summary>
+    public int DocumentationTrashRetentionDays { get; set; } = 7;
+
     public int ListPageSize { get; set; } = 30;
 
     /// <summary>standard | custom</summary>

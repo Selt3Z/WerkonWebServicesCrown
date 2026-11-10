@@ -16,6 +16,8 @@ public sealed class DocumentationFolderItemResponse
     public string Name { get; set; } = string.Empty;
     public Guid? ParentFolderId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>Путь для результатов поиска (пусто в обычном листинге).</summary>
+    public string? PathLabel { get; set; }
 }
 
 public sealed class DocumentationFileItemResponse
@@ -26,6 +28,8 @@ public sealed class DocumentationFileItemResponse
     public long SizeBytes { get; set; }
     public Guid? FolderId { get; set; }
     public DateTimeOffset UploadedAt { get; set; }
+    /// <summary>Путь папки для результатов поиска.</summary>
+    public string? PathLabel { get; set; }
 }
 
 public sealed class DocumentationBrowseResponse
@@ -36,8 +40,41 @@ public sealed class DocumentationBrowseResponse
     public string? FolderName { get; set; }
     public Guid? ParentFolderId { get; set; }
     public bool CanWrite { get; set; }
+    /// <summary>Админ удаляет безвозвратно; подразделение/диспетчер — в корзину.</summary>
+    public bool DeletesPermanently { get; set; }
+    /// <summary>Корзина раздела: владелец-подразделение или админ.</summary>
+    public bool CanViewTrash { get; set; }
+    /// <summary>Очистка корзины — только админ.</summary>
+    public bool CanClearTrash { get; set; }
+    /// <summary>Непустой — режим поиска по разделу подразделения.</summary>
+    public string? SearchQuery { get; set; }
     public List<DocumentationFolderItemResponse> Folders { get; set; } = [];
     public List<DocumentationFileItemResponse> Files { get; set; } = [];
+}
+
+public sealed class DocumentationTrashItemResponse
+{
+    public Guid Id { get; set; }
+    public bool IsFolder { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public long? SizeBytes { get; set; }
+    public DateTimeOffset DeletedAt { get; set; }
+    public string? PathLabel { get; set; }
+}
+
+public sealed class DocumentationTrashResponse
+{
+    public Guid OwnerUserId { get; set; }
+    public string OwnerDisplayName { get; set; } = string.Empty;
+    public bool CanClearTrash { get; set; }
+    public int RetentionDays { get; set; }
+    public List<DocumentationTrashItemResponse> Items { get; set; } = [];
+}
+
+public sealed class ClearDocumentationTrashRequest
+{
+    /// <summary>Должно быть TRASH.</summary>
+    public string? Confirmation { get; set; }
 }
 
 public sealed class CreateDocumentationFolderRequest

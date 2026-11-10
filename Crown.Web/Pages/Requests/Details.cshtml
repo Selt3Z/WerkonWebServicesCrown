@@ -74,8 +74,8 @@
                 }
                 @* Светофор ознакомления — как VisitPaymentStatusDot в правом углу карточки сделки. *@
                 <span class="visit-payment-dot @(item.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
-                      title="@(item.Acknowledged ? "Ознакомлен" : "Не ознакомлен")"
-                      aria-label="@(item.Acknowledged ? "Ознакомлен" : "Не ознакомлен")"></span>
+                      title="@Time.AckTitle(item.Acknowledged, item.AcknowledgedAt)"
+                      aria-label="@Time.AckTitle(item.Acknowledged, item.AcknowledgedAt)"></span>
             </div>
         </div>
 
@@ -119,8 +119,12 @@
                 </div>
                 @if (item.Kind == ServiceRequestKind.Equipment)
                 {
+                    <div class="entity-meta-item">
+                        <dt>Категория</dt>
+                        <dd>@(item.RequestedEquipmentCategory ?? "—")</dd>
+                    </div>
                     <div class="entity-meta-item entity-meta-wide">
-                        <dt>Оборудование</dt>
+                        <dt>Единица</dt>
                         <dd>
                             @if (item.EquipmentAssetId is Guid eid)
                             {
@@ -128,7 +132,7 @@
                             }
                             else
                             {
-                                <text>—</text>
+                                <text>ещё не назначена</text>
                             }
                         </dd>
                     </div>
@@ -136,8 +140,12 @@
                 @if (item.Kind == ServiceRequestKind.SpecTech)
                 {
                     <div class="entity-meta-item">
-                        <dt>Спецтехника</dt>
-                        <dd>@(item.SpecialVehicleLabel ?? "—")</dd>
+                        <dt>Тип</dt>
+                        <dd>@(item.RequestedSpecialVehicleType ?? "—")</dd>
+                    </div>
+                    <div class="entity-meta-item">
+                        <dt>Единица</dt>
+                        <dd>@(item.SpecialVehicleLabel ?? "ещё не назначена")</dd>
                     </div>
                     <div class="entity-meta-item">
                         <dt>Операция</dt>
@@ -166,7 +174,7 @@
                 </div>
                 <div class="entity-meta-item">
                     <dt>Ознакомление</dt>
-                    <dd>@(item.Acknowledged ? "Ознакомлен" : "Не ознакомлен")</dd>
+                    <dd>@Time.AckTitle(item.Acknowledged, item.AcknowledgedAt)</dd>
                 </div>
 
                 <div class="entity-meta-item entity-meta-wide">
@@ -212,10 +220,61 @@
                 }
             </dl>
 
+            @if (item.QueueAheadCount > 0
+                && item.Status is ServiceRequestStatus.Submitted or ServiceRequestStatus.Returned)
+            {
+                <div class="alert alert-info mt-2 mb-0">
+                    В очереди впереди ещё @item.QueueAheadCount
+                    @(item.QueueAheadCount == 1 ? "заявка" : "заявок") того же типа/категории (по времени подачи).
+                </div>
+            }
+
+            @if (Model.NeedsEquipmentAssignment)
+            {
+                <div class="mb-3 mt-3">
+                    <label class="form-label" for="equipmentAssetId">Назначить оборудование <span class="crown-req">*</span></label>
+                    <select class="form-select" id="equipmentAssetId" name="equipmentAssetId" required>
+                        <option value="">— свободная единица категории «@(item.RequestedEquipmentCategory)» —</option>
+                        @foreach (var a in Model.AssignableEquipment)
+                        {
+                            <option value="@a.Id">@a.Name (@a.InventoryNumber)</option>
+                        }
+                    </select>
+                    @if (Model.AssignableEquipment.Count == 0)
+                    {
+                        <div class="form-text text-danger">Сейчас нет свободных единиц этой категории — принять нельзя.</div>
+                    }
+                </div>
+            }
+
+            @if (Model.CanAssignSpec)
+            {
+                <div class="mb-3 mt-3">
+                    <label class="form-label" for="specialVehicleUnitId">Спецтехника</label>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <select class="form-select flex-grow-1" id="specialVehicleUnitId" name="specialVehicleUnitId">
+                            <option value="">— свободная единица типа «@(item.RequestedSpecialVehicleType)» —</option>
+                            @foreach (var u in Model.AssignableSpecUnits)
+                            {
+                                <option value="@u.Id">@u.Name@(string.IsNullOrWhiteSpace(u.PlateOrNote) ? "" : $" ({u.PlateOrNote})")</option>
+                            }
+                        </select>
+                        <button type="submit" name="action" value="assign-spec" class="btn btn-outline-primary text-nowrap"
+                                disabled="@(Model.AssignableSpecUnits.Count == 0)">Назначить спецтехнику</button>
+                    </div>
+                    @if (Model.AssignableSpecUnits.Count == 0)
+                    {
+                        <div class="form-text text-warning">Сейчас нет свободных единиц этого типа — принять в работу можно, назначить позже.</div>
+                    }
+                </div>
+            }
+
             <div class="crown-actions mt-3">
                 @if (actions.Contains("accept"))
                 {
-                    <button type="submit" name="action" value="accept" class="btn btn-act btn-act-accept">Принять в работу</button>
+                    var acceptBlocked = Model.NeedsEquipmentAssignment && Model.AssignableEquipment.Count == 0;
+                    <button type="submit" name="action" value="accept" class="btn btn-act btn-act-accept"
+                            disabled="@acceptBlocked">Принять в работу</button>
                 }
                 @if (Model.CanSpecArrive)
                 {
@@ -277,9 +336,9 @@
                             <option value="">— выберите —</option>
                             @foreach (var u in Model.Assignees)
                             {
-                                var selected = Model.ReassignExecutorUserId == u.Id
-                                    || (Model.ReassignExecutorUserId is null && item.ExecutorUserId != u.Id && false);
-                                if (item.ExecutorUserId == u.Id)
+                                var selected = Model.ReassignExecutorUserId == u.Id;
+                                // Нельзя оставить текущего и нельзя назначить инициатора.
+                                if (item.ExecutorUserId == u.Id || item.InitiatorUserId == u.Id)
                                 {
                                     continue;
                                 }

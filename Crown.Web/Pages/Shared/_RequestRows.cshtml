@@ -26,8 +26,8 @@
         </td>
         <td class="col-op">
             <span class="visit-payment-dot @(r.Acknowledged ? "visit-payment-dot-paid" : "visit-payment-dot-unpaid")"
-                  title="@(r.Acknowledged ? "Ознак.: ознакомлен" : "Ознак.: не ознакомлен")"
-                  aria-label="@(r.Acknowledged ? "Исполнитель ознакомился" : "Исполнитель ещё не ознакомился")"></span>
+                  title="@Time.AckTitle(r.Acknowledged, r.AcknowledgedAt)"
+                  aria-label="@Time.AckTitle(r.Acknowledged, r.AcknowledgedAt)"></span>
         </td>
         <td class="col-init">@r.InitiatorName</td>
         <td class="col-date">@Time.Format(r.SubmittedAt)</td>

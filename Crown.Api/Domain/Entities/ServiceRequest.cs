@@ -27,13 +27,22 @@ public sealed class ServiceRequest
     public ServiceRequestStatus Status { get; set; } = ServiceRequestStatus.Submitted;
     public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
     public bool IsUrgent { get; set; }
+    /// <summary>Категория оборудования, запрошенная инициатором (единицу назначает исполнитель).</summary>
+    public string? RequestedEquipmentCategory { get; set; }
+
     public Guid? EquipmentAssetId { get; set; }
+
+    /// <summary>Тип спецтехники (Name единицы), запрошенный инициатором.</summary>
+    public string? RequestedSpecialVehicleType { get; set; }
+
     public Guid? SpecialVehicleUnitId { get; set; }
     public string? SpecOperation { get; set; }
     public DateTimeOffset? SpecPlannedAt { get; set; }
     public DateTimeOffset? SpecArrivedAt { get; set; }
     public DateTimeOffset? SpecReleasedAt { get; set; }
     public bool Acknowledged { get; set; }
+    /// <summary>Когда исполнитель ознакомлен (открыл карточку / ручная отметка / accept).</summary>
+    public DateTimeOffset? AcknowledgedAt { get; set; }
     public DateTimeOffset? ReactionAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
 

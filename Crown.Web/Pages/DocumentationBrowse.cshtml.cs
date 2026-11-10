@@ -15,6 +15,9 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
     [BindProperty(SupportsGet = true)]
     public Guid? FolderId { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public string? Q { get; set; }
+
     [BindProperty]
     public string? NewFolderName { get; set; }
 
@@ -48,7 +51,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId });
+        return RedirectToPage(new { OwnerUserId, FolderId, Q });
     }
 
     public async Task<IActionResult> OnPostUploadAsync()
@@ -80,12 +83,15 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId });
+        return RedirectToPage(new { OwnerUserId, FolderId, Q });
     }
 
-    public async Task<IActionResult> OnPostDeleteFolderAsync(Guid folderId)
+    // targetFolderId — не путать с FolderId (текущая папка в URL); form binder case-insensitive.
+    public async Task<IActionResult> OnPostDeleteFolderAsync(Guid targetFolderId)
     {
-        var result = await api.DeleteAsync($"api/documentation/folders/{folderId}", HttpContext.RequestAborted);
+        var result = await api.DeleteAsync(
+            $"api/documentation/folders/{targetFolderId}",
+            HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {
             return Challenge();
@@ -98,12 +104,14 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId });
+        return RedirectToPage(new { OwnerUserId, FolderId, Q });
     }
 
-    public async Task<IActionResult> OnPostDeleteFileAsync(Guid fileId)
+    public async Task<IActionResult> OnPostDeleteFileAsync(Guid targetFileId)
     {
-        var result = await api.DeleteAsync($"api/documentation/files/{fileId}", HttpContext.RequestAborted);
+        var result = await api.DeleteAsync(
+            $"api/documentation/files/{targetFileId}",
+            HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {
             return Challenge();
@@ -116,7 +124,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId });
+        return RedirectToPage(new { OwnerUserId, FolderId, Q });
     }
 
     public async Task<IActionResult> OnGetDownloadAsync(Guid fileId, bool inline = false)
@@ -153,7 +161,8 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
     {
         var url = UiHelpers.BuildUrl(
             $"api/documentation/sections/{OwnerUserId}",
-            ("folderId", FolderId?.ToString()));
+            ("folderId", FolderId?.ToString()),
+            ("q", string.IsNullOrWhiteSpace(Q) ? null : Q.Trim()));
         var result = await api.GetAsync<DocumentationBrowse>(url, HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {

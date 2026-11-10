@@ -15,6 +15,11 @@ public sealed class DocumentationFolder
 
     public DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>null — живая папка; иначе в корзине до автоочистки.</summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+
+    public Guid? DeletedByUserId { get; set; }
+
     public List<DocumentationFolder> Children { get; set; } = [];
 
     public List<DocumentationFile> Files { get; set; } = [];

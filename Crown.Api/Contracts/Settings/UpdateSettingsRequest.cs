@@ -16,6 +16,8 @@ public sealed class UpdateSettingsRequest
 
     public int? AuditRetentionDays { get; set; }
 
+    public int? DocumentationTrashRetentionDays { get; set; }
+
     public int? ListPageSize { get; set; }
 
     /// <summary>standard | custom</summary>

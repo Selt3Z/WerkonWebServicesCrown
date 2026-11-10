@@ -183,7 +183,11 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
         {
             entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
             entity.HasIndex(x => x.OwnerUserId);
-            entity.HasIndex(x => new { x.OwnerUserId, x.ParentFolderId, x.Name });
+            entity.HasIndex(x => x.DeletedAt);
+            // Уникальность имени только среди живых папок — в корзине могут лежать тёзки.
+            entity.HasIndex(x => new { x.OwnerUserId, x.ParentFolderId, x.Name })
+                .IsUnique()
+                .HasFilter("\"DeletedAt\" IS NULL");
             entity.HasOne(x => x.ParentFolder)
                 .WithMany(x => x.Children)
                 .HasForeignKey(x => x.ParentFolderId)
@@ -201,6 +205,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
             entity.HasIndex(x => x.OwnerUserId);
             entity.HasIndex(x => x.FolderId);
+            entity.HasIndex(x => x.DeletedAt);
             entity.HasOne(x => x.Folder)
                 .WithMany(x => x.Files)
                 .HasForeignKey(x => x.FolderId)

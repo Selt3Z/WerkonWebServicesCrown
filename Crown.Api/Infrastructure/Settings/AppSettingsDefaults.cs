@@ -14,5 +14,7 @@ public static class AppSettingsDefaults
 
     public const int AuditRetentionDays = 30;
 
+    public const int DocumentationTrashRetentionDays = 7;
+
     public const int ListPageSize = 30;
 }

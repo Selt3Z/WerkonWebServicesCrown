@@ -27,6 +27,24 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
     public List<RequestAssignee> Assignees { get; private set; } = [];
 
+    /// <summary>Свободные единицы под запрошенную категорию/тип — для назначения при accept.</summary>
+    public List<EquipmentAsset> AssignableEquipment { get; private set; } = [];
+
+    public List<SpecialVehicleUnit> AssignableSpecUnits { get; private set; } = [];
+
+    public bool NeedsEquipmentAssignment =>
+        CanManage
+        && Item is { Kind: ServiceRequestKind.Equipment, EquipmentAssetId: null }
+        && ActionsFor(Item.Status, User.IsInRole(AppRoles.Administrator)).Contains("accept");
+
+    /// <summary>Блок выбора единицы спецтехники + кнопка «Назначить» (accept без единицы разрешён).</summary>
+    public bool CanAssignSpec =>
+        CanManage
+        && Item is { Kind: ServiceRequestKind.SpecTech, SpecialVehicleUnitId: null }
+        && Item.Status is ServiceRequestStatus.Submitted
+            or ServiceRequestStatus.Returned
+            or ServiceRequestStatus.InProgress;
+
     public bool ShowComplaintForm { get; private set; }
 
     /// <summary>Из настроек: диспетчер может hard-delete.</summary>
@@ -82,11 +100,24 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
     public bool CanSpecArrive =>
         CanManage
-        && Item is { Kind: ServiceRequestKind.SpecTech, Status: ServiceRequestStatus.InProgress, SpecArrivedAt: null };
+        && Item is
+        {
+            Kind: ServiceRequestKind.SpecTech,
+            Status: ServiceRequestStatus.InProgress,
+            SpecialVehicleUnitId: not null,
+            SpecArrivedAt: null
+        };
 
     public bool CanSpecRelease =>
         CanManage
-        && Item is { Kind: ServiceRequestKind.SpecTech, Status: ServiceRequestStatus.InProgress, SpecArrivedAt: not null, SpecReleasedAt: null };
+        && Item is
+        {
+            Kind: ServiceRequestKind.SpecTech,
+            Status: ServiceRequestStatus.InProgress,
+            SpecialVehicleUnitId: not null,
+            SpecArrivedAt: not null,
+            SpecReleasedAt: null
+        };
 
     /// <summary>Жалоба: инициатор на возврат / отклонение / выполнено.</summary>
     public bool CanFileComplaint =>
@@ -131,7 +162,9 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         string? executorComment,
         string? newDueAt,
         string? rowVersion,
-        string? body)
+        string? body,
+        Guid? equipmentAssetId,
+        Guid? specialVehicleUnitId)
     {
         CommentInput = executorComment;
         NewDueInput = newDueAt;
@@ -179,6 +212,26 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             return Page();
         }
 
+        if (action == "accept")
+        {
+            if (Item.Kind == ServiceRequestKind.Equipment
+                && Item.EquipmentAssetId is null
+                && (equipmentAssetId is null || equipmentAssetId == Guid.Empty))
+            {
+                Error = "Назначьте единицу оборудования перед принятием.";
+                return Page();
+            }
+
+            // SpecTech: единицу можно назначить позже отдельной кнопкой.
+        }
+
+        if (action == "assign-spec"
+            && (specialVehicleUnitId is null || specialVehicleUnitId == Guid.Empty))
+        {
+            Error = "Выберите единицу спецтехники.";
+            return Page();
+        }
+
         DateTimeOffset? newDue = null;
         if (action == "reschedule")
         {
@@ -199,7 +252,9 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
                 ExecutorComment = executorComment,
                 Body = body,
                 NewDueAt = newDue,
-                RowVersion = rowVersion
+                RowVersion = rowVersion,
+                EquipmentAssetId = equipmentAssetId,
+                SpecialVehicleUnitId = specialVehicleUnitId
             },
             HttpContext.RequestAborted);
 
@@ -214,7 +269,7 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             return Page();
         }
 
-        TempData["Ok"] = "Заявка обновлена.";
+        TempData["Ok"] = action == "assign-spec" ? "Спецтехника назначена." : "Заявка обновлена.";
         return Redirect($"/requests/{id}");
     }
 
@@ -412,6 +467,12 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             return Page();
         }
 
+        if (Item.InitiatorUserId == executorUserId)
+        {
+            Error = "Исполнитель не может совпадать с инициатором.";
+            return Page();
+        }
+
         var result = await api.PostAsync<ServiceRequestDetail>(
             $"api/requests/{id}/reassign",
             new ReassignServiceRequestRequest
@@ -534,6 +595,42 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         if (assignees.Ok && assignees.Data is not null)
         {
             Assignees = assignees.Data;
+        }
+
+        if (Item.Kind == ServiceRequestKind.Equipment
+            && Item.EquipmentAssetId is null
+            && !string.IsNullOrWhiteSpace(Item.RequestedEquipmentCategory))
+        {
+            var eq = await api.GetAsync<PagedResponse<EquipmentAsset>>(
+                UiHelpers.BuildUrl(
+                    "api/equipment",
+                    ("freeOnly", "true"),
+                    ("category", Item.RequestedEquipmentCategory),
+                    ("skip", "0"),
+                    ("take", "200")),
+                HttpContext.RequestAborted);
+            if (eq.Ok && eq.Data is not null)
+            {
+                AssignableEquipment = eq.Data.Items;
+            }
+        }
+
+        if (Item.Kind == ServiceRequestKind.SpecTech
+            && Item.SpecialVehicleUnitId is null
+            && !string.IsNullOrWhiteSpace(Item.RequestedSpecialVehicleType))
+        {
+            var units = await api.GetAsync<PagedResponse<SpecialVehicleUnit>>(
+                UiHelpers.BuildUrl(
+                    "api/special-vehicles",
+                    ("freeOnly", "true"),
+                    ("typeName", Item.RequestedSpecialVehicleType),
+                    ("skip", "0"),
+                    ("take", "200")),
+                HttpContext.RequestAborted);
+            if (units.Ok && units.Data is not null)
+            {
+                AssignableSpecUnits = units.Data.Items;
+            }
         }
 
         return null;

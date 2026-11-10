@@ -35,6 +35,7 @@ public sealed class EquipmentController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<PagedResponse<EquipmentAssetResponse>>> GetList(
         [FromQuery] string? search,
+        [FromQuery] string? category,
         [FromQuery] bool freeOnly = false,
         [FromQuery] bool includeArchived = false,
         [FromQuery] int? skip = null,
@@ -48,6 +49,14 @@ public sealed class EquipmentController : ControllerBase
         if (freeOnly)
         {
             query = query.Where(x => x.Availability == EquipmentAvailability.Free && !x.IsArchived);
+        }
+
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            var cat = category.Trim();
+            // Category либо совпадает, либо (пустая Category) Name = ключ заявки.
+            query = query.Where(x =>
+                (x.Category != null && x.Category == cat) || x.Name == cat);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -69,6 +78,32 @@ public sealed class EquipmentController : ControllerBase
             .ToPagedResponseAsync(normalizedSkip, normalizedTake, cancellationToken);
 
         return Ok(response);
+    }
+
+    /// <summary>Категории для подачи заявки (можно подать даже если FreeCount = 0).</summary>
+    [HttpGet("request-categories")]
+    public async Task<ActionResult<List<EquipmentRequestCategoryResponse>>> GetRequestCategories(
+        CancellationToken cancellationToken)
+    {
+        var assets = await _db.EquipmentAssets.AsNoTracking()
+            .Where(x => !x.IsArchived)
+            .Select(x => new { x.Name, x.Category, x.Availability })
+            .ToListAsync(cancellationToken);
+
+        var groups = assets
+            .GroupBy(x => string.IsNullOrWhiteSpace(x.Category) ? x.Name.Trim() : x.Category.Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            .Where(g => !string.IsNullOrWhiteSpace(g.Key))
+            .OrderBy(g => g.Key)
+            .Select(g => new EquipmentRequestCategoryResponse
+            {
+                Name = g.Key,
+                FreeCount = g.Count(x => x.Availability == EquipmentAvailability.Free),
+                TotalActive = g.Count()
+            })
+            .ToList();
+
+        return Ok(groups);
     }
 
     /// <summary>Активные подразделения — выбор «текущего местоположения».</summary>

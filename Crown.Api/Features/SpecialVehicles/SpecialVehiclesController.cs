@@ -25,6 +25,7 @@ public sealed class SpecialVehiclesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<PagedResponse<SpecialVehicleUnitResponse>>> GetList(
         [FromQuery] string? search,
+        [FromQuery] string? typeName,
         [FromQuery] bool freeOnly = false,
         [FromQuery] bool activeOnly = true,
         [FromQuery] int? skip = null,
@@ -40,6 +41,12 @@ public sealed class SpecialVehiclesController : ControllerBase
         if (freeOnly)
         {
             query = query.Where(x => x.Availability == SpecialVehicleAvailability.Free);
+        }
+
+        if (!string.IsNullOrWhiteSpace(typeName))
+        {
+            var type = typeName.Trim();
+            query = query.Where(x => x.Name == type);
         }
 
         if (!string.IsNullOrWhiteSpace(search))

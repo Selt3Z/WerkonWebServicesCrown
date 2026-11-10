@@ -54,3 +54,11 @@ public sealed class EquipmentLocationOptionResponse
     public Guid Id { get; set; }
     public string DisplayName { get; set; } = string.Empty;
 }
+
+/// <summary>Категория для заявки: Category актива, иначе Name (если категории нет).</summary>
+public sealed class EquipmentRequestCategoryResponse
+{
+    public string Name { get; set; } = string.Empty;
+    public int FreeCount { get; set; }
+    public int TotalActive { get; set; }
+}

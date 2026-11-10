@@ -161,6 +161,43 @@ a.history-user-link:hover {
 /* ---------- Таблицы ---------- */
 .crown-table-wrap { overflow-x: visible; }
 
+/* Права подразделений: гориз. скролл при росте колонок + липкое имя слева. */
+.crown-table-wrap.department-permissions-wrap {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+.department-permissions-table {
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
+}
+.department-permissions-table th,
+.department-permissions-table td {
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.department-permissions-table th:first-child,
+.department-permissions-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--r-surface, #fff);
+    box-shadow: 2px 0 0 rgba(15, 23, 42, 0.06);
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.department-permissions-table thead th:first-child {
+    z-index: 3;
+    background: var(--r-table-head, #f1f5f9);
+}
+.department-permissions-table th:not(:first-child),
+.department-permissions-table td:not(:first-child) {
+    text-align: center;
+    min-width: 5.5rem;
+}
+
 .crown-table th { white-space: nowrap; font-size: 0.82rem; }
 .crown-table td { vertical-align: middle; font-size: 0.88rem; }
 
@@ -182,23 +219,33 @@ a.history-user-link:hover {
     max-width: 100%;
 }
 
-/* Оборудование / спецтехника: узкий инв.№ и статус, название тянется. */
-.crown-equipment-table,
-.crown-spectech-table {
+/* Оборудование: колонки пакуются слева (название не раздувает дыру до статуса). */
+.crown-equipment-table {
     table-layout: fixed;
     width: 100%;
 }
 .crown-equipment-table .col-inv { width: 5.5rem; }
-.crown-equipment-table .col-name,
-.crown-spectech-table .col-name { width: auto; }
-.crown-equipment-table .col-owner { width: 9rem; }
-.crown-equipment-table .col-loc { width: 9rem; }
-.crown-equipment-table .col-status,
-.crown-spectech-table .col-status { width: 5.75rem; }
-.crown-spectech-table .col-note { width: 10rem; }
+.crown-equipment-table .col-name { width: 14rem; }
+.crown-equipment-table .col-owner { width: 10rem; }
+.crown-equipment-table .col-loc { width: 11rem; }
+.crown-equipment-table .col-status { width: 5.75rem; }
+/* Остаток ширины — пустая «подушка» справа от статуса, без разрыва между name и owner. */
+.crown-equipment-table .col-pad { width: auto; }
 .crown-equipment-table .col-name,
 .crown-equipment-table .col-owner,
-.crown-equipment-table .col-loc,
+.crown-equipment-table .col-loc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.crown-spectech-table {
+    table-layout: fixed;
+    width: 100%;
+}
+.crown-spectech-table .col-name { width: auto; }
+.crown-spectech-table .col-status { width: 5.75rem; }
+.crown-spectech-table .col-note { width: 10rem; }
 .crown-spectech-table .col-name,
 .crown-spectech-table .col-note {
     overflow: hidden;

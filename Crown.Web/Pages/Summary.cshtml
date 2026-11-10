@@ -204,7 +204,10 @@
             </div>
         </section>
 
-        <p class="summary-revenue-note">В периоде считаются заявки по дате подачи, где пользователь — инициатор или исполнитель.</p>
+        <p class="summary-revenue-note">
+            В периоде — заявки по дате подачи, где пользователь инициатор или исполнитель.
+            «Сейчас» совпадает с календарём: входящие без «Возвращена», исходящие с «Возвращена» (надо переподать).
+        </p>
 
         <section class="summary-cards summary-cards-grid">
             <a class="summary-card summary-card-clickable" href="@UiHelpers.BuildUrl("/", ("initiatorUserId", s.UserId.ToString()))">
@@ -228,22 +231,37 @@
             <article class="summary-card">
                 <div class="summary-card-label">Средняя реакция</div>
                 <div class="summary-card-value">@(s.AverageReactionHours is { } h ? $"{h:0.#} ч" : "—")</div>
-                <div class="summary-card-meta">как исполнитель</div>
+                <div class="summary-card-meta">до принятия, как исполнитель</div>
             </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Среднее выполнение</div>
+                <div class="summary-card-value">@(s.AverageCompletionHours is { } ch ? $"{ch:0.#} ч" : "—")</div>
+                <div class="summary-card-meta">подача → выполнено, как исполнитель</div>
+            </article>
+            <a class="summary-card summary-card-clickable" href="@UiHelpers.BuildUrl("/", ("executorUserId", s.UserId.ToString()), ("status", "1"))">
+                <div class="summary-card-label">Ждут принятия</div>
+                <div class="summary-card-value">@s.WaitingAcceptIncomingCount</div>
+                <div class="summary-card-meta">сейчас, входящие «Подана»</div>
+            </a>
             <a class="summary-card summary-card-clickable" href="@UiHelpers.BuildUrl("/", ("executorUserId", s.UserId.ToString()), ("ack", "false"))">
                 <div class="summary-card-label">Не ознакомлен</div>
                 <div class="summary-card-value">@s.UnacknowledgedIncomingCount</div>
-                <div class="summary-card-meta">сейчас, входящие</div>
+                <div class="summary-card-meta">сейчас, входящие без открытия</div>
+            </a>
+            <a class="summary-card summary-card-clickable" href="@UiHelpers.BuildUrl("/", ("initiatorUserId", s.UserId.ToString()), ("status", "4"))">
+                <div class="summary-card-label">Возвращены</div>
+                <div class="summary-card-value">@s.ReturnedOutgoingCount</div>
+                <div class="summary-card-meta">сейчас, исходящие — переподать</div>
             </a>
             <article class="summary-card">
                 <div class="summary-card-label">Открытые исходящие</div>
                 <div class="summary-card-value">@s.OpenOutgoingCount</div>
-                <div class="summary-card-meta">сейчас</div>
+                <div class="summary-card-meta">сейчас (вкл. возвращённые)</div>
             </article>
             <article class="summary-card">
                 <div class="summary-card-label">Открытые входящие</div>
                 <div class="summary-card-value">@s.OpenIncomingCount</div>
-                <div class="summary-card-meta">сейчас</div>
+                <div class="summary-card-meta">сейчас (подана / в работе)</div>
             </article>
             <article class="summary-card">
                 <div class="summary-card-label">Просрочено исходящих</div>
@@ -252,6 +270,19 @@
             <article class="summary-card">
                 <div class="summary-card-label">Просрочено входящих</div>
                 <div class="summary-card-value">@s.OverdueIncomingCount</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Срочные за период</div>
+                <div class="summary-card-value">@s.UrgentPeriodCount</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Срочные открытые</div>
+                <div class="summary-card-value">@s.OpenUrgentCount</div>
+                <div class="summary-card-meta">сейчас</div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-card-label">Жалобы за период</div>
+                <div class="summary-card-value">@s.ComplaintsPeriodCount</div>
             </article>
         </section>
 
@@ -264,6 +295,15 @@
             <div class="summary-revenue-mix-legend">
                 <span>Исходящие: @s.OutgoingSharePercent.ToString("0.#")%</span>
                 <span>Входящие: @s.IncomingSharePercent.ToString("0.#")%</span>
+            </div>
+        </section>
+
+        <section class="entity-panel summary-funnel-panel">
+            <h2 class="section-title">По типу заявки (период)</h2>
+            <div class="summary-status-funnel">
+                <div class="summary-status-item"><span>Другое</span><strong>@s.KindBreakdown.OtherCount</strong></div>
+                <div class="summary-status-item"><span>Оборудование</span><strong>@s.KindBreakdown.EquipmentCount</strong></div>
+                <div class="summary-status-item"><span>Спецтехника</span><strong>@s.KindBreakdown.SpecTechCount</strong></div>
             </div>
         </section>
 

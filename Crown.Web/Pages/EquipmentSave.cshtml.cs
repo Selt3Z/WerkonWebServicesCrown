@@ -30,8 +30,6 @@ public sealed class EquipmentSaveModel(CrownApiClient api) : PageModel
 
     public string? Error { get; private set; }
 
-    public string? Ok { get; private set; }
-
     public async Task<IActionResult> OnGetAsync(Guid? id)
     {
         if (!CanAccess)
@@ -40,7 +38,6 @@ public sealed class EquipmentSaveModel(CrownApiClient api) : PageModel
         }
 
         Id = id;
-        Ok = TempData["Ok"] as string;
         await LoadLocationsAsync();
         if (id is null)
         {

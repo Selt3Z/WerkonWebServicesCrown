@@ -24,4 +24,9 @@ public sealed class DocumentationFile
     public DateTimeOffset UploadedAt { get; set; }
 
     public Guid? UploadedByUserId { get; set; }
+
+    /// <summary>null — живой файл; иначе в корзине до автоочистки.</summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+
+    public Guid? DeletedByUserId { get; set; }
 }

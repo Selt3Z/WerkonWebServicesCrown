@@ -16,8 +16,6 @@ public sealed class DepartmentPermissionsModel(CrownApiClient api) : PageModel
 
     public string? Error { get; private set; }
 
-    public string? Ok { get; private set; }
-
     public async Task<IActionResult> OnGetAsync()
     {
         return await LoadAsync();
@@ -90,7 +88,7 @@ public sealed class DepartmentPermissionsModel(CrownApiClient api) : PageModel
             CanViewSummary = u.CanViewSummary,
             DocumentationEnabled = u.DocumentationEnabled
         }).ToList();
-        Ok = TempData["Ok"] as string;
+        // Ok — только через TempData в _Layout (без дубля на странице).
         return Page();
     }
 

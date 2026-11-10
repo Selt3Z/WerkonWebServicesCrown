@@ -24,10 +24,21 @@ public sealed class AppTime
 
     public DateTimeOffset Now => ToLocal(DateTimeOffset.UtcNow);
 
+    public DateOnly GetToday() => DateOnly.FromDateTime(Now.DateTime);
+
     public DateTimeOffset ToLocal(DateTimeOffset value) => TimeZoneInfo.ConvertTime(value, _zone);
 
     public string Format(DateTimeOffset? value) =>
         value is null ? "—" : ToLocal(value.Value).ToString("dd.MM.yyyy HH:mm", Ru);
+
+    /// <summary>Tooltip/подпись светофора ознакомления — как на карточке заявки.</summary>
+    public string AckTitle(bool acknowledged, DateTimeOffset? acknowledgedAt) =>
+        acknowledged
+            ? (acknowledgedAt is { } at ? $"Ознакомлен · {Format(at)}" : "Ознакомлен")
+            : "Не ознакомлен";
+
+    public string FormatDate(DateOnly date) =>
+        date.ToString("dd.MM.yyyy", Ru);
 
     /// <summary>Для DateTime из API (поля *Utc, Kind может быть Unspecified).</summary>
     public string FormatUtc(DateTime? value) =>
