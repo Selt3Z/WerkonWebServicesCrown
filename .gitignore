@@ -24,6 +24,9 @@ scripts/.git-askpass.sh
 scripts/.power-*.sh
 scripts/.update-run.sh
 
+# Hot Docker publish staging (dotnet publish → Dockerfile.*.hot)
+_pub/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

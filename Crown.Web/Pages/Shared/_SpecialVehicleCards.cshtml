@@ -1,0 +1,44 @@
+@model List<SpecialVehicleUnit>
+@foreach (var p in Model)
+{
+    var canEdit = User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+    var status = p.Availability switch
+    {
+        SpecialVehicleAvailability.Reserved => "Бронь",
+        SpecialVehicleAvailability.InUse => "В работе",
+        _ => "Свободна"
+    };
+    if (!p.IsActive)
+    {
+        status += "·выкл";
+    }
+
+    if (canEdit)
+    {
+        <div class="schedule-card table-row-action @(!p.IsActive ? "crown-row-archived" : null)"
+             data-href="/special-vehicles/edit/@p.Id"
+             tabindex="0"
+             role="link"
+             aria-label="Спецтехника: @p.Name">
+            <div class="schedule-card-header">
+                <span class="schedule-card-time">@p.Name</span>
+                <span class="schedule-card-header-trailing">@status</span>
+            </div>
+            <div class="schedule-card-meta">
+                @(string.IsNullOrWhiteSpace(p.PlateOrNote) ? "—" : p.PlateOrNote)
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="schedule-card @(!p.IsActive ? "crown-row-archived" : null)" aria-label="Спецтехника: @p.Name">
+            <div class="schedule-card-header">
+                <span class="schedule-card-time">@p.Name</span>
+                <span class="schedule-card-header-trailing">@status</span>
+            </div>
+            <div class="schedule-card-meta">
+                @(string.IsNullOrWhiteSpace(p.PlateOrNote) ? "—" : p.PlateOrNote)
+            </div>
+        </div>
+    }
+}

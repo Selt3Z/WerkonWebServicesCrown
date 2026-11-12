@@ -6,7 +6,6 @@
 
 <div class="crown-page-head">
     <h1 class="section-title">Права роли «Подразделение»</h1>
-    <a class="btn btn-outline-secondary" href="/settings">К настройкам</a>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
@@ -17,6 +16,8 @@
 <p class="text-muted mb-3">
     Галочки только у учёток с ролью «Подразделение».
     Без «своего оборудования» можно запрашивать единицы и держать чужие на балансе.
+    «Рейтинг бригад» — доступ к разделу и участие в рейтинге (это подразделение = бригада).
+    «Оператор рейтинга» — может добавлять/править/удалять остановки.
     Без документации — раздел скрыт, чужие файлы всё ещё можно смотреть.
 </p>
 
@@ -33,6 +34,8 @@
                 <th class="text-center" title="Просмотр страницы Спецтехника">Спецтехника</th>
                 <th class="text-center" title="Просмотр страницы Склад">Склад</th>
                 <th class="text-center" title="Просмотр страницы Сводка">Сводка</th>
+                <th class="text-center" title="Доступ к разделу + фигурант рейтинга (подразделение = бригада)">Рейтинг бригад</th>
+                <th class="text-center" title="Добавление и правка остановок">Оператор рейтинга</th>
                 <th class="text-center" title="Раздел документации + запись">Документация</th>
             </tr>
             </thead>
@@ -73,17 +76,22 @@
                         <input class="form-check-input" type="checkbox" name="Rows[@i].CanViewSummary" value="true" @(row.CanViewSummary ? "checked" : null) />
                     </td>
                     <td class="text-center">
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanViewBrigadeRating" value="true" @(row.CanViewBrigadeRating ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input" type="checkbox" name="Rows[@i].CanOperateBrigadeRating" value="true" @(row.CanOperateBrigadeRating ? "checked" : null) />
+                    </td>
+                    <td class="text-center">
                         <input class="form-check-input" type="checkbox" name="Rows[@i].DocumentationEnabled" value="true" @(row.DocumentationEnabled ? "checked" : null) />
                     </td>
                 </tr>
             }
             @if (Model.Users.Count == 0)
             {
-                <tr><td colspan="9" class="text-muted text-center">Нет пользователей с ролью «Подразделение».</td></tr>
+                <tr><td colspan="11" class="text-muted text-center">Нет пользователей с ролью «Подразделение».</td></tr>
             }
             </tbody>
         </table>
     </div>
     <button type="submit" class="btn btn-save">Сохранить</button>
-    <a class="btn btn-outline-secondary" href="/settings">Отмена</a>
 </form>

@@ -83,6 +83,74 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("AuditLogEntries");
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.BrigadeStoppage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BrigadeName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("BrigadeUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Hours")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<DateTimeOffset?>("LastModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LastModifiedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MasterName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateOnly>("ReportDate")
+                        .HasColumnType("date");
+
+                    b.Property<TimeOnly?>("RestartedAt")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly>("StoppedAt")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<string>("StoppedByName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid?>("StoppedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("WorkDescription")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BrigadeUserId");
+
+                    b.HasIndex("ReportDate");
+
+                    b.HasIndex("StoppedByUserId");
+
+                    b.ToTable("BrigadeStoppages");
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.CatalogPart", b =>
                 {
                     b.Property<Guid>("Id")
@@ -608,6 +676,80 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("SpecialVehicleUnits");
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.StoppageActItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("SortOrder");
+
+                    b.ToTable("StoppageActItems");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.StoppageRemark", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ActItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BrigadeStoppageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsManual")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsResolved")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActItemId");
+
+                    b.HasIndex("BrigadeStoppageId");
+
+                    b.HasIndex("IsResolved");
+
+                    b.ToTable("StoppageRemarks");
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.Vehicle", b =>
                 {
                     b.Property<Guid>("Id")
@@ -969,6 +1111,16 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<bool>("CanOperateBrigadeRating")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewBrigadeRating")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("CanViewSpecialVehicles")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -1191,6 +1343,20 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.BrigadeStoppage", b =>
+                {
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("BrigadeUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("StoppedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.CatalogPart", b =>
                 {
                     b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
@@ -1288,6 +1454,22 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("SpecialVehicleUnitId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.StoppageRemark", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.StoppageActItem", null)
+                        .WithMany()
+                        .HasForeignKey("ActItemId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Crown.Domain.Entities.BrigadeStoppage", "Stoppage")
+                        .WithMany("Remarks")
+                        .HasForeignKey("BrigadeStoppageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Stoppage");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.Vehicle", b =>
@@ -1404,6 +1586,11 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.BrigadeStoppage", b =>
+                {
+                    b.Navigation("Remarks");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.DocumentationFolder", b =>

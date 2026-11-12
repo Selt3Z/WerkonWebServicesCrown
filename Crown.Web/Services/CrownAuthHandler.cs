@@ -20,6 +20,8 @@ public sealed class CrownAuthHandler : AuthenticationHandler<AuthenticationSchem
     public const string CanViewSpecialVehiclesClaim = "perm_view_spectech";
     public const string CanViewWarehouseClaim = "perm_view_warehouse";
     public const string CanViewSummaryClaim = "perm_view_summary";
+    public const string CanViewBrigadeRatingClaim = "perm_view_brigade_rating";
+    public const string CanOperateBrigadeRatingClaim = "perm_operate_brigade_rating";
     public const string DocumentationEnabledClaim = "perm_docs";
 
     private readonly CrownApiClient _api;
@@ -54,6 +56,8 @@ public sealed class CrownAuthHandler : AuthenticationHandler<AuthenticationSchem
             new(CanViewSpecialVehiclesClaim, user.CanViewSpecialVehicles ? "1" : "0"),
             new(CanViewWarehouseClaim, user.CanViewWarehouse ? "1" : "0"),
             new(CanViewSummaryClaim, user.CanViewSummary ? "1" : "0"),
+            new(CanViewBrigadeRatingClaim, user.CanViewBrigadeRating ? "1" : "0"),
+            new(CanOperateBrigadeRatingClaim, user.CanOperateBrigadeRating ? "1" : "0"),
             new(DocumentationEnabledClaim, user.DocumentationEnabled ? "1" : "0")
         };
         claims.AddRange(user.Roles.Select(r => new Claim(ClaimTypes.Role, r)));

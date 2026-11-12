@@ -1,0 +1,25 @@
+@model List<EquipmentAsset>
+@foreach (var p in Model)
+{
+    var status = p.Availability switch
+    {
+        EquipmentAvailability.Reserved => "Бронь",
+        _ => "Свободно"
+    };
+    <div class="schedule-card table-row-action @(p.IsArchived ? "crown-row-archived" : null)"
+         data-href="/equipment/@p.Id"
+         tabindex="0"
+         role="link"
+         aria-label="Оборудование: @p.Name">
+        <div class="schedule-card-header">
+            <span class="schedule-card-time">@p.InventoryNumber</span>
+            <span class="schedule-card-header-trailing">@status</span>
+        </div>
+        <div class="schedule-card-title">@p.Name</div>
+        <div class="schedule-card-meta">
+            @(string.IsNullOrWhiteSpace(p.OwnerLabel) ? "—" : p.OwnerLabel)
+            ·
+            @(string.IsNullOrWhiteSpace(p.CurrentLocationLabel) ? "—" : p.CurrentLocationLabel)
+        </div>
+    </div>
+}

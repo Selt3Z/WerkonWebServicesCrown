@@ -37,7 +37,12 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
         ("ParkingLot", "Стоянка"),
         ("VehicleTrip", "Поездка"),
         ("VehicleFuelRefuel", "Заправка"),
-        ("VehicleRepair", "Ремонт")
+        ("VehicleRepair", "Ремонт"),
+        ("Documentation", "Документация"),
+        ("BrigadeStoppage", "Остановка бригады"),
+        ("StoppageActItem", "Пункт акта"),
+        ("AppSetting", "Настройки"),
+        ("User", "Пользователь")
     ];
 
     public bool HasMore { get; private set; }

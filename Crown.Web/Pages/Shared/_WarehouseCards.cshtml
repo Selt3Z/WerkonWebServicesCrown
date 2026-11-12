@@ -1,0 +1,30 @@
+@model List<WarehousePart>
+@foreach (var p in Model)
+{
+    // Как в Ratchet: дефицит при остатке ≤ минимума.
+    var shortage = p.QuantityOnHand <= p.MinQuantityOnHand;
+    <div class="schedule-card table-row-action @(shortage ? "warehouse-row-shortage" : null) @(p.IsArchived ? "crown-row-archived" : null)"
+         data-href="/warehouse/edit/@p.Id"
+         tabindex="0"
+         role="link"
+         aria-label="Склад: @p.Name">
+        <div class="schedule-card-header">
+            <span class="schedule-card-time">@p.Code</span>
+            <span class="schedule-card-header-trailing">
+                @p.QuantityOnHand.ToString("0.###") @p.DefaultUnit
+            </span>
+        </div>
+        <div class="schedule-card-title">
+            @p.Name
+            @if (p.IsArchived)
+            {
+                <span class="badge text-bg-secondary">архив</span>
+            }
+        </div>
+        <div class="schedule-card-meta">@p.Category</div>
+        <div class="schedule-card-footer">
+            <span>мин. @p.MinQuantityOnHand.ToString("0.###")</span>
+            <span>@p.DefaultUnitPrice.ToString("N2")</span>
+        </div>
+    </div>
+}

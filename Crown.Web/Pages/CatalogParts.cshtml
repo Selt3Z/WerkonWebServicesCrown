@@ -155,5 +155,25 @@ else
             </tbody>
         </table>
     </div>
+
+    <div class="schedule-mobile-cards"
+         data-infinite-scroll
+         data-more-url="@UiHelpers.BuildUrl("/catalog-parts",
+             ("handler", "MoreCards"),
+             ("q", Model.Q),
+             ("category", Model.Category),
+             ("state", Model.State),
+             ("ownerUserId", Model.IsStaff ? Model.OwnerUserId?.ToString() : null))"
+         data-skip="@Model.Items.Count"
+         data-has-more="@(Model.HasMore ? "true" : "false")">
+        @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+        {
+            <p class="text-muted text-center mb-0">Услуг/узлов нет.</p>
+        }
+        else
+        {
+            <partial name="_CatalogPartCards" model="Model.Items" />
+        }
+    </div>
     <div class="infinite-scroll-sentinel" hidden></div>
 }

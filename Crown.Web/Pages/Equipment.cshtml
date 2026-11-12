@@ -35,7 +35,7 @@
     <a class="btn btn-secondary" href="/equipment">Сбросить</a>
 </form>
 
-<div class="crown-table-wrap">
+<div class="crown-table-wrap schedule-desktop-table">
     <table class="table crown-table crown-equipment-table">
         <thead>
             <tr>
@@ -55,3 +55,19 @@
         </tbody>
     </table>
 </div>
+
+<div class="schedule-mobile-cards"
+     data-infinite-scroll
+     data-more-url="@UiHelpers.BuildUrl("/equipment", ("handler", "MoreCards"), ("q", Model.Q), ("freeOnly", Model.FreeOnly ? "true" : null), ("archived", Model.Archived ? "true" : null))"
+     data-skip="@Model.Items.Count"
+     data-has-more="@(Model.HasMore ? "true" : "false")">
+    @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+    {
+        <p class="text-muted text-center mb-0">Ничего не найдено.</p>
+    }
+    else
+    {
+        <partial name="_EquipmentCards" model="Model.Items" />
+    }
+</div>
+<div class="infinite-scroll-sentinel" hidden></div>

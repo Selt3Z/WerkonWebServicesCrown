@@ -29,6 +29,9 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     public DbSet<EquipmentAsset> EquipmentAssets => Set<EquipmentAsset>();
     public DbSet<EquipmentMovement> EquipmentMovements => Set<EquipmentMovement>();
     public DbSet<SpecialVehicleUnit> SpecialVehicleUnits => Set<SpecialVehicleUnit>();
+    public DbSet<BrigadeStoppage> BrigadeStoppages => Set<BrigadeStoppage>();
+    public DbSet<StoppageRemark> StoppageRemarks => Set<StoppageRemark>();
+    public DbSet<StoppageActItem> StoppageActItems => Set<StoppageActItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -176,6 +179,8 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.CanViewSpecialVehicles).HasDefaultValue(false);
             entity.Property(x => x.CanViewWarehouse).HasDefaultValue(false);
             entity.Property(x => x.CanViewSummary).HasDefaultValue(false);
+            entity.Property(x => x.CanViewBrigadeRating).HasDefaultValue(false);
+            entity.Property(x => x.CanOperateBrigadeRating).HasDefaultValue(false);
             entity.Property(x => x.DocumentationEnabled).HasDefaultValue(true);
         });
 
@@ -341,6 +346,49 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.HasIndex(x => x.Name);
             entity.HasIndex(x => x.Availability);
             entity.HasIndex(x => x.IsActive);
+        });
+
+        modelBuilder.Entity<BrigadeStoppage>(entity =>
+        {
+            entity.Property(x => x.BrigadeName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.MasterName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.StoppedByName).HasMaxLength(300).IsRequired();
+            entity.Property(x => x.WorkDescription).HasMaxLength(500);
+            entity.Property(x => x.Hours).HasPrecision(10, 2);
+            entity.HasIndex(x => x.ReportDate);
+            entity.HasIndex(x => x.BrigadeUserId);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.BrigadeUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.StoppedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<StoppageRemark>(entity =>
+        {
+            entity.Property(x => x.Text).HasMaxLength(2000).IsRequired();
+            entity.Property(x => x.Comment).HasMaxLength(1000).IsRequired();
+            entity.HasIndex(x => x.BrigadeStoppageId);
+            entity.HasIndex(x => x.IsResolved);
+            entity.HasIndex(x => x.ActItemId);
+            entity.HasOne(x => x.Stoppage)
+                .WithMany(x => x.Remarks)
+                .HasForeignKey(x => x.BrigadeStoppageId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<StoppageActItem>()
+                .WithMany()
+                .HasForeignKey(x => x.ActItemId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<StoppageActItem>(entity =>
+        {
+            entity.Property(x => x.Text).HasMaxLength(2000).IsRequired();
+            entity.HasIndex(x => x.IsActive);
+            entity.HasIndex(x => x.SortOrder);
         });
     }
 }

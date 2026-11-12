@@ -13,5 +13,7 @@ public sealed class CurrentUserResponse
     public bool CanViewSpecialVehicles { get; set; }
     public bool CanViewWarehouse { get; set; }
     public bool CanViewSummary { get; set; }
+    public bool CanViewBrigadeRating { get; set; }
+    public bool CanOperateBrigadeRating { get; set; }
     public bool DocumentationEnabled { get; set; }
 }

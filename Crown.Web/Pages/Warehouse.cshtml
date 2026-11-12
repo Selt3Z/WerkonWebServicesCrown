@@ -63,7 +63,7 @@ document.getElementById('btn-wh-filters')?.addEventListener('click', (e) => {
     <div class="alert alert-warning">@Model.Error</div>
 }
 
-<div class="crown-table-wrap">
+<div class="crown-table-wrap schedule-desktop-table">
     <table class="table crown-table">
         <thead>
         <tr>
@@ -90,5 +90,20 @@ document.getElementById('btn-wh-filters')?.addEventListener('click', (e) => {
         }
         </tbody>
     </table>
+</div>
+
+<div class="schedule-mobile-cards"
+     data-infinite-scroll
+     data-more-url="@UiHelpers.BuildUrl("/warehouse", ("handler", "MoreCards"), ("q", Model.Q), ("category", Model.Category), ("inStock", Model.InStock ? "true" : null), ("shortage", Model.Shortage ? "true" : null), ("archived", Model.Archived ? "true" : null))"
+     data-skip="@Model.Items.Count"
+     data-has-more="@(Model.HasMore ? "true" : "false")">
+    @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+    {
+        <p class="text-muted text-center mb-0">Ничего не найдено.</p>
+    }
+    else
+    {
+        <partial name="_WarehouseCards" model="Model.Items" />
+    }
 </div>
 <div class="infinite-scroll-sentinel" hidden></div>

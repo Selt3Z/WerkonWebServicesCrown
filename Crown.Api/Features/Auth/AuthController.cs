@@ -135,6 +135,8 @@ public sealed class AuthController : ControllerBase
             CanViewSpecialVehicles = user.CanViewSpecialVehicles,
             CanViewWarehouse = user.CanViewWarehouse,
             CanViewSummary = user.CanViewSummary,
+            CanViewBrigadeRating = user.CanViewBrigadeRating,
+            CanOperateBrigadeRating = user.CanOperateBrigadeRating,
             DocumentationEnabled = user.DocumentationEnabled
         };
     }

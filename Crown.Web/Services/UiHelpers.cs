@@ -114,6 +114,11 @@ public static class UiHelpers
         "VehicleTrip" => "Поездка",
         "VehicleFuelRefuel" => "Заправка",
         "VehicleRepair" => "Ремонт",
+        "Documentation" => "Документация",
+        "BrigadeStoppage" => "Остановка бригады",
+        "StoppageActItem" => "Пункт акта",
+        "AppSetting" => "Настройки",
+        "User" => "Пользователь",
         _ => string.IsNullOrWhiteSpace(entityType) ? "—" : entityType
     };
 }

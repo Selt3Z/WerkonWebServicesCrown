@@ -1,0 +1,3 @@
+# Пересборка поверх уже готового runtime-образа (без apt/mcr pull).
+FROM mns-api:latest
+COPY _pub/api/ /app/

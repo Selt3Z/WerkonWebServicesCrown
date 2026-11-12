@@ -70,6 +70,8 @@ public sealed class DepartmentPermissionsController : ControllerBase
             user.CanViewSpecialVehicles = row.CanViewSpecialVehicles;
             user.CanViewWarehouse = row.CanViewWarehouse;
             user.CanViewSummary = row.CanViewSummary;
+            user.CanViewBrigadeRating = row.CanViewBrigadeRating;
+            user.CanOperateBrigadeRating = row.CanOperateBrigadeRating;
             user.DocumentationEnabled = row.DocumentationEnabled;
             await _users.UpdateAsync(user);
         }
@@ -90,6 +92,8 @@ public sealed class DepartmentPermissionsController : ControllerBase
         CanViewSpecialVehicles = x.CanViewSpecialVehicles,
         CanViewWarehouse = x.CanViewWarehouse,
         CanViewSummary = x.CanViewSummary,
+        CanViewBrigadeRating = x.CanViewBrigadeRating,
+        CanOperateBrigadeRating = x.CanOperateBrigadeRating,
         DocumentationEnabled = x.DocumentationEnabled
     };
 }

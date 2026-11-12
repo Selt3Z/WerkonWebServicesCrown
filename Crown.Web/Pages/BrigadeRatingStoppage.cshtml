@@ -1,0 +1,243 @@
+@page "/brigade-rating/stoppage/{id:guid?}"
+@model BrigadeRatingStoppageModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Правка остановки" : "Новая остановка";
+    var actItemsJson = System.Text.Json.JsonSerializer.Serialize(
+        Model.ActItems.Select(a => new { id = a.Id, text = a.Text }));
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">@(Model.IsEdit ? "Правка остановки" : "Новая остановка")</h1>
+    <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (Model.Brigades.Count == 0)
+{
+    <div class="alert alert-warning">
+        Нет участников рейтинга. В матрице прав поставьте галочку «Рейтинг бригад» нужным подразделениям.
+    </div>
+}
+
+<form method="post" class="crown-form form-panel" id="stoppage-form">
+    <input type="hidden" asp-for="Input.BrigadeNameHint" />
+    <div class="transport-form-grid">
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.BrigadeUserId">Бригада <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.BrigadeUserId" id="brigade-select" required>
+                <option value="">— выберите —</option>
+                @foreach (var b in Model.Brigades)
+                {
+                    if (Model.Input.BrigadeUserId == b.Id)
+                    {
+                        <option value="@b.Id" selected data-name="@b.Name">@b.Name</option>
+                    }
+                    else
+                    {
+                        <option value="@b.Id" data-name="@b.Name">@b.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.MasterName">ФИО мастера</label>
+            <input class="form-control" asp-for="Input.MasterName" placeholder="ФИО мастера бригады" />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.ReportDate">Дата (отчётные сутки) <span class="crown-req">*</span></label>
+            <input class="form-control" type="date" asp-for="Input.ReportDate" required />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.StoppedByUserId">Кто остановил</label>
+            <select class="form-select" asp-for="Input.StoppedByUserId">
+                <option value="">— вручную / другой —</option>
+                @foreach (var u in Model.Users)
+                {
+                    if (Model.Input.StoppedByUserId == u.Id)
+                    {
+                        <option value="@u.Id" selected>@u.DisplayName</option>
+                    }
+                    else
+                    {
+                        <option value="@u.Id">@u.DisplayName</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.StoppedByName">ФИО / должность</label>
+            <input class="form-control" asp-for="Input.StoppedByName" placeholder="если не из списка пользователей" />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.StoppedAt">Время остановки <span class="crown-req">*</span></label>
+            <input class="form-control" type="time" asp-for="Input.StoppedAt" required />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.RestartedAt">Время запуска</label>
+            <input class="form-control" type="time" asp-for="Input.RestartedAt" />
+        </div>
+        <div class="mb-2" style="grid-column: 1 / -1;">
+            <label class="form-label" asp-for="Input.WorkDescription">Выполняемая работа</label>
+            <input class="form-control" asp-for="Input.WorkDescription" />
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <div class="d-flex align-items-end justify-content-between gap-2 mb-2">
+            <label class="form-label mb-0">Пункты по акту <span class="crown-req">*</span></label>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/act-items">Справочник</a>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="add-remark-row">+ пункт</button>
+            </div>
+        </div>
+        @if (Model.ActItems.Count == 0)
+        {
+            <p class="text-muted small mb-2">Справочник пуст — заполните пункты или выбирайте «Вручную».</p>
+        }
+        <div id="remarks-list" class="brigade-remark-editor">
+            @for (var i = 0; i < Model.Input.Remarks.Count; i++)
+            {
+                var rem = Model.Input.Remarks[i];
+                var isManual = rem.IsManual || rem.ActItemId is null;
+                <div class="brigade-remark-editor-row" data-row="@i">
+                    <input type="hidden" name="Input.Remarks[@i].Id" value="@rem.Id" />
+                    <input type="hidden" class="remark-ismanual" name="Input.Remarks[@i].IsManual" value="@(isManual ? "true" : "false")" />
+                    <select class="form-select remark-act" name="Input.Remarks[@i].ActItemId">
+                        <option value="">— Вручную —</option>
+                        @foreach (var a in Model.ActItems)
+                        {
+                            if (!isManual && rem.ActItemId == a.Id)
+                            {
+                                <option value="@a.Id" selected>@a.Text</option>
+                            }
+                            else
+                            {
+                                <option value="@a.Id">@a.Text</option>
+                            }
+                        }
+                    </select>
+                    <input class="form-control remark-text @(isManual ? "" : "d-none")"
+                           name="Input.Remarks[@i].Text" value="@rem.Text" placeholder="Текст пункта вручную" />
+                    <input class="form-control remark-comment @(isManual ? "d-none" : "")"
+                           name="Input.Remarks[@i].Comment" value="@rem.Comment" placeholder="Комментарий (в Excel в скобках)" />
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="Input.Remarks[@i].IsResolved" value="true"
+                               @(rem.IsResolved ? "checked" : null) id="rem-resolved-@i" />
+                        <label class="form-check-label" for="rem-resolved-@i">Выполнено</label>
+                    </div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm remark-remove" title="Убрать строку">×</button>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
+        <a class="btn btn-outline-secondary btn-lg" href="/brigade-rating">Отмена</a>
+        @if (Model.IsEdit)
+        {
+            <button type="submit" formaction="?handler=Delete" formmethod="post"
+                    class="btn btn-outline-danger btn-lg"
+                    data-confirm="Удалить эту остановку безвозвратно?">Удалить</button>
+        }
+    </div>
+</form>
+
+@section Scripts {
+<script>
+(() => {
+    const list = document.getElementById('remarks-list');
+    const addBtn = document.getElementById('add-remark-row');
+    const actItems = @Html.Raw(actItemsJson);
+    const brigadeSelect = document.getElementById('brigade-select');
+    const masterInput = document.querySelector('[name="Input.MasterName"]');
+
+    // Подставляем ФИО мастера из названия бригады, если поле пустое.
+    brigadeSelect?.addEventListener('change', () => {
+        if (!masterInput) return;
+        if (masterInput.value && masterInput.dataset.touched === '1') return;
+        const opt = brigadeSelect.selectedOptions[0];
+        const name = opt?.getAttribute('data-name') || '';
+        if (name) masterInput.value = name;
+    });
+    masterInput?.addEventListener('input', () => { masterInput.dataset.touched = '1'; });
+
+    function syncRow(row) {
+        const sel = row.querySelector('.remark-act');
+        const text = row.querySelector('.remark-text');
+        const comment = row.querySelector('.remark-comment');
+        const isManualInput = row.querySelector('.remark-ismanual');
+        const manual = !sel.value;
+        isManualInput.value = manual ? 'true' : 'false';
+        text.classList.toggle('d-none', !manual);
+        comment.classList.toggle('d-none', manual);
+        if (!manual) text.value = '';
+        else comment.value = '';
+    }
+
+    function wireRow(row) {
+        row.querySelector('.remark-act')?.addEventListener('change', () => syncRow(row));
+        row.querySelector('.remark-remove')?.addEventListener('click', () => {
+            if (list.querySelectorAll('.brigade-remark-editor-row').length <= 1) return;
+            row.remove();
+            reindex();
+        });
+    }
+
+    function reindex() {
+        [...list.querySelectorAll('.brigade-remark-editor-row')].forEach((row, i) => {
+            row.dataset.row = String(i);
+            row.querySelectorAll('[name]').forEach(el => {
+                el.name = el.name.replace(/Input\.Remarks\[\d+]/, `Input.Remarks[${i}]`);
+            });
+            const cb = row.querySelector('.form-check-input');
+            const lb = row.querySelector('.form-check-label');
+            if (cb && lb) {
+                cb.id = `rem-resolved-${i}`;
+                lb.setAttribute('for', cb.id);
+            }
+        });
+    }
+
+    function actOptionsHtml(selected) {
+        return actItems.map(a =>
+            `<option value="${a.id}" ${selected === a.id ? 'selected' : ''}>${escapeHtml(a.text)}</option>`
+        ).join('');
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    addBtn?.addEventListener('click', () => {
+        const i = list.querySelectorAll('.brigade-remark-editor-row').length;
+        const row = document.createElement('div');
+        row.className = 'brigade-remark-editor-row';
+        row.dataset.row = String(i);
+        row.innerHTML = `
+            <input type="hidden" name="Input.Remarks[${i}].Id" value="" />
+            <input type="hidden" class="remark-ismanual" name="Input.Remarks[${i}].IsManual" value="false" />
+            <select class="form-select remark-act" name="Input.Remarks[${i}].ActItemId">
+                <option value="">— Вручную —</option>
+                ${actOptionsHtml(null)}
+            </select>
+            <input class="form-control remark-text d-none" name="Input.Remarks[${i}].Text" value="" placeholder="Текст пункта вручную" />
+            <input class="form-control remark-comment" name="Input.Remarks[${i}].Comment" value="" placeholder="Комментарий (в Excel в скобках)" />
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="Input.Remarks[${i}].IsResolved" value="true" id="rem-resolved-${i}" />
+                <label class="form-check-label" for="rem-resolved-${i}">Выполнено</label>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm remark-remove" title="Убрать строку">×</button>`;
+        list.appendChild(row);
+        wireRow(row);
+        syncRow(row);
+    });
+
+    list.querySelectorAll('.brigade-remark-editor-row').forEach(wireRow);
+})();
+</script>
+}

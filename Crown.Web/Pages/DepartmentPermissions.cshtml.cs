@@ -35,6 +35,8 @@ public sealed class DepartmentPermissionsModel(CrownApiClient api) : PageModel
                 CanViewSpecialVehicles = r.CanViewSpecialVehicles,
                 CanViewWarehouse = r.CanViewWarehouse,
                 CanViewSummary = r.CanViewSummary,
+                CanViewBrigadeRating = r.CanViewBrigadeRating,
+                CanOperateBrigadeRating = r.CanOperateBrigadeRating,
                 DocumentationEnabled = r.DocumentationEnabled
             }).ToList()
         };
@@ -86,9 +88,10 @@ public sealed class DepartmentPermissionsModel(CrownApiClient api) : PageModel
             CanViewSpecialVehicles = u.CanViewSpecialVehicles,
             CanViewWarehouse = u.CanViewWarehouse,
             CanViewSummary = u.CanViewSummary,
+            CanViewBrigadeRating = u.CanViewBrigadeRating,
+            CanOperateBrigadeRating = u.CanOperateBrigadeRating,
             DocumentationEnabled = u.DocumentationEnabled
         }).ToList();
-        // Ok — только через TempData в _Layout (без дубля на странице).
         return Page();
     }
 
@@ -102,6 +105,8 @@ public sealed class DepartmentPermissionsModel(CrownApiClient api) : PageModel
         public bool CanViewSpecialVehicles { get; set; }
         public bool CanViewWarehouse { get; set; }
         public bool CanViewSummary { get; set; }
+        public bool CanViewBrigadeRating { get; set; }
+        public bool CanOperateBrigadeRating { get; set; }
         public bool DocumentationEnabled { get; set; }
     }
 }

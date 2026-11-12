@@ -84,6 +84,28 @@ public sealed class WarehouseModel(CrownApiClient api) : PageModel
         return Partial("_WarehouseRows", items);
     }
 
+    public async Task<IActionResult> OnGetMoreCardsAsync(int skip)
+    {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge, _) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_WarehouseCards", items);
+    }
+
     private async Task<(List<WarehousePart> Items, bool HasMore, string? Error, bool Challenge, bool Disabled)> LoadAsync(int skip)
     {
         var url = UiHelpers.BuildUrl(

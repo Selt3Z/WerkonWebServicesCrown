@@ -29,6 +29,15 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     /// <summary>Видит пункт меню и страницу «Сводка».</summary>
     public bool CanViewSummary { get; set; }
 
+    /// <summary>
+    /// Рейтинг бригад: доступ к разделу + фигурант рейтинга
+    /// (подразделение = бригада).
+    /// </summary>
+    public bool CanViewBrigadeRating { get; set; }
+
+    /// <summary>Оператор рейтинга: может добавлять/править/удалять остановки.</summary>
+    public bool CanOperateBrigadeRating { get; set; }
+
     /// <summary>Раздел документации пользователя виден + write в свой раздел.</summary>
     public bool DocumentationEnabled { get; set; } = true;
 

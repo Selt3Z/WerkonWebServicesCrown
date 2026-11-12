@@ -1,0 +1,22 @@
+@model List<CatalogPart>
+@foreach (var p in Model)
+{
+    <div class="schedule-card table-row-action @(p.IsActive ? null : "crown-row-archived")"
+         data-href="/catalog-parts/edit/@p.Id"
+         tabindex="0"
+         role="link"
+         aria-label="Услуга: @p.Name">
+        <div class="schedule-card-header">
+            <span class="schedule-card-time">@(p.Code ?? "—")</span>
+            <span class="schedule-card-header-trailing">@(p.IsActive ? "Активна" : "Неактивна")</span>
+        </div>
+        <div class="schedule-card-title">@p.Name</div>
+        <div class="schedule-card-meta">
+            @(p.Category ?? "—") · @p.DefaultUnit
+            @if (p.SlaHours is int sla)
+            {
+                <span>· SLA @sla ч</span>
+            }
+        </div>
+    </div>
+}

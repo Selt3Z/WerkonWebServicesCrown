@@ -73,6 +73,28 @@ public sealed class SpecialVehiclesModel(CrownApiClient api) : PageModel
         return Partial("_SpecialVehicleRows", items);
     }
 
+    public async Task<IActionResult> OnGetMoreCardsAsync(int skip)
+    {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_SpecialVehicleCards", items);
+    }
+
     private async Task<(List<SpecialVehicleUnit> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)
     {
         var url = UiHelpers.BuildUrl(

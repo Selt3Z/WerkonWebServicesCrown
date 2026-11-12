@@ -1,0 +1,384 @@
+@page "/brigade-rating"
+@model BrigadeRatingModel
+@{
+    ViewData["Title"] = "Рейтинг бригад";
+    var d = Model.Dashboard;
+    var maxScore = d?.BrigadeRanking.Count > 0 ? Math.Max(1m, d.BrigadeRanking.Max(x => x.Score)) : 1m;
+    string BarWidth(decimal score) =>
+        $"{Math.Clamp(100m - (score / maxScore * 100m), 8m, 100m).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+    var stoppagesJson = System.Text.Json.JsonSerializer.Serialize(
+        (d?.Stoppages ?? []).Select(s => new
+        {
+            id = s.Id,
+            brigadeUserId = s.BrigadeUserId,
+            brigadeName = s.BrigadeName,
+            masterName = s.MasterName,
+            stoppedByName = s.StoppedByName,
+            reportDate = s.ReportDate.ToString("dd.MM.yyyy"),
+            stoppedAt = s.StoppedAt.ToString("HH:mm"),
+            restartedAt = s.RestartedAt?.ToString("HH:mm"),
+            hours = s.Hours,
+            remarkCount = s.RemarkCount,
+            unresolvedRemarkCount = s.UnresolvedRemarkCount,
+            workDescription = s.WorkDescription
+        }));
+}
+
+@Html.AntiForgeryToken()
+
+<div class="brigade-rating-page">
+    <div class="crown-page-head">
+        <h1 class="section-title">Рейтинг бригад</h1>
+        <div class="crown-page-head-actions">
+            @if (Model.CanEnter)
+            {
+                <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/act-items" title="Справочник пунктов по акту">Пункты акта</a>
+                <a class="btn btn-success btn-sm crown-head-icon-btn" href="/brigade-rating/stoppage" title="Добавить остановку" aria-label="Добавить остановку">+</a>
+            }
+            <a class="btn btn-outline-secondary btn-sm crown-head-icon-btn"
+               href="@UiHelpers.BuildUrl("/brigade-rating", ("handler", "Export"), ("from", Model.From?.ToString("yyyy-MM-dd")), ("to", Model.To?.ToString("yyyy-MM-dd")))"
+               title="Выгрузить Excel за период"
+               aria-label="Выгрузить Excel">
+                <span class="crown-xlsx-icon" aria-hidden="true"><span class="crown-xlsx-label">xlsx</span></span>
+            </a>
+        </div>
+    </div>
+
+    <form method="get" class="list-filters mb-3">
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="br-from">С</label>
+            <input id="br-from" class="form-control" type="date" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="br-to">По</label>
+            <input id="br-to" class="form-control" type="date" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+        </div>
+        <button type="submit" class="btn btn-primary">Показать</button>
+    </form>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    else if (d is null)
+    {
+        <p class="text-muted">Нет данных.</p>
+    }
+    else
+    {
+        <p class="text-muted mb-3">Период: @d.PeriodStart.ToString("dd.MM.yyyy") — @d.PeriodEnd.ToString("dd.MM.yyyy")</p>
+
+        <section class="summary-cards summary-cards-grid mb-3">
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Остановки</div>
+                <div class="summary-card-value">@d.StoppageCount</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Пункты</div>
+                <div class="summary-card-value">@d.RemarkCount</div>
+                <div class="summary-card-meta">устр. @d.ResolvedRemarkCount / откр. @d.UnresolvedRemarkCount</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Часы простоя</div>
+                <div class="summary-card-value">@d.TotalHours.ToString("0.##")</div>
+            </article>
+        </section>
+
+        <div class="brigade-rating-split mb-3">
+            <section class="entity-panel">
+                <h2 class="section-title">Рейтинг бригад</h2>
+                @if (d.BrigadeRanking.Count == 0)
+                {
+                    <p class="text-muted mb-0">Нет остановок за период.</p>
+                }
+                else
+                {
+                    <ol class="brigade-rank-list">
+                        @foreach (var row in d.BrigadeRanking)
+                        {
+                            <li class="brigade-rank-item">
+                                <div class="brigade-rank-head">
+                                    <button type="button"
+                                            class="brigade-rank-name-btn"
+                                            data-brigade-id="@row.BrigadeUserId"
+                                            data-brigade-name="@row.BrigadeName">
+                                        @row.BrigadeName
+                                    </button>
+                                    <span class="text-muted">@row.MasterName</span>
+                                    <span class="brigade-rank-meta">@row.UnresolvedRemarkCount откр. · @row.TotalHours.ToString("0.##") ч · @row.StoppageCount ост.</span>
+                                </div>
+                                <div class="brigade-rank-bar-track" aria-hidden="true">
+                                    <div class="brigade-rank-bar" style="width:@BarWidth(row.Score)"></div>
+                                </div>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+
+            <section class="entity-panel">
+                <h2 class="section-title">Топ-10 замечаний</h2>
+                @if (d.TopRemarks.Count == 0)
+                {
+                    <p class="text-muted mb-0">Пока нет повторяющихся пунктов.</p>
+                }
+                else
+                {
+                    <ol class="brigade-top-remarks">
+                        @foreach (var r in d.TopRemarks)
+                        {
+                            <li>
+                                <span class="brigade-top-count">@r.Count</span>
+                                <span>@r.Text</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+        </div>
+
+        <section class="entity-panel">
+            <h2 class="section-title">Остановки за период</h2>
+            <div class="crown-table-wrap">
+                <table class="table crown-table">
+                    <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Бригада</th>
+                        <th>Мастер</th>
+                        <th>Кто остановил</th>
+                        <th>Стоп</th>
+                        <th>Пуск</th>
+                        <th>Часы</th>
+                        <th>Пункты</th>
+                        <th>Работа</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var s in d.Stoppages)
+                    {
+                        <tr class="@(Model.CanEnter ? "crown-row-link" : null)"
+                            @(Model.CanEnter ? $"data-href=/brigade-rating/stoppage/{s.Id}" : null)>
+                            <td>@s.ReportDate.ToString("dd.MM.yyyy")</td>
+                            <td>@s.BrigadeName</td>
+                            <td>@s.MasterName</td>
+                            <td>@s.StoppedByName</td>
+                            <td>@s.StoppedAt.ToString("HH:mm")</td>
+                            <td>@(s.RestartedAt?.ToString("HH:mm") ?? "—")</td>
+                            <td>@s.Hours.ToString("0.##")</td>
+                            <td>
+                                <button type="button"
+                                        class="btn btn-link btn-sm p-0 brigade-remarks-open"
+                                        data-stoppage-id="@s.Id">
+                                    @s.RemarkCount
+                                    @if (s.UnresolvedRemarkCount > 0)
+                                    {
+                                        <span class="text-danger">(@s.UnresolvedRemarkCount)</span>
+                                    }
+                                </button>
+                            </td>
+                            <td title="@s.WorkDescription">@(s.WorkDescription.Length > 60 ? s.WorkDescription[..60] + "…" : s.WorkDescription)</td>
+                        </tr>
+                    }
+                    @if (d.Stoppages.Count == 0)
+                    {
+                        <tr><td colspan="9" class="text-muted text-center">Нет остановок.</td></tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+<div class="brigade-remarks-overlay d-none" id="brigadeRemarksOverlay" hidden>
+    <div class="brigade-remarks-panel" role="dialog" aria-modal="true" aria-labelledby="brigadeRemarksModalLabel">
+        <div class="brigade-remarks-panel-head">
+            <h2 class="section-title mb-0" id="brigadeRemarksModalLabel">Пункты акта</h2>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="brigadeRemarksClose" aria-label="Закрыть">✕</button>
+        </div>
+        <p class="text-muted mb-2" id="brigadeRemarksMeta"></p>
+        <div id="brigadeRemarksList" class="brigade-remarks-list"></div>
+        <p class="text-danger d-none" id="brigadeRemarksError"></p>
+    </div>
+</div>
+
+<div class="brigade-remarks-overlay d-none" id="brigadeStoppagesOverlay" hidden>
+    <div class="brigade-remarks-panel brigade-stoppages-panel" role="dialog" aria-modal="true" aria-labelledby="brigadeStoppagesModalLabel">
+        <div class="brigade-remarks-panel-head">
+            <h2 class="section-title mb-0" id="brigadeStoppagesModalLabel">Остановки бригады</h2>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="brigadeStoppagesClose" aria-label="Закрыть">✕</button>
+        </div>
+        <p class="text-muted mb-2" id="brigadeStoppagesMeta"></p>
+        <div class="crown-table-wrap">
+            <table class="table crown-table" id="brigadeStoppagesTable">
+                <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>Мастер</th>
+                    <th>Кто остановил</th>
+                    <th>Стоп</th>
+                    <th>Пуск</th>
+                    <th>Часы</th>
+                    <th>Пункты</th>
+                    <th>Работа</th>
+                </tr>
+                </thead>
+                <tbody id="brigadeStoppagesBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const canEnter = @(Model.CanEnter ? "true" : "false");
+    const from = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.From?.ToString("yyyy-MM-dd")));
+    const to = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.To?.ToString("yyyy-MM-dd")));
+    const allStoppages = @Html.Raw(stoppagesJson);
+    const overlay = document.getElementById('brigadeRemarksOverlay');
+    const list = document.getElementById('brigadeRemarksList');
+    const meta = document.getElementById('brigadeRemarksMeta');
+    const err = document.getElementById('brigadeRemarksError');
+    const antiforgery = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+    const stopOverlay = document.getElementById('brigadeStoppagesOverlay');
+    const stopMeta = document.getElementById('brigadeStoppagesMeta');
+    const stopBody = document.getElementById('brigadeStoppagesBody');
+
+    function openOverlay(el) {
+        el.classList.remove('d-none');
+        el.hidden = false;
+    }
+    function closeOverlay(el) {
+        el.classList.add('d-none');
+        el.hidden = true;
+    }
+    document.getElementById('brigadeRemarksClose')?.addEventListener('click', () => closeOverlay(overlay));
+    overlay?.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(overlay); });
+    document.getElementById('brigadeStoppagesClose')?.addEventListener('click', () => closeOverlay(stopOverlay));
+    stopOverlay?.addEventListener('click', (e) => { if (e.target === stopOverlay) closeOverlay(stopOverlay); });
+
+    // Проваливание в остановку по клику на строку (кроме кнопки пунктов).
+    document.querySelectorAll('tr.crown-row-link').forEach(tr => {
+        tr.addEventListener('click', (e) => {
+            if (e.target.closest('button, a, input, select, label')) return;
+            const href = tr.getAttribute('data-href');
+            if (href) window.location.href = href;
+        });
+    });
+
+    // Клик по имени бригады → таблица её остановок.
+    document.querySelectorAll('.brigade-rank-name-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-brigade-id');
+            const name = btn.getAttribute('data-brigade-name') || '';
+            const rows = allStoppages.filter(s => s.brigadeUserId === id);
+            stopMeta.textContent = name + (rows.length ? ` · ${rows.length} ост.` : '');
+            stopBody.innerHTML = '';
+            if (!rows.length) {
+                stopBody.innerHTML = '<tr><td colspan="8" class="text-muted text-center">Нет остановок за период.</td></tr>';
+            } else {
+                rows.forEach(s => {
+                    const tr = document.createElement('tr');
+                    if (canEnter) {
+                        tr.className = 'crown-row-link';
+                        tr.setAttribute('data-href', `/brigade-rating/stoppage/${s.id}`);
+                        tr.addEventListener('click', (e) => {
+                            if (e.target.closest('button, a')) return;
+                            window.location.href = tr.getAttribute('data-href');
+                        });
+                    }
+                    const work = (s.workDescription || '').length > 60
+                        ? s.workDescription.slice(0, 60) + '…'
+                        : (s.workDescription || '');
+                    const unresolved = s.unresolvedRemarkCount > 0
+                        ? ` <span class="text-danger">(${s.unresolvedRemarkCount})</span>`
+                        : '';
+                    tr.innerHTML = `
+                        <td>${s.reportDate}</td>
+                        <td>${escapeHtml(s.masterName || '')}</td>
+                        <td>${escapeHtml(s.stoppedByName || '')}</td>
+                        <td>${s.stoppedAt}</td>
+                        <td>${s.restartedAt || '—'}</td>
+                        <td>${Number(s.hours).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}</td>
+                        <td><button type="button" class="btn btn-link btn-sm p-0 brigade-remarks-open" data-stoppage-id="${s.id}">${s.remarkCount}${unresolved}</button></td>
+                        <td title="${escapeHtml(s.workDescription || '')}">${escapeHtml(work)}</td>`;
+                    stopBody.appendChild(tr);
+                    tr.querySelector('.brigade-remarks-open')?.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openRemarks(s.id);
+                    });
+                });
+            }
+            openOverlay(stopOverlay);
+        });
+    });
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function openRemarks(id) {
+        list.innerHTML = '<p class="text-muted">Загрузка…</p>';
+        err.classList.add('d-none');
+        meta.textContent = '';
+        document.getElementById('brigadeRemarksModalLabel').textContent = 'Пункты акта';
+        openOverlay(overlay);
+        try {
+            const res = await fetch(`/brigade-rating?handler=Stoppage&id=${encodeURIComponent(id)}`);
+            if (!res.ok) throw new Error('load_failed');
+            const data = await res.json();
+            meta.textContent = `${data.brigadeName} · ${data.reportDate} · ${data.masterName}`;
+            if (!data.remarks?.length) {
+                list.innerHTML = '<p class="text-muted">Пунктов нет.</p>';
+                return;
+            }
+            list.innerHTML = '';
+            data.remarks.forEach((r, i) => {
+                const row = document.createElement('div');
+                row.className = 'brigade-remark-row';
+                const text = document.createElement('div');
+                text.className = 'brigade-remark-text';
+                const comment = r.comment && !r.isManual ? ` (${r.comment})` : '';
+                text.textContent = `${i + 1}. ${r.text}${comment}`;
+                row.appendChild(text);
+                if (canEnter) {
+                    const form = document.createElement('form');
+                    form.method = 'post';
+                    form.action = `/brigade-rating?handler=ResolveRemark&remarkId=${encodeURIComponent(r.id)}&isResolved=${r.isResolved ? 'false' : 'true'}&from=${encodeURIComponent(from || '')}&to=${encodeURIComponent(to || '')}`;
+                    const token = document.createElement('input');
+                    token.type = 'hidden';
+                    token.name = '__RequestVerificationToken';
+                    token.value = antiforgery;
+                    form.appendChild(token);
+                    const toggle = document.createElement('button');
+                    toggle.type = 'submit';
+                    toggle.className = r.isResolved ? 'btn btn-sm btn-outline-success' : 'btn btn-sm btn-outline-warning';
+                    toggle.textContent = r.isResolved ? 'Выполнено' : 'Открыто';
+                    form.appendChild(toggle);
+                    row.appendChild(form);
+                } else {
+                    const badge = document.createElement('span');
+                    badge.className = r.isResolved ? 'badge bg-success' : 'badge bg-warning text-dark';
+                    badge.textContent = r.isResolved ? 'Выполнено' : 'Открыто';
+                    row.appendChild(badge);
+                }
+                list.appendChild(row);
+            });
+        } catch {
+            list.innerHTML = '';
+            err.textContent = 'Не удалось загрузить пункты.';
+            err.classList.remove('d-none');
+        }
+    }
+
+    document.querySelectorAll('.brigade-remarks-open').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openRemarks(btn.getAttribute('data-stoppage-id'));
+        });
+    });
+})();
+</script>
+}

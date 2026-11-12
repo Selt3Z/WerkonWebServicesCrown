@@ -1,0 +1,826 @@
+using System.Security.Claims;
+using ClosedXML.Excel;
+using Crown.Contracts.BrigadeRating;
+using Crown.Domain.Entities;
+using Crown.Infrastructure.Identity;
+using Crown.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace Crown.Features.BrigadeRating;
+
+[ApiController]
+[Route("api/brigade-rating")]
+[Authorize]
+public sealed class BrigadeRatingController(
+    AppDbContext db,
+    UserManager<ApplicationUser> users) : ControllerBase
+{
+    // ---------- Участники (Department + CanViewBrigadeRating) ----------
+
+    [HttpGet("brigades")]
+    public async Task<ActionResult<List<BrigadeParticipantResponse>>> ListParticipants(
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var departmentUsers = await users.GetUsersInRoleAsync(AppRoles.Department);
+        IEnumerable<ApplicationUser> q = departmentUsers
+            .Where(u => u.IsActive && u.CanViewBrigadeRating);
+
+        // Staff и оператор видят всех участников; обычная бригада — только себя.
+        if (!IsStaff() && !await CanOperateAsync(cancellationToken))
+        {
+            var uid = CurrentUserId();
+            q = q.Where(u => u.Id == uid);
+        }
+
+        var items = q
+            .OrderBy(u => DisplayOf(u))
+            .Select(u => new BrigadeParticipantResponse
+            {
+                Id = u.Id,
+                Name = DisplayOf(u),
+                UserName = u.UserName ?? string.Empty
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    // ---------- Справочник пунктов акта ----------
+
+    [HttpGet("act-items")]
+    public async Task<ActionResult<List<StoppageActItemResponse>>> ListActItems(
+        [FromQuery] bool activeOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var q = db.StoppageActItems.AsNoTracking().AsQueryable();
+        if (activeOnly)
+        {
+            q = q.Where(x => x.IsActive);
+        }
+
+        var items = await q
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Text)
+            .Select(x => new StoppageActItemResponse
+            {
+                Id = x.Id,
+                Text = x.Text,
+                IsActive = x.IsActive,
+                SortOrder = x.SortOrder
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(items);
+    }
+
+    [HttpPost("act-items")]
+    public async Task<ActionResult<StoppageActItemResponse>> CreateActItem(
+        [FromBody] SaveStoppageActItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsStaff())
+        {
+            return Forbid();
+        }
+
+        var text = (request.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return BadRequest(new { error = "act_item_text_required", message = "Укажите текст пункта." });
+        }
+
+        var maxOrder = await db.StoppageActItems.MaxAsync(x => (int?)x.SortOrder, cancellationToken) ?? 0;
+        var entity = new StoppageActItem
+        {
+            Id = Guid.NewGuid(),
+            Text = text,
+            IsActive = request.IsActive,
+            SortOrder = request.SortOrder > 0 ? request.SortOrder : maxOrder + 1,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.StoppageActItems.Add(entity);
+        await db.SaveChangesAsync(cancellationToken);
+        return CreatedAtAction(nameof(ListActItems), MapActItem(entity));
+    }
+
+    [HttpPut("act-items/{id:guid}")]
+    public async Task<ActionResult<StoppageActItemResponse>> UpdateActItem(
+        Guid id,
+        [FromBody] SaveStoppageActItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsStaff())
+        {
+            return Forbid();
+        }
+
+        var entity = await db.StoppageActItems.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        var text = (request.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return BadRequest(new { error = "act_item_text_required", message = "Укажите текст пункта." });
+        }
+
+        entity.Text = text;
+        entity.IsActive = request.IsActive;
+        if (request.SortOrder > 0)
+        {
+            entity.SortOrder = request.SortOrder;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(MapActItem(entity));
+    }
+
+    [HttpDelete("act-items/{id:guid}")]
+    public async Task<IActionResult> DeleteActItem(Guid id, CancellationToken cancellationToken)
+    {
+        if (!IsStaff())
+        {
+            return Forbid();
+        }
+
+        var entity = await db.StoppageActItems.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        // В остановках: пункт → «Вручную», текст и комментарий сохраняем.
+        var linked = await db.StoppageRemarks
+            .Where(x => x.ActItemId == id)
+            .ToListAsync(cancellationToken);
+        foreach (var r in linked)
+        {
+            r.ActItemId = null;
+            r.IsManual = true;
+            // Text / Comment не трогаем.
+        }
+
+        db.StoppageActItems.Remove(entity);
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    // ---------- Stoppages ----------
+
+    [HttpGet("stoppages")]
+    public async Task<ActionResult<List<BrigadeStoppageListItemResponse>>> ListStoppages(
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var (start, end) = ResolvePeriod(from, to);
+        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
+                .Include(x => x.Remarks)
+                .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
+            .OrderByDescending(x => x.ReportDate)
+            .ThenByDescending(x => x.StoppedAt)
+            .ToListAsync(cancellationToken);
+
+        return Ok(rows.Select(MapListItem).ToList());
+    }
+
+    [HttpGet("stoppages/{id:guid}")]
+    public async Task<ActionResult<BrigadeStoppageDetailResponse>> GetStoppage(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        var entity = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
+                .Include(x => x.Remarks), seeAll)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(MapDetail(entity));
+    }
+
+    [HttpPost("stoppages")]
+    public async Task<ActionResult<BrigadeStoppageDetailResponse>> CreateStoppage(
+        [FromBody] SaveBrigadeStoppageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var built = await BuildStoppageAsync(null, request, cancellationToken);
+        if (built.Error is not null)
+        {
+            return BadRequest(new { error = built.ErrorCode, message = built.Error });
+        }
+
+        var entity = built.Entity!;
+        if (built.NewRemarks is { Count: > 0 })
+        {
+            foreach (var remark in built.NewRemarks)
+            {
+                remark.BrigadeStoppageId = entity.Id;
+                entity.Remarks.Add(remark);
+            }
+        }
+
+        db.BrigadeStoppages.Add(entity);
+        DetachTrackedUsers();
+        await db.SaveChangesAsync(cancellationToken);
+        return CreatedAtAction(nameof(GetStoppage), new { id = entity.Id }, MapDetail(entity));
+    }
+
+    [HttpPut("stoppages/{id:guid}")]
+    public async Task<ActionResult<BrigadeStoppageDetailResponse>> UpdateStoppage(
+        Guid id,
+        [FromBody] SaveBrigadeStoppageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        // Без Include(Remarks): иначе после ExecuteDelete трекер ещё держит старые пункты и SaveChanges
+        // шлёт DELETE/UPDATE по уже удалённым → DbUpdateConcurrencyException.
+        var existing = await db.BrigadeStoppages
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (existing is null)
+        {
+            return NotFound();
+        }
+
+        var built = await BuildStoppageAsync(existing, request, cancellationToken);
+        if (built.Error is not null)
+        {
+            return BadRequest(new { error = built.ErrorCode, message = built.Error });
+        }
+
+        await db.StoppageRemarks
+            .Where(x => x.BrigadeStoppageId == existing.Id)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        foreach (var remark in built.NewRemarks!)
+        {
+            remark.BrigadeStoppageId = existing.Id;
+            db.StoppageRemarks.Add(remark);
+        }
+
+        DetachTrackedUsers();
+        await db.SaveChangesAsync(cancellationToken);
+
+        var saved = await db.BrigadeStoppages.AsNoTracking()
+            .Include(x => x.Remarks)
+            .FirstAsync(x => x.Id == id, cancellationToken);
+        return Ok(MapDetail(saved));
+    }
+
+    [HttpPatch("remarks/{id:guid}/resolved")]
+    public async Task<ActionResult<StoppageRemarkResponse>> SetRemarkResolved(
+        Guid id,
+        [FromBody] SetRemarkResolvedRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var remark = await db.StoppageRemarks
+            .Include(x => x.Stoppage)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (remark is null)
+        {
+            return NotFound();
+        }
+
+        if (!IsStaff() && !await CanOperateAsync(cancellationToken))
+        {
+            var uid = CurrentUserId();
+            if (remark.Stoppage.BrigadeUserId != uid)
+            {
+                return Forbid();
+            }
+        }
+
+        remark.IsResolved = request.IsResolved;
+        remark.ResolvedAt = request.IsResolved ? DateTimeOffset.UtcNow : null;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Ok(MapRemark(remark));
+    }
+
+    [HttpDelete("stoppages/{id:guid}")]
+    public async Task<IActionResult> DeleteStoppage(Guid id, CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var entity = await db.BrigadeStoppages.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        db.BrigadeStoppages.Remove(entity);
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    // ---------- Dashboard + export ----------
+
+    [HttpGet("dashboard")]
+    public async Task<ActionResult<BrigadeRatingDashboardResponse>> Dashboard(
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var (start, end) = ResolvePeriod(from, to);
+        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
+                .Include(x => x.Remarks)
+                .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
+            .ToListAsync(cancellationToken);
+
+        var remarkFlat = rows.SelectMany(x => x.Remarks).ToList();
+        var ranking = rows
+            .GroupBy(x => x.BrigadeUserId)
+            .Select(g =>
+            {
+                var first = g.First();
+                var remarks = g.SelectMany(x => x.Remarks).ToList();
+                var unresolved = remarks.Count(r => !r.IsResolved);
+                var hours = g.Sum(x => x.Hours);
+                var stoppages = g.Count();
+                var score = unresolved * 10m + hours + stoppages;
+                return new BrigadeRankItemResponse
+                {
+                    BrigadeUserId = g.Key,
+                    BrigadeName = first.BrigadeName,
+                    MasterName = first.MasterName,
+                    StoppageCount = stoppages,
+                    RemarkCount = remarks.Count,
+                    UnresolvedRemarkCount = unresolved,
+                    TotalHours = hours,
+                    Score = score
+                };
+            })
+            .OrderBy(x => x.Score)
+            .ThenBy(x => x.BrigadeName)
+            .ToList();
+
+        // Топ по тексту пункта (без комментария) — справочник даёт повторяемость.
+        var top = remarkFlat
+            .GroupBy(x => x.Text.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new RemarkTopItemResponse
+            {
+                Text = g.First().Text.Trim(),
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Text)
+            .Take(10)
+            .ToList();
+
+        return Ok(new BrigadeRatingDashboardResponse
+        {
+            PeriodStart = start,
+            PeriodEnd = end,
+            StoppageCount = rows.Count,
+            RemarkCount = remarkFlat.Count,
+            ResolvedRemarkCount = remarkFlat.Count(x => x.IsResolved),
+            UnresolvedRemarkCount = remarkFlat.Count(x => !x.IsResolved),
+            TotalHours = rows.Sum(x => x.Hours),
+            BrigadeRanking = ranking,
+            TopRemarks = top,
+            Stoppages = rows
+                .OrderByDescending(x => x.ReportDate)
+                .ThenByDescending(x => x.StoppedAt)
+                .Select(MapListItem)
+                .ToList()
+        });
+    }
+
+    [HttpGet("export.xlsx")]
+    public async Task<IActionResult> ExportXlsx(
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var (start, end) = ResolvePeriod(from, to);
+        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
+                .Include(x => x.Remarks)
+                .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
+            .OrderBy(x => x.ReportDate)
+            .ThenBy(x => x.StoppedAt)
+            .ToListAsync(cancellationToken);
+
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Анализ остановок");
+        ws.Cell(1, 1).Value = "№ п/п";
+        ws.Cell(1, 2).Value = "Дата\n(отчетные сутки)";
+        ws.Cell(1, 3).Value = "Бригада";
+        ws.Cell(1, 4).Value = "ФИО\nМастера";
+        ws.Cell(1, 5).Value = "Должность\nФИО\n(кто остановил бригаду)";
+        ws.Cell(1, 6).Value = "Время остановки";
+        ws.Cell(1, 7).Value = "Время запуска";
+        ws.Cell(1, 8).Value = "Общее количество часов";
+        ws.Cell(1, 9).Value = "Количество пунктов";
+        ws.Cell(1, 10).Value = "Выполняемая работа";
+        ws.Cell(1, 11).Value = "Пункты по Акту предписания\n(Из за чего остановлена бригада)";
+        ws.Range(1, 1, 1, 11).Style.Font.Bold = true;
+        ws.Range(1, 1, 1, 11).Style.Alignment.WrapText = true;
+
+        var n = 1;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var excelRow = i + 2;
+            var remarks = row.Remarks.OrderBy(x => x.SortOrder).ThenBy(x => x.Text).ToList();
+            // Каждый пункт с новой строки; комментарий справочника — в скобках.
+            var remarkText = string.Join(
+                "\n",
+                remarks.Select((r, idx) => FormatRemarkForExcel(idx + 1, r)));
+
+            ws.Cell(excelRow, 1).Value = n++;
+            ws.Cell(excelRow, 2).Value = row.ReportDate.ToDateTime(TimeOnly.MinValue);
+            ws.Cell(excelRow, 2).Style.DateFormat.Format = "dd.MM.yyyy";
+            ws.Cell(excelRow, 3).Value = row.BrigadeName;
+            ws.Cell(excelRow, 4).Value = row.MasterName;
+            ws.Cell(excelRow, 5).Value = row.StoppedByName;
+            ws.Cell(excelRow, 6).Value = row.StoppedAt.ToString("HH:mm");
+            ws.Cell(excelRow, 7).Value = row.RestartedAt?.ToString("HH:mm") ?? string.Empty;
+            ws.Cell(excelRow, 8).Value = row.Hours;
+            ws.Cell(excelRow, 9).Value = remarks.Count;
+            ws.Cell(excelRow, 10).Value = row.WorkDescription;
+            ws.Cell(excelRow, 11).Value = remarkText;
+            ws.Cell(excelRow, 11).Style.Alignment.WrapText = true;
+            ws.Cell(excelRow, 11).Style.Alignment.Vertical = XLAlignmentVerticalValues.Top;
+        }
+
+        ws.Columns().AdjustToContents(1, 40);
+        ws.Column(11).Width = 60;
+
+        await using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        var bytes = stream.ToArray();
+        var fileName = start == end
+            ? $"Анализ Остановок {start:dd.MM.yyyy}.xlsx"
+            : $"Анализ Остановок {start:dd.MM.yyyy}-{end:dd.MM.yyyy}.xlsx";
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+    }
+
+    // ---------- Helpers ----------
+
+    private async Task<(BrigadeStoppage? Entity, List<StoppageRemark>? NewRemarks, string? Error, string? ErrorCode)> BuildStoppageAsync(
+        BrigadeStoppage? existing,
+        SaveBrigadeStoppageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var brigadeUser = await users.Users.AsNoTracking().FirstOrDefaultAsync(
+            x => x.Id == request.BrigadeUserId,
+            cancellationToken);
+        if (brigadeUser is null || !brigadeUser.IsActive)
+        {
+            return (null, null, "Выберите участника рейтинга (подразделение с галочкой «Рейтинг бригад»).", "brigade_invalid");
+        }
+
+        // Менять на бригаду без флага нельзя; оставить текущую (даже без флага) — можно.
+        var keepingSameBrigade = existing is not null && existing.BrigadeUserId == request.BrigadeUserId;
+        if (!keepingSameBrigade && !brigadeUser.CanViewBrigadeRating)
+        {
+            return (null, null, "Выберите участника рейтинга (подразделение с галочкой «Рейтинг бригад»).", "brigade_invalid");
+        }
+
+        if (!await users.IsInRoleAsync(brigadeUser, AppRoles.Department))
+        {
+            return (null, null, "Участник рейтинга должен иметь роль «Подразделение».", "brigade_not_department");
+        }
+
+        var brigadeName = DisplayOf(brigadeUser);
+        var masterName = string.IsNullOrWhiteSpace(request.MasterName)
+            ? brigadeName
+            : request.MasterName.Trim();
+
+        string stoppedByName;
+        Guid? stoppedById = request.StoppedByUserId;
+        if (stoppedById is Guid sid && sid != Guid.Empty)
+        {
+            var stopper = await users.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == sid, cancellationToken);
+            if (stopper is null)
+            {
+                return (null, null, "Пользователь «кто остановил» не найден.", "stopped_by_invalid");
+            }
+
+            stoppedByName = string.IsNullOrWhiteSpace(request.StoppedByName)
+                ? DisplayOf(stopper)
+                : request.StoppedByName.Trim();
+        }
+        else
+        {
+            stoppedByName = (request.StoppedByName ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(stoppedByName))
+            {
+                return (null, null, "Укажите, кто остановил бригаду.", "stopped_by_required");
+            }
+
+            stoppedById = null;
+        }
+
+        var builtRemarks = await BuildRemarksAsync(request.Remarks, cancellationToken);
+        if (builtRemarks.Error is not null)
+        {
+            return (null, null, builtRemarks.Error, builtRemarks.ErrorCode);
+        }
+
+        var entity = existing ?? new BrigadeStoppage
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByUserId = CurrentUserId()
+        };
+
+        entity.BrigadeUserId = brigadeUser.Id;
+        entity.BrigadeName = brigadeName;
+        entity.MasterName = masterName;
+        entity.ReportDate = request.ReportDate;
+        entity.StoppedByUserId = stoppedById;
+        entity.StoppedByName = stoppedByName;
+        entity.StoppedAt = request.StoppedAt;
+        entity.RestartedAt = request.RestartedAt;
+        entity.Hours = BrigadeStoppageHours.Compute(request.StoppedAt, request.RestartedAt);
+        entity.WorkDescription = (request.WorkDescription ?? string.Empty).Trim();
+        entity.LastModifiedAt = DateTimeOffset.UtcNow;
+        entity.LastModifiedByUserId = CurrentUserId();
+
+        return (entity, builtRemarks.Items, null, null);
+    }
+
+    private async Task<(List<StoppageRemark>? Items, string? Error, string? ErrorCode)> BuildRemarksAsync(
+        List<SaveStoppageRemarkRequest>? requestRemarks,
+        CancellationToken cancellationToken)
+    {
+        var raw = requestRemarks ?? [];
+        if (raw.Count == 0)
+        {
+            return (null, "Добавьте хотя бы один пункт акта.", "remarks_required");
+        }
+
+        var actIds = raw
+            .Where(r => !r.IsManual && r.ActItemId is Guid)
+            .Select(r => r.ActItemId!.Value)
+            .Distinct()
+            .ToList();
+        var actMap = actIds.Count == 0
+            ? new Dictionary<Guid, StoppageActItem>()
+            : await db.StoppageActItems.AsNoTracking()
+                .Where(x => actIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var result = new List<StoppageRemark>();
+        var order = 0;
+        foreach (var r in raw)
+        {
+            var isManual = r.IsManual || r.ActItemId is null || r.ActItemId == Guid.Empty;
+            string text;
+            string comment;
+            Guid? actItemId;
+
+            if (isManual)
+            {
+                text = (r.Text ?? string.Empty).Trim();
+                comment = string.Empty;
+                actItemId = null;
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (!actMap.TryGetValue(r.ActItemId!.Value, out var act))
+                {
+                    return (null, "Выбранный пункт акта не найден в справочнике.", "act_item_invalid");
+                }
+
+                text = act.Text.Trim();
+                comment = (r.Comment ?? string.Empty).Trim();
+                actItemId = act.Id;
+            }
+
+            order++;
+            result.Add(new StoppageRemark
+            {
+                Id = Guid.NewGuid(),
+                ActItemId = actItemId,
+                Text = text,
+                Comment = comment,
+                IsManual = isManual,
+                IsResolved = r.IsResolved,
+                ResolvedAt = r.IsResolved ? DateTimeOffset.UtcNow : null,
+                SortOrder = order
+            });
+        }
+
+        if (result.Count == 0)
+        {
+            return (null, "Добавьте хотя бы один пункт акта.", "remarks_required");
+        }
+
+        return (result, null, null);
+    }
+
+    private static string FormatRemarkForExcel(int index, StoppageRemark r)
+    {
+        var text = r.Text.Trim();
+        if (!r.IsManual && !string.IsNullOrWhiteSpace(r.Comment))
+        {
+            return $"{index}. {text} ({r.Comment.Trim()})";
+        }
+
+        return $"{index}. {text}";
+    }
+
+    private static StoppageActItemResponse MapActItem(StoppageActItem x) => new()
+    {
+        Id = x.Id,
+        Text = x.Text,
+        IsActive = x.IsActive,
+        SortOrder = x.SortOrder
+    };
+
+    private static StoppageRemarkResponse MapRemark(StoppageRemark r) => new()
+    {
+        Id = r.Id,
+        ActItemId = r.ActItemId,
+        Text = r.Text,
+        Comment = r.Comment,
+        IsManual = r.IsManual,
+        IsResolved = r.IsResolved,
+        ResolvedAt = r.ResolvedAt,
+        SortOrder = r.SortOrder
+    };
+
+    private static BrigadeStoppageListItemResponse MapListItem(BrigadeStoppage x) => new()
+    {
+        Id = x.Id,
+        ReportDate = x.ReportDate,
+        BrigadeUserId = x.BrigadeUserId,
+        BrigadeName = x.BrigadeName,
+        MasterName = x.MasterName,
+        StoppedByName = x.StoppedByName,
+        StoppedByUserId = x.StoppedByUserId,
+        StoppedAt = x.StoppedAt,
+        RestartedAt = x.RestartedAt,
+        Hours = x.Hours,
+        WorkDescription = x.WorkDescription,
+        RemarkCount = x.Remarks.Count,
+        UnresolvedRemarkCount = x.Remarks.Count(r => !r.IsResolved)
+    };
+
+    private static BrigadeStoppageDetailResponse MapDetail(BrigadeStoppage x)
+    {
+        var item = MapListItem(x);
+        return new BrigadeStoppageDetailResponse
+        {
+            Id = item.Id,
+            ReportDate = item.ReportDate,
+            BrigadeUserId = item.BrigadeUserId,
+            BrigadeName = item.BrigadeName,
+            MasterName = item.MasterName,
+            StoppedByName = item.StoppedByName,
+            StoppedByUserId = item.StoppedByUserId,
+            StoppedAt = item.StoppedAt,
+            RestartedAt = item.RestartedAt,
+            Hours = item.Hours,
+            WorkDescription = item.WorkDescription,
+            RemarkCount = item.RemarkCount,
+            UnresolvedRemarkCount = item.UnresolvedRemarkCount,
+            Remarks = x.Remarks
+                .OrderBy(r => r.SortOrder)
+                .ThenBy(r => r.Text)
+                .Select(MapRemark)
+                .ToList()
+        };
+    }
+
+    private IQueryable<BrigadeStoppage> ScopeStoppages(IQueryable<BrigadeStoppage> q, bool seeAll)
+    {
+        if (seeAll)
+        {
+            return q;
+        }
+
+        var uid = CurrentUserId();
+        return q.Where(x => x.BrigadeUserId == uid);
+    }
+
+    private static (DateOnly Start, DateOnly End) ResolvePeriod(DateOnly? from, DateOnly? to)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var end = to ?? today;
+        var start = from ?? new DateOnly(end.Year, end.Month, 1);
+        if (start > end)
+        {
+            (start, end) = (end, start);
+        }
+
+        return (start, end);
+    }
+
+    private async Task<bool> CanViewAsync(CancellationToken cancellationToken)
+    {
+        if (IsStaff())
+        {
+            return true;
+        }
+
+        if (!User.IsInRole(AppRoles.Department))
+        {
+            return false;
+        }
+
+        var user = await users.GetUserAsync(User);
+        return user is { IsActive: true }
+            && (user.CanViewBrigadeRating || user.CanOperateBrigadeRating);
+    }
+
+    private async Task<bool> CanOperateAsync(CancellationToken cancellationToken)
+    {
+        if (IsStaff())
+        {
+            return true;
+        }
+
+        if (!User.IsInRole(AppRoles.Department))
+        {
+            return false;
+        }
+
+        var user = await users.GetUserAsync(User);
+        return user is { IsActive: true, CanOperateBrigadeRating: true };
+    }
+
+    /// <summary>UserManager шарит DbContext — иначе SaveChanges может UPDATE AspNetUsers по stale ConcurrencyStamp.</summary>
+    private void DetachTrackedUsers()
+    {
+        foreach (var entry in db.ChangeTracker.Entries<ApplicationUser>().ToList())
+        {
+            entry.State = EntityState.Detached;
+        }
+    }
+
+    private bool IsStaff() =>
+        User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+
+    private Guid? CurrentUserId()
+    {
+        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(raw, out var id) ? id : null;
+    }
+
+    private static string DisplayOf(ApplicationUser u) =>
+        string.IsNullOrWhiteSpace(u.DisplayName) ? (u.UserName ?? string.Empty) : u.DisplayName;
+}

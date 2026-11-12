@@ -733,7 +733,8 @@ h1:focus, h2:focus, h3:focus {
         display: flex;
         flex-direction: column;
         align-items: stretch;
-        flex: 1 1 auto;
+        /* Не flex-grow: иначе input type=search раздувается на всю высоту формы (доки). */
+        flex: 0 1 auto;
         width: 100%;
         max-width: none;
         min-width: 0;
@@ -778,8 +779,17 @@ h1:focus, h2:focus, h3:focus {
         width: 100% !important;
         max-width: none !important;
         min-width: 0 !important;
-        flex: 1 1 auto;
+        /* flex-grow тянет высоту в column — держим однострочный input */
+        flex: 0 1 auto;
+        height: auto;
+        align-self: stretch;
         box-sizing: border-box;
+    }
+
+    .list-filters input.form-control:not([type="file"]),
+    .list-filters input[type="search"].form-control {
+        min-height: 1.8rem;
+        max-height: 2.75rem;
     }
 
     .clients-filters,
@@ -4116,9 +4126,23 @@ button.app-user-role.app-user-role-link:focus-visible {
     }
 }
 
+/* Мобилка — тоже 2 в ряд, как «по статусам»; чуть плотнее паддинг. */
 @media (max-width: 560px) {
     .summary-cards-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .summary-cards-grid .summary-card {
+        padding: 0.65rem 0.7rem;
+    }
+
+    .summary-cards-grid .summary-card-value {
+        font-size: 1.15rem;
+    }
+
+    .summary-cards-grid .summary-card-meta {
+        font-size: 0.75rem;
     }
 }
 

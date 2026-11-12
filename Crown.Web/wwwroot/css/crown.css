@@ -676,3 +676,239 @@ a.history-user-link:hover {
     .crown-dl { grid-template-columns: 1fr; }
     .crown-dl dt { margin-top: 0.4rem; }
 }
+
+/* ---------- Рейтинг бригад ---------- */
+.crown-head-icon-btn {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* Документ с надписью xlsx боком — не «крестик» из file-x. */
+.crown-xlsx-icon {
+    position: relative;
+    width: 1.05rem;
+    height: 1.2rem;
+    display: inline-block;
+    border: 1.5px solid currentColor;
+    border-radius: 0.15rem;
+    box-sizing: border-box;
+}
+.crown-xlsx-icon::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    border-style: solid;
+    border-width: 0 0.28rem 0.28rem 0;
+    border-color: transparent currentColor transparent transparent;
+    opacity: 0.85;
+}
+.crown-xlsx-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.42rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    text-transform: lowercase;
+    transform: rotate(-90deg);
+    user-select: none;
+}
+
+.brigade-rating-split {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .brigade-rating-split { grid-template-columns: 1fr; }
+}
+
+.brigade-rank-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.65rem;
+}
+
+.brigade-rank-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    align-items: baseline;
+    margin-bottom: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.brigade-rank-meta {
+    margin-left: auto;
+    color: var(--r-text-muted);
+    font-size: 0.75rem;
+}
+
+.brigade-rank-bar-track {
+    height: 0.45rem;
+    background: var(--r-border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.brigade-rank-bar {
+    height: 100%;
+    background: var(--r-brand, #d6007f);
+    border-radius: inherit;
+}
+
+.brigade-top-remarks {
+    margin: 0;
+    padding-left: 1.2rem;
+    display: grid;
+    gap: 0.4rem;
+    font-size: 0.875rem;
+}
+
+.brigade-top-count {
+    display: inline-block;
+    min-width: 1.5rem;
+    font-weight: 700;
+    color: var(--r-brand, #d6007f);
+}
+
+.brigade-remarks-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2rem 1rem;
+}
+
+.brigade-remarks-overlay.d-none { display: none !important; }
+
+.brigade-remarks-panel {
+    width: min(640px, 100%);
+    max-height: calc(100vh - 4rem);
+    overflow: auto;
+    background: var(--r-surface, #fff);
+    border: 1px solid var(--r-border);
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: var(--r-shadow-sm);
+}
+
+.brigade-remarks-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.brigade-remarks-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.brigade-remark-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--r-border);
+    font-size: 0.875rem;
+}
+
+.brigade-remark-text { flex: 1 1 auto; }
+
+.brigade-remark-editor {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.brigade-remark-editor-row {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1.4fr) minmax(10rem, 1fr) auto auto;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+@media (max-width: 900px) {
+    .brigade-remark-editor-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.crown-row-link {
+    cursor: pointer;
+}
+
+.crown-row-link:hover {
+    background: rgba(15, 60, 110, 0.04);
+}
+
+.brigade-rank-name-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    font-weight: 700;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.brigade-rank-name-btn:hover {
+    text-decoration: underline;
+}
+
+.brigade-stoppages-panel {
+    width: min(960px, 96vw);
+    max-height: 85vh;
+    overflow: auto;
+}
+
+.act-item-text {
+    width: 100%;
+    min-width: 0;
+}
+
+.act-items-mobile {
+    padding: 0;
+}
+
+.act-item-card {
+    cursor: default;
+}
+
+.act-item-card:hover {
+    border-color: var(--r-border-subtle);
+}
+
+.act-item-card-form {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.55rem;
+}
+
+.act-item-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}

@@ -12,6 +12,11 @@
         || User.FindFirst(CrownAuthHandler.CanViewWarehouseClaim)?.Value == "1";
     var canViewSummary = isStaff
         || User.FindFirst(CrownAuthHandler.CanViewSummaryClaim)?.Value == "1";
+    var canOperateBrigadeRating = isStaff
+        || User.FindFirst(CrownAuthHandler.CanOperateBrigadeRatingClaim)?.Value == "1";
+    var canViewBrigadeRating = isStaff
+        || canOperateBrigadeRating
+        || User.FindFirst(CrownAuthHandler.CanViewBrigadeRatingClaim)?.Value == "1";
     var displayName = User.FindFirst(CrownAuthHandler.DisplayNameClaim)?.Value ?? string.Empty;
     var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
     var theme = Context.Request.Cookies[Crown.Web.Pages.SettingsModel.ThemeCookieName];
@@ -141,6 +146,15 @@
                         </a>
                     </div>
                 }
+                @if (canViewBrigadeRating)
+                {
+                    <div class="nav-item">
+                        <a class="nav-link @Active("/brigade-rating")" href="/brigade-rating">
+                            <span class="bi bi-trophy-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                            <span class="nav-menu-text">Рейтинг бригад</span>
+                        </a>
+                    </div>
+                }
             </nav>
         </div>
 
@@ -158,15 +172,21 @@
                     @if (isAdmin)
                     {
                         <div class="nav-item">
-                            <a class="nav-link @Active("/users")" href="/users">
-                                <span class="bi bi-users-nav-menu nav-menu-icon" aria-hidden="true"></span>
-                                <span class="nav-menu-text">Пользователи</span>
+                            <a class="nav-link @(path is "/settings" or "/settings/" ? "active" : "")" href="/settings">
+                                <span class="bi bi-gear-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                                <span class="nav-menu-text">Настройки</span>
                             </a>
                         </div>
                         <div class="nav-item">
-                            <a class="nav-link @Active("/settings")" href="/settings">
-                                <span class="bi bi-gear-nav-menu nav-menu-icon" aria-hidden="true"></span>
-                                <span class="nav-menu-text">Настройки</span>
+                            <a class="nav-link @Active("/settings/department-permissions")" href="/settings/department-permissions">
+                                <span class="bi bi-shield-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                                <span class="nav-menu-text">Права подразделений</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a class="nav-link @Active("/users")" href="/users">
+                                <span class="bi bi-users-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                                <span class="nav-menu-text">Пользователи</span>
                             </a>
                         </div>
                         <div class="nav-item">

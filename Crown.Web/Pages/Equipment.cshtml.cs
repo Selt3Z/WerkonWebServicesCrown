@@ -70,6 +70,28 @@ public sealed class EquipmentModel(CrownApiClient api) : PageModel
         return Partial("_EquipmentRows", items);
     }
 
+    public async Task<IActionResult> OnGetMoreCardsAsync(int skip)
+    {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_EquipmentCards", items);
+    }
+
     private async Task<(List<EquipmentAsset> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)
     {
         var url = UiHelpers.BuildUrl(

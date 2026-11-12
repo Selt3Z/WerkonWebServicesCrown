@@ -5,10 +5,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Версия приложения Crown (не Ratchet). UI читает InformationalVersion. -->
-    <Version>1.0.0.3</Version>
-    <AssemblyVersion>1.0.0.3</AssemblyVersion>
-    <FileVersion>1.0.0.3</FileVersion>
-    <InformationalVersion>1.0.0.3</InformationalVersion>
+    <Version>1.0.0.4</Version>
+    <AssemblyVersion>1.0.0.4</AssemblyVersion>
+    <FileVersion>1.0.0.4</FileVersion>
+    <InformationalVersion>1.0.0.4</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

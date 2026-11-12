@@ -38,7 +38,7 @@
     <a class="btn btn-secondary" href="/special-vehicles">Сбросить</a>
 </form>
 
-<div class="crown-table-wrap">
+<div class="crown-table-wrap schedule-desktop-table">
     <table class="table crown-table crown-spectech-table">
         <thead>
             <tr>
@@ -55,3 +55,19 @@
         </tbody>
     </table>
 </div>
+
+<div class="schedule-mobile-cards"
+     data-infinite-scroll
+     data-more-url="@UiHelpers.BuildUrl("/special-vehicles", ("handler", "MoreCards"), ("q", Model.Q), ("freeOnly", Model.FreeOnly ? "true" : null), ("includeInactive", Model.IncludeInactive ? "true" : null))"
+     data-skip="@Model.Items.Count"
+     data-has-more="@(Model.HasMore ? "true" : "false")">
+    @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+    {
+        <p class="text-muted text-center mb-0">Ничего не найдено.</p>
+    }
+    else
+    {
+        <partial name="_SpecialVehicleCards" model="Model.Items" />
+    }
+</div>
+<div class="infinite-scroll-sentinel" hidden></div>

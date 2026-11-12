@@ -87,6 +87,23 @@ public sealed class CatalogPartsModel(CrownApiClient api) : PageModel
         return Partial("_CatalogPartRows", items);
     }
 
+    public async Task<IActionResult> OnGetMoreCardsAsync(int skip)
+    {
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var (items, hasMore, _, challenge) = await LoadAsync(skip);
+        if (challenge)
+        {
+            return Challenge();
+        }
+
+        Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
+        return Partial("_CatalogPartCards", items);
+    }
+
     private string? EffectiveOwnerQuery() =>
         IsStaff ? OwnerUserId?.ToString() : null;
 
