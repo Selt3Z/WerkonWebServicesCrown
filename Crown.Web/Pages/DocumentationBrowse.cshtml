@@ -2,7 +2,7 @@
 @model DocumentationBrowseModel
 @inject AppTime Time
 @{
-    ViewData["Title"] = Model.Browse?.OwnerDisplayName ?? "Документация";
+    ViewData["Title"] = "Документация";
     var b = Model.Browse;
     var isSearch = !string.IsNullOrWhiteSpace(b?.SearchQuery);
     var backHere = $"/documentation/{Model.OwnerUserId}"
@@ -12,10 +12,12 @@
             : "");
     var resetHref = $"/documentation/{Model.OwnerUserId}"
         + (Model.FolderId is Guid rf ? $"?folderId={rf}" : "");
+    var deptName = b?.OwnerDisplayName ?? "Подразделение";
+    var inDeptSubtree = b is not null && (b.FolderId is not null || isSearch);
 }
 
 <div class="crown-page-head">
-    <h1 class="section-title">@(b?.OwnerDisplayName ?? "Документация")</h1>
+    <h1 class="section-title">Документация</h1>
     <div class="d-flex gap-2 flex-wrap">
         @if (b?.CanViewTrash == true)
         {
@@ -33,8 +35,17 @@
 @if (b is not null)
 {
     <nav class="mb-3" aria-label="Путь">
-        <a href="/documentation/@b.OwnerUserId">Корень</a>
-        @if (b.FolderId is Guid currentFolder && !isSearch)
+        <a href="/documentation">Список подразделений</a>
+        <span class="text-muted"> / </span>
+        @if (inDeptSubtree)
+        {
+            <a href="/documentation/@b.OwnerUserId">@deptName</a>
+        }
+        else
+        {
+            <span>@deptName</span>
+        }
+        @if (b.FolderId is Guid && !isSearch)
         {
             <span class="text-muted"> / </span>
             @if (b.ParentFolderId is Guid parentId)
@@ -113,12 +124,13 @@
             }
             @foreach (var folder in b.Folders)
             {
-                <tr>
+                <tr class="table-row-action" data-href="/documentation/@b.OwnerUserId?folderId=@folder.Id" tabindex="0" role="link"
+                    aria-label="Папка: @folder.Name">
                     <td>
-                        <a class="doc-entry-link" href="/documentation/@b.OwnerUserId?folderId=@folder.Id">
+                        <span class="doc-entry-link">
                             <span class="doc-icon doc-icon-folder" aria-hidden="true"></span>
                             <span>@folder.Name</span>
-                        </a>
+                        </span>
                     </td>
                     @if (isSearch)
                     {
@@ -128,7 +140,7 @@
                     <td class="col-date">@Time.Format(folder.CreatedAt)</td>
                     @if (b.CanWrite && !isSearch)
                     {
-                        <td class="col-actions">
+                        <td class="col-actions table-row-actions">
                             <form method="post" asp-page-handler="DeleteFolder" class="d-inline">
                                 <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
                                 <input type="hidden" name="FolderId" value="@Model.FolderId" />
@@ -144,12 +156,14 @@
             }
             @foreach (var file in b.Files)
             {
-                <tr>
+                var previewHref = $"/documentation/preview?fileId={file.Id}&back={Uri.EscapeDataString(backHere)}";
+                <tr class="table-row-action" data-href="@previewHref" tabindex="0" role="link"
+                    aria-label="Файл: @file.FileName">
                     <td>
-                        <a class="doc-entry-link" href="/documentation/preview?fileId=@file.Id&amp;back=@Uri.EscapeDataString(backHere)">
+                        <span class="doc-entry-link">
                             <span class="doc-icon doc-icon-file" aria-hidden="true"></span>
                             <span>@file.FileName</span>
-                        </a>
+                        </span>
                         <a class="ms-2 text-muted"
                            href="/documentation/@b.OwnerUserId?handler=Download&amp;fileId=@file.Id"
                            download title="Скачать">↓</a>
@@ -171,7 +185,7 @@
                     <td class="col-date">@Time.Format(file.UploadedAt)</td>
                     @if (b.CanWrite && !isSearch)
                     {
-                        <td class="col-actions">
+                        <td class="col-actions table-row-actions">
                             <form method="post" asp-page-handler="DeleteFile" class="d-inline">
                                 <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
                                 <input type="hidden" name="FolderId" value="@Model.FolderId" />

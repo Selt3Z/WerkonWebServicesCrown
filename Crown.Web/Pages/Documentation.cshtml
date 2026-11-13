@@ -1,7 +1,9 @@
 @page "/documentation"
 @model DocumentationModel
+@inject AppTime Time
 @{
     ViewData["Title"] = "Документация";
+    var isSearch = Model.Search is not null;
 }
 
 <div class="crown-page-head">
@@ -13,11 +15,72 @@
     <div class="alert alert-danger">@Model.Error</div>
 }
 
-@if (Model.Sections.Count == 0 && string.IsNullOrEmpty(Model.Error))
+<form method="get" class="list-filters clients-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-search">
+        <label class="form-label" for="doc-global-q">Поиск по всем подразделениям</label>
+        <input id="doc-global-q" class="form-control" type="search" name="q" value="@Model.Q"
+               placeholder="имя файла или папки…" />
+    </div>
+    <button type="submit" class="btn btn-primary">Найти</button>
+    @if (!string.IsNullOrWhiteSpace(Model.Q))
+    {
+        <a class="btn btn-secondary" href="/documentation">Сбросить</a>
+    }
+</form>
+
+@if (isSearch)
+{
+    <p class="text-muted mb-2">Поиск: «@Model.Search!.Query» · найдено @Model.Search.Hits.Count</p>
+    <div class="crown-table-wrap">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>Имя</th>
+                <th>Подразделение</th>
+                <th>Путь</th>
+                <th class="col-date">Размер</th>
+                <th class="col-date">Дата</th>
+            </tr>
+            </thead>
+            <tbody>
+            @if (Model.Search.Hits.Count == 0)
+            {
+                <tr class="crown-empty-row"><td colspan="5" class="text-muted text-center">Ничего не найдено.</td></tr>
+            }
+            @foreach (var hit in Model.Search.Hits)
+            {
+                var href = hit.IsFolder
+                    ? $"/documentation/{hit.OwnerUserId}?folderId={hit.Id}"
+                    : $"/documentation/preview?fileId={hit.Id}&back={Uri.EscapeDataString("/documentation?q=" + Uri.EscapeDataString(Model.Q ?? ""))}";
+                <tr class="table-row-action" data-href="@href" tabindex="0" role="link"
+                    aria-label="@(hit.IsFolder ? "Папка" : "Файл"): @hit.Name">
+                    <td>
+                        <span class="doc-entry-link">
+                            <span class="doc-icon @(hit.IsFolder ? "doc-icon-folder" : "doc-icon-file")" aria-hidden="true"></span>
+                            <span>@hit.Name</span>
+                        </span>
+                        @if (!hit.IsFolder)
+                        {
+                            <a class="ms-2 text-muted"
+                               href="/documentation/@hit.OwnerUserId?handler=Download&amp;fileId=@hit.Id"
+                               download title="Скачать">↓</a>
+                        }
+                    </td>
+                    <td>@hit.OwnerDisplayName</td>
+                    <td class="text-muted">@(hit.PathLabel ?? "Корень")</td>
+                    <td class="col-date nowrap">@(hit.IsFolder || hit.SizeBytes is null ? "—" : UiHelpers.FormatBytes(hit.SizeBytes.Value))</td>
+                    <td class="col-date">@(hit.At is DateTimeOffset at ? Time.Format(at) : "—")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+else if (Model.Sections.Count == 0 && string.IsNullOrEmpty(Model.Error))
 {
     <p class="text-muted">Нет доступных подразделений в документации.</p>
 }
-else
+else if (!isSearch)
 {
     <div class="crown-table-wrap">
         <table class="table crown-table">

@@ -412,8 +412,16 @@ a.history-user-link:hover {
     word-break: break-word;
     font-size: 0.88rem;
 }
+/* Excel-превью: полноценная сетка (Bootstrap .table даёт только горизонтали). */
+.file-preview-table {
+    border-collapse: collapse;
+    border: 1px solid var(--r-border, #dee2e6);
+}
+
+.file-preview-table th,
 .file-preview-table td {
     font-size: 0.82rem;
+    border: 1px solid var(--r-border, #dee2e6);
 }
 
 .crown-complaint-panel {
@@ -886,11 +894,78 @@ a.history-user-link:hover {
     font-size: 0.875rem;
 }
 
+.brigade-top-remarks > li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.brigade-top-remarks > li > span:not(.brigade-top-count) {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .brigade-top-count {
-    display: inline-block;
+    flex: 0 0 auto;
+    text-align: right;
     min-width: 1.5rem;
     font-weight: 700;
     color: var(--r-brand, #d6007f);
+}
+
+/* Мобильный скролл только у «Остановки за период». */
+@media (max-width: 900px) {
+    .brigade-stoppages-period-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .brigade-stoppages-period-wrap .crown-table {
+        min-width: 44rem;
+    }
+}
+
+/* Кликовые бейджи: имя бригады / число пунктов — как статусы заявок. */
+.brigade-click-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    border: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    text-decoration: none;
+    background: rgba(70, 130, 220, 0.16);
+    color: #4a86d4;
+}
+
+/* Имя в рейтинге: заметно крупнее пунктов, но ниже h2 блока (0.95rem). */
+.brigade-rank-list .brigade-rank-name-btn.brigade-click-badge {
+    font-size: 0.9rem;
+    padding: 0.28rem 0.7rem;
+    letter-spacing: 0.01em;
+}
+
+.brigade-click-badge:hover {
+    background: rgba(70, 130, 220, 0.28);
+    text-decoration: none;
+    color: #3a74c0;
+}
+
+.brigade-click-badge-open {
+    background: rgba(220, 150, 40, 0.16);
+    color: #c4841f;
+}
+
+.brigade-click-badge-open:hover {
+    background: rgba(220, 150, 40, 0.28);
+    color: #a86f18;
 }
 
 .brigade-remarks-overlay {
@@ -902,6 +977,11 @@ a.history-user-link:hover {
     align-items: flex-start;
     justify-content: center;
     padding: 2rem 1rem;
+}
+
+/* Пункты акта поверх модалки «Остановки бригады». */
+#brigadeRemarksOverlay {
+    z-index: 1060;
 }
 
 .brigade-remarks-overlay.d-none { display: none !important; }
@@ -966,23 +1046,6 @@ a.history-user-link:hover {
 
 .crown-row-link:hover {
     background: rgba(15, 60, 110, 0.04);
-}
-
-.brigade-rank-name-btn {
-    appearance: none;
-    border: 0;
-    background: transparent;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    font-weight: 700;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
-}
-
-.brigade-rank-name-btn:hover {
-    text-decoration: underline;
 }
 
 .brigade-stoppages-panel {

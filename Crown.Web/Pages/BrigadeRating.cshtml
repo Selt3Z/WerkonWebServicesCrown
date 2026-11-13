@@ -286,7 +286,7 @@
                         <li class="brigade-rank-item">
                             <div class="brigade-rank-head">
                                 <button type="button"
-                                        class="brigade-rank-name-btn"
+                                        class="brigade-rank-name-btn brigade-click-badge"
                                         data-brigade-id="@row.BrigadeUserId"
                                         data-brigade-name="@row.BrigadeName">
                                     @row.BrigadeName
@@ -316,8 +316,8 @@
                         @foreach (var r in d.TopRemarks)
                         {
                             <li>
-                                <span class="brigade-top-count">@r.Count</span>
                                 <span>@r.Text</span>
+                                <span class="brigade-top-count">@r.Count</span>
                             </li>
                         }
                     </ol>
@@ -336,8 +336,8 @@
                         @foreach (var w in d.TopWorks)
                         {
                             <li>
-                                <span class="brigade-top-count">@w.Count</span>
                                 <span>@w.Text</span>
+                                <span class="brigade-top-count">@w.Count</span>
                             </li>
                         }
                     </ol>
@@ -484,7 +484,7 @@
 
         <section class="entity-panel">
             <h2 class="section-title">Остановки за период</h2>
-            <div class="crown-table-wrap">
+            <div class="crown-table-wrap brigade-stoppages-period-wrap">
                 <table class="table crown-table">
                     <thead>
                     <tr>
@@ -513,12 +513,12 @@
                             <td>@s.Hours.ToString("0.##")</td>
                             <td>
                                 <button type="button"
-                                        class="btn btn-link btn-sm p-0 brigade-remarks-open"
+                                        class="brigade-remarks-open brigade-click-badge @(s.UnresolvedRemarkCount > 0 ? "brigade-click-badge-open" : null)"
                                         data-stoppage-id="@s.Id">
                                     @s.RemarkCount
                                     @if (s.UnresolvedRemarkCount > 0)
                                     {
-                                        <span class="text-danger">(@s.UnresolvedRemarkCount)</span>
+                                        <span>(@s.UnresolvedRemarkCount)</span>
                                     }
                                 </button>
                             </td>
@@ -638,8 +638,9 @@
                     const work = (s.workDescription || '').length > 60
                         ? s.workDescription.slice(0, 60) + '…'
                         : (s.workDescription || '');
+                    const openCls = s.unresolvedRemarkCount > 0 ? ' brigade-click-badge-open' : '';
                     const unresolved = s.unresolvedRemarkCount > 0
-                        ? ` <span class="text-danger">(${s.unresolvedRemarkCount})</span>`
+                        ? ` <span>(${s.unresolvedRemarkCount})</span>`
                         : '';
                     tr.innerHTML = `
                         <td>${s.reportDate}</td>
@@ -648,7 +649,7 @@
                         <td>${s.stoppedAt}</td>
                         <td>${s.restartedAt || '—'}</td>
                         <td>${Number(s.hours).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}</td>
-                        <td><button type="button" class="btn btn-link btn-sm p-0 brigade-remarks-open" data-stoppage-id="${s.id}">${s.remarkCount}${unresolved}</button></td>
+                        <td><button type="button" class="brigade-remarks-open brigade-click-badge${openCls}" data-stoppage-id="${s.id}">${s.remarkCount}${unresolved}</button></td>
                         <td title="${escapeHtml(s.workDescription || '')}">${escapeHtml(work)}</td>`;
                     stopBody.appendChild(tr);
                     tr.querySelector('.brigade-remarks-open')?.addEventListener('click', (e) => {

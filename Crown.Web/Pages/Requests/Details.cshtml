@@ -407,10 +407,14 @@
                 <tbody>
                 @foreach (var a in item.Attachments)
                 {
-                    <tr>
+                    <tr class="table-row-action"
+                        data-href="/file-preview?requestId=@item.Id&amp;attachmentId=@a.Id&amp;back=@Uri.EscapeDataString($"/requests/{item.Id}")"
+                        tabindex="0" role="link" aria-label="Вложение: @a.FileName">
                         <td>
-                            <a href="/file-preview?requestId=@item.Id&amp;attachmentId=@a.Id&amp;back=@Uri.EscapeDataString($"/requests/{item.Id}")">@a.FileName</a>
-                            <a class="ms-2 text-muted" href="/requests/@item.Id?handler=Download&amp;attachmentId=@a.Id" download title="Скачать">↓</a>
+                            <span class="doc-entry-link">@a.FileName</span>
+                            <a class="ms-2 text-muted"
+                               href="/requests/@item.Id?handler=Download&amp;attachmentId=@a.Id"
+                               download title="Скачать">↓</a>
                         </td>
                         <td class="nowrap">@UiHelpers.FormatBytes(a.SizeBytes)</td>
                         <td class="nowrap">@Time.Format(a.UploadedAt)</td>

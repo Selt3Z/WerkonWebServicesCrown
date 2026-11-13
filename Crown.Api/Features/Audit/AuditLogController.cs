@@ -72,7 +72,14 @@ public sealed class AuditLogController : ControllerBase
                 Action = x.Action,
                 EntityType = x.EntityType,
                 Summary = x.Summary,
-                EntityUrl = x.EntityUrl
+                // Старые записи: User без id; Documentation файл → /documentation вместо preview
+                EntityUrl = x.EntityType == "User"
+                    ? $"/users/edit/{x.EntityId}"
+                    : x.EntityType == "Documentation"
+                      && x.Summary.StartsWith("Файл:")
+                      && (x.EntityUrl == null || x.EntityUrl == "/documentation")
+                        ? $"/documentation/preview?fileId={x.EntityId}"
+                        : x.EntityUrl
             })
             .ToPagedResponseAsync(normalizedSkip, normalizedTake, cancellationToken);
 

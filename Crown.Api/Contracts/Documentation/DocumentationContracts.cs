@@ -10,6 +10,26 @@ public sealed class DocumentationSectionResponse
     public long TotalSizeBytes { get; set; }
 }
 
+/// <summary>Глобальный поиск по файлам/папкам всех доступных разделов.</summary>
+public sealed class DocumentationGlobalSearchResponse
+{
+    public string Query { get; set; } = string.Empty;
+    public List<DocumentationGlobalSearchHitResponse> Hits { get; set; } = [];
+}
+
+public sealed class DocumentationGlobalSearchHitResponse
+{
+    public Guid OwnerUserId { get; set; }
+    public string OwnerDisplayName { get; set; } = string.Empty;
+    public bool IsFolder { get; set; }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? PathLabel { get; set; }
+    public Guid? FolderId { get; set; }
+    public long? SizeBytes { get; set; }
+    public DateTimeOffset? At { get; set; }
+}
+
 public sealed class DocumentationFolderItemResponse
 {
     public Guid Id { get; set; }

@@ -51,13 +51,7 @@ public sealed class DocumentationController : ControllerBase
         var me = GetUserId();
         var isAdmin = User.IsInRole(AppRoles.Administrator);
         var isDispatcher = User.IsInRole(AppRoles.Dispatcher);
-        // Только роль Department; админы/диспетчеры в список разделов не попадают.
-        var departmentUsers = await _users.GetUsersInRoleAsync(AppRoles.Department);
-        var owners = departmentUsers
-            .Where(x => x.IsActive && x.DocumentationEnabled)
-            .OrderBy(x => x.DisplayName)
-            .ThenBy(x => x.UserName)
-            .ToList();
+        var owners = await ListAccessibleOwnersAsync(cancellationToken);
 
         var ownerIds = owners.Select(x => x.Id).ToList();
         var stats = await _db.DocumentationFiles.AsNoTracking()
@@ -79,6 +73,113 @@ public sealed class DocumentationController : ControllerBase
                 TotalSizeBytes = st?.TotalSizeBytes ?? 0
             };
         }).ToList());
+    }
+
+    private async Task<List<ApplicationUser>> ListAccessibleOwnersAsync(CancellationToken cancellationToken)
+    {
+        // Только роль Department; админы/диспетчеры в список разделов не попадают.
+        var departmentUsers = await _users.GetUsersInRoleAsync(AppRoles.Department);
+        _ = cancellationToken;
+        return departmentUsers
+            .Where(x => x.IsActive && x.DocumentationEnabled)
+            .OrderBy(x => x.DisplayName)
+            .ThenBy(x => x.UserName)
+            .ToList();
+    }
+
+    /// <summary>Поиск файлов/папок по всем разделам документации, доступным текущему пользователю.</summary>
+    [HttpGet("search")]
+    public async Task<ActionResult<DocumentationGlobalSearchResponse>> GlobalSearch(
+        [FromQuery] string? q,
+        CancellationToken cancellationToken)
+    {
+        var query = (q ?? string.Empty).Trim();
+        if (query.Length < 2)
+        {
+            return Ok(new DocumentationGlobalSearchResponse { Query = query, Hits = [] });
+        }
+
+        var sections = await ListAccessibleOwnersAsync(cancellationToken);
+        if (sections.Count == 0)
+        {
+            return Ok(new DocumentationGlobalSearchResponse { Query = query, Hits = [] });
+        }
+
+        var ownerIds = sections.Select(x => x.Id).ToList();
+        var ownerNames = sections.ToDictionary(x => x.Id, x => CleanSectionTitle(x.DisplayName));
+        var term = query.ToLowerInvariant();
+        var like = $"%{EscapeLike(query)}%";
+
+        var allFolders = await _db.DocumentationFolders.AsNoTracking()
+            .Where(x => ownerIds.Contains(x.OwnerUserId) && x.DeletedAt == null)
+            .Select(x => new { x.Id, x.Name, x.ParentFolderId, x.OwnerUserId, x.CreatedAt })
+            .ToListAsync(cancellationToken);
+        var byId = allFolders.ToDictionary(x => x.Id);
+
+        string PathOf(Guid? id, Guid ownerId)
+        {
+            if (id is null)
+            {
+                return "Корень";
+            }
+
+            var parts = new List<string>();
+            var guard = 0;
+            var cur = id;
+            while (cur is Guid cid && byId.TryGetValue(cid, out var node) && node.OwnerUserId == ownerId && guard++ < 64)
+            {
+                parts.Add(node.Name);
+                cur = node.ParentFolderId;
+            }
+
+            parts.Reverse();
+            return parts.Count == 0 ? "Корень" : string.Join(" / ", parts);
+        }
+
+        var folderHits = allFolders
+            .Where(x => x.Name.ToLowerInvariant().Contains(term))
+            .OrderBy(x => x.Name)
+            .Take(100)
+            .Select(x => new DocumentationGlobalSearchHitResponse
+            {
+                OwnerUserId = x.OwnerUserId,
+                OwnerDisplayName = ownerNames.GetValueOrDefault(x.OwnerUserId, "—"),
+                IsFolder = true,
+                Id = x.Id,
+                Name = x.Name,
+                PathLabel = PathOf(x.ParentFolderId, x.OwnerUserId),
+                At = x.CreatedAt
+            });
+
+        var fileRows = await _db.DocumentationFiles.AsNoTracking()
+            .Where(x => ownerIds.Contains(x.OwnerUserId)
+                        && x.DeletedAt == null
+                        && EF.Functions.ILike(x.FileName, like))
+            .OrderBy(x => x.FileName)
+            .Take(100)
+            .Select(x => new { x.Id, x.FileName, x.OwnerUserId, x.FolderId, x.SizeBytes, x.UploadedAt })
+            .ToListAsync(cancellationToken);
+
+        var fileHits = fileRows.Select(x => new DocumentationGlobalSearchHitResponse
+        {
+            OwnerUserId = x.OwnerUserId,
+            OwnerDisplayName = ownerNames.GetValueOrDefault(x.OwnerUserId, "—"),
+            IsFolder = false,
+            Id = x.Id,
+            Name = x.FileName,
+            FolderId = x.FolderId,
+            PathLabel = PathOf(x.FolderId, x.OwnerUserId),
+            SizeBytes = x.SizeBytes,
+            At = x.UploadedAt
+        });
+
+        var hits = folderHits.Concat(fileHits)
+            .OrderBy(x => x.OwnerDisplayName)
+            .ThenBy(x => x.Name)
+            .Take(150)
+            .ToList();
+
+        return Ok(new DocumentationGlobalSearchResponse { Query = query, Hits = hits });
     }
 
     [HttpGet("sections/{ownerUserId:guid}")]

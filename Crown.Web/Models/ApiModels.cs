@@ -435,6 +435,25 @@ public sealed class DocumentationSection
     public long TotalSizeBytes { get; set; }
 }
 
+public sealed class DocumentationGlobalSearch
+{
+    public string Query { get; set; } = string.Empty;
+    public List<DocumentationGlobalSearchHit> Hits { get; set; } = [];
+}
+
+public sealed class DocumentationGlobalSearchHit
+{
+    public Guid OwnerUserId { get; set; }
+    public string OwnerDisplayName { get; set; } = string.Empty;
+    public bool IsFolder { get; set; }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? PathLabel { get; set; }
+    public Guid? FolderId { get; set; }
+    public long? SizeBytes { get; set; }
+    public DateTimeOffset? At { get; set; }
+}
+
 public sealed class DocumentationFolderItem
 {
     public Guid Id { get; set; }

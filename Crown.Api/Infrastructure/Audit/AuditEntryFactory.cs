@@ -258,9 +258,12 @@ public sealed class AuditEntryFactory
                 entityType = AuditEntityTypes.Documentation;
                 entityId = GetEntityId(entry, folder.Id);
                 summary = $"Папка: {GetStringValue(entry, nameof(DocumentationFolder.Name), folder.Name)}";
+                var folderOwnerId = entry.State == EntityState.Deleted
+                    ? entry.OriginalValues.GetValue<Guid>(nameof(DocumentationFolder.OwnerUserId))
+                    : folder.OwnerUserId;
                 entityUrl = action is AuditActions.Deleted or AuditActions.Archived
                     ? null
-                    : "/documentation";
+                    : $"/documentation/{folderOwnerId}?folderId={entityId}";
                 return true;
 
             case DocumentationFile file:
@@ -269,7 +272,7 @@ public sealed class AuditEntryFactory
                 summary = $"Файл: {GetStringValue(entry, nameof(DocumentationFile.FileName), file.FileName)}";
                 entityUrl = action is AuditActions.Deleted or AuditActions.Archived
                     ? null
-                    : "/documentation";
+                    : $"/documentation/preview?fileId={entityId}";
                 return true;
 
             case BrigadeStoppage stoppage:
@@ -339,7 +342,7 @@ public sealed class AuditEntryFactory
                        ?? string.Empty)
                     : (string.IsNullOrWhiteSpace(appUser.DisplayName) ? appUser.UserName ?? string.Empty : appUser.DisplayName);
                 summary = display;
-                entityUrl = action == AuditActions.Deleted ? null : "/users";
+                entityUrl = action == AuditActions.Deleted ? null : $"/users/edit/{entityId}";
                 return true;
 
             default:

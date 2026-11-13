@@ -323,7 +323,8 @@ public sealed class BrigadeRatingController(
         }
 
         var (start, end) = ResolvePeriod(from, to);
-        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        // Полный рейтинг / список: любой с доступом к разделу видит все бригады.
+        var seeAll = true;
         var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
                 .Include(x => x.Remarks)
                 .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
@@ -344,7 +345,8 @@ public sealed class BrigadeRatingController(
             return Forbid();
         }
 
-        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        // Полный рейтинг / список: любой с доступом к разделу видит все бригады.
+        var seeAll = true;
         var entity = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
                 .Include(x => x.Remarks), seeAll)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -505,7 +507,8 @@ public sealed class BrigadeRatingController(
 
         var (periodKey, start, end) = ResolveDashboardPeriod(period, from, to, year, month);
         var (prevStart, prevEnd) = PreviousPeriodBounds(periodKey, start, end);
-        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        // Полный рейтинг / список: любой с доступом к разделу видит все бригады.
+        var seeAll = true;
 
         var earliestDate = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking(), seeAll)
             .Select(x => (DateOnly?)x.ReportDate)
@@ -648,7 +651,8 @@ public sealed class BrigadeRatingController(
         }
 
         var (start, end) = ResolvePeriod(from, to);
-        var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+        // Полный рейтинг / список: любой с доступом к разделу видит все бригады.
+        var seeAll = true;
         var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
                 .Include(x => x.Remarks)
                 .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
