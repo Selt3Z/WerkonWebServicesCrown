@@ -725,6 +725,24 @@ a.history-user-link:hover {
     user-select: none;
 }
 
+/* Фильтры периода — к правому краю, как на Сводке. */
+.brigade-rating-period-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.45rem;
+}
+
+.brigade-rating-period-bar .summary-period-switch {
+    justify-content: flex-end;
+}
+
+.brigade-rating-period-bar .list-filters {
+    margin-left: auto;
+    width: auto;
+    max-width: 100%;
+}
+
 .brigade-rating-split {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -733,6 +751,87 @@ a.history-user-link:hover {
 
 @media (max-width: 900px) {
     .brigade-rating-split { grid-template-columns: 1fr; }
+}
+
+.brigade-metric-bars {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.55rem;
+}
+
+.brigade-metric-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.35rem 0.75rem;
+    font-size: 0.8125rem;
+    margin-bottom: 0.2rem;
+}
+
+.brigade-metric-head strong {
+    color: var(--r-text-secondary);
+    font-weight: 600;
+}
+
+.brigade-metric-bar {
+    height: 100%;
+    border-radius: inherit;
+}
+
+.brigade-metric-bar-hours { background: #2765a8; }
+.brigade-metric-bar-stops { background: #57b57f; }
+.brigade-metric-bar-open { background: #c45c26; }
+.brigade-metric-bar-stopper { background: #6b5b95; }
+
+.brigade-dual-bars {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.brigade-swatch-stops { background: #57b57f; }
+.brigade-swatch-open { background: #c45c26; }
+.brigade-swatch-hours { background: #2765a8; }
+
+.brigade-trend-stops { background: #57b57f; }
+.brigade-trend-hours { background: #2765a8; }
+
+.brigade-resolution-layout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 1.25rem;
+}
+
+.brigade-resolution-pie {
+    width: 7.5rem;
+    height: 7.5rem;
+    border-radius: 50%;
+    border: 1px solid var(--r-border);
+    flex: 0 0 auto;
+    box-shadow: var(--r-inset-shadow);
+}
+
+.brigade-resolution-stats {
+    flex: 1 1 12rem;
+    min-width: 0;
+}
+
+.brigade-mix-resolved {
+    display: block;
+    flex: 0 0 auto;
+    height: 100%;
+    min-width: 0;
+    background: linear-gradient(90deg, #2765a8, #2f8f5b);
+}
+
+.brigade-mix-open {
+    display: block;
+    flex: 0 0 auto;
+    height: 100%;
+    min-width: 0;
+    background: linear-gradient(90deg, #c45c26, #e08a4f);
 }
 
 .brigade-rank-list {

@@ -4,6 +4,7 @@ using Crown.Contracts.BrigadeRating;
 using Crown.Domain.Entities;
 using Crown.Infrastructure.Identity;
 using Crown.Infrastructure.Persistence;
+using Crown.Infrastructure.Time;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -16,7 +17,8 @@ namespace Crown.Features.BrigadeRating;
 [Authorize]
 public sealed class BrigadeRatingController(
     AppDbContext db,
-    UserManager<ApplicationUser> users) : ControllerBase
+    UserManager<ApplicationUser> users,
+    AppTimeZone time) : ControllerBase
 {
     // ---------- Участники (Department + CanViewBrigadeRating) ----------
 
@@ -362,8 +364,11 @@ public sealed class BrigadeRatingController(
 
     [HttpGet("dashboard")]
     public async Task<ActionResult<BrigadeRatingDashboardResponse>> Dashboard(
+        [FromQuery] string? period = null,
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to = null,
+        [FromQuery] int? year = null,
+        [FromQuery] int? month = null,
         CancellationToken cancellationToken = default)
     {
         if (!await CanViewAsync(cancellationToken))
@@ -371,24 +376,44 @@ public sealed class BrigadeRatingController(
             return Forbid();
         }
 
-        var (start, end) = ResolvePeriod(from, to);
+        var (periodKey, start, end) = ResolveDashboardPeriod(period, from, to, year, month);
+        var (prevStart, prevEnd) = PreviousPeriodBounds(periodKey, start, end);
         var seeAll = IsStaff() || await CanOperateAsync(cancellationToken);
+
+        var earliestDate = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking(), seeAll)
+            .Select(x => (DateOnly?)x.ReportDate)
+            .MinAsync(cancellationToken);
+        var earliestYear = earliestDate?.Year ?? time.GetToday().Year;
+
         var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
                 .Include(x => x.Remarks)
                 .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
             .ToListAsync(cancellationToken);
 
+        var prevRows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
+                .Include(x => x.Remarks)
+                .Where(x => x.ReportDate >= prevStart && x.ReportDate <= prevEnd), seeAll)
+            .ToListAsync(cancellationToken);
+
         var remarkFlat = rows.SelectMany(x => x.Remarks).ToList();
+        var prevRemarks = prevRows.SelectMany(x => x.Remarks).ToList();
+        var resolved = remarkFlat.Count(x => x.IsResolved);
+        var unresolved = remarkFlat.Count(x => !x.IsResolved);
+        var prevResolved = prevRemarks.Count(x => x.IsResolved);
+        var prevUnresolved = prevRemarks.Count(x => !x.IsResolved);
+        var totalHours = rows.Sum(x => x.Hours);
+        var prevHours = prevRows.Sum(x => x.Hours);
+
         var ranking = rows
             .GroupBy(x => x.BrigadeUserId)
             .Select(g =>
             {
                 var first = g.First();
                 var remarks = g.SelectMany(x => x.Remarks).ToList();
-                var unresolved = remarks.Count(r => !r.IsResolved);
+                var open = remarks.Count(r => !r.IsResolved);
                 var hours = g.Sum(x => x.Hours);
                 var stoppages = g.Count();
-                var score = unresolved * 10m + hours + stoppages;
+                var score = open * 10m + hours + stoppages;
                 return new BrigadeRankItemResponse
                 {
                     BrigadeUserId = g.Key,
@@ -396,7 +421,7 @@ public sealed class BrigadeRatingController(
                     MasterName = first.MasterName,
                     StoppageCount = stoppages,
                     RemarkCount = remarks.Count,
-                    UnresolvedRemarkCount = unresolved,
+                    UnresolvedRemarkCount = open,
                     TotalHours = hours,
                     Score = score
                 };
@@ -418,15 +443,47 @@ public sealed class BrigadeRatingController(
             .Take(10)
             .ToList();
 
+        var topStoppers = rows
+            .GroupBy(x => string.IsNullOrWhiteSpace(x.StoppedByName) ? "—" : x.StoppedByName.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new StopperTopItemResponse
+            {
+                Name = g.First().StoppedByName.Trim().Length > 0 ? g.First().StoppedByName.Trim() : "—",
+                StoppageCount = g.Count(),
+                TotalHours = g.Sum(x => x.Hours)
+            })
+            .OrderByDescending(x => x.StoppageCount)
+            .ThenByDescending(x => x.TotalHours)
+            .ThenBy(x => x.Name)
+            .Take(10)
+            .ToList();
+
         return Ok(new BrigadeRatingDashboardResponse
         {
+            Period = periodKey,
+            EarliestYear = earliestYear,
             PeriodStart = start,
             PeriodEnd = end,
             StoppageCount = rows.Count,
             RemarkCount = remarkFlat.Count,
-            ResolvedRemarkCount = remarkFlat.Count(x => x.IsResolved),
-            UnresolvedRemarkCount = remarkFlat.Count(x => !x.IsResolved),
-            TotalHours = rows.Sum(x => x.Hours),
+            ResolvedRemarkCount = resolved,
+            UnresolvedRemarkCount = unresolved,
+            TotalHours = totalHours,
+            ResolutionRatePercent = Percent(resolved, remarkFlat.Count),
+            AverageHours = AverageHours(rows),
+            PeriodComparison = new BrigadeRatingPeriodComparisonResponse
+            {
+                PreviousPeriodStart = prevStart,
+                PreviousPeriodEnd = prevEnd,
+                PreviousStoppageCount = prevRows.Count,
+                PreviousRemarkCount = prevRemarks.Count,
+                PreviousResolvedRemarkCount = prevResolved,
+                PreviousUnresolvedRemarkCount = prevUnresolved,
+                PreviousTotalHours = prevHours,
+                PreviousResolutionRatePercent = Percent(prevResolved, prevRemarks.Count),
+                PreviousAverageHours = AverageHours(prevRows)
+            },
+            DailyTrend = BuildDailyTrend(periodKey, start, end, rows),
+            TopStoppers = topStoppers,
             BrigadeRanking = ranking,
             TopRemarks = top,
             Stoppages = rows
@@ -757,9 +814,9 @@ public sealed class BrigadeRatingController(
         return q.Where(x => x.BrigadeUserId == uid);
     }
 
-    private static (DateOnly Start, DateOnly End) ResolvePeriod(DateOnly? from, DateOnly? to)
+    private (DateOnly Start, DateOnly End) ResolvePeriod(DateOnly? from, DateOnly? to)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = time.GetToday();
         var end = to ?? today;
         var start = from ?? new DateOnly(end.Year, end.Month, 1);
         if (start > end)
@@ -768,6 +825,155 @@ public sealed class BrigadeRatingController(
         }
 
         return (start, end);
+    }
+
+    /// <summary>Пресеты как на Сводке; from/to без period → custom. «Сегодня» — AppTimeZone.</summary>
+    private (string Period, DateOnly Start, DateOnly End) ResolveDashboardPeriod(
+        string? period,
+        DateOnly? from,
+        DateOnly? to,
+        int? year,
+        int? month)
+    {
+        var today = time.GetToday();
+        var key = (period ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (key is "today" or "month" or "year")
+        {
+            return key switch
+            {
+                "today" => ("today", today, today),
+                "year" => (
+                    "year",
+                    new DateOnly(year is >= 2000 and <= 2100 ? year.Value : today.Year, 1, 1),
+                    new DateOnly(year is >= 2000 and <= 2100 ? year.Value : today.Year, 12, 31)),
+                _ => ResolveMonthPreset(today, year, month)
+            };
+        }
+
+        // Явные даты без пресета — произвольный период.
+        if (from is not null || to is not null)
+        {
+            var (start, end) = ResolvePeriod(from, to);
+            return ("custom", start, end);
+        }
+
+        return ResolveMonthPreset(today, year, month);
+    }
+
+    private static (string Period, DateOnly Start, DateOnly End) ResolveMonthPreset(
+        DateOnly today,
+        int? year,
+        int? month)
+    {
+        var y = year is >= 2000 and <= 2100 ? year.Value : today.Year;
+        var m = month is >= 1 and <= 12 ? month.Value : today.Month;
+        var start = new DateOnly(y, m, 1);
+        var end = start.AddMonths(1).AddDays(-1);
+        if (y == today.Year && m == today.Month && end > today)
+        {
+            end = today;
+        }
+
+        return ("month", start, end);
+    }
+
+    private static (DateOnly Start, DateOnly End) PreviousPeriodBounds(
+        string period,
+        DateOnly start,
+        DateOnly end)
+    {
+        if (period == "today")
+        {
+            return (start.AddDays(-1), start.AddDays(-1));
+        }
+
+        if (period == "month")
+        {
+            var prevStart = start.AddMonths(-1);
+            return (prevStart, prevStart.AddMonths(1).AddDays(-1));
+        }
+
+        if (period == "year")
+        {
+            return (new DateOnly(start.Year - 1, 1, 1), new DateOnly(start.Year - 1, 12, 31));
+        }
+
+        var days = end.DayNumber - start.DayNumber + 1;
+        var prevEnd = start.AddDays(-1);
+        return (prevEnd.AddDays(-(days - 1)), prevEnd);
+    }
+
+    private static decimal Percent(int part, int total) =>
+        total <= 0 ? 0m : Math.Round(part * 100m / total, 1);
+
+    private static decimal AverageHours(List<BrigadeStoppage> rows)
+    {
+        var withRestart = rows.Where(x => x.RestartedAt is not null).ToList();
+        if (withRestart.Count == 0)
+        {
+            return 0m;
+        }
+
+        return Math.Round(withRestart.Average(x => x.Hours), 2);
+    }
+
+    private static List<BrigadeDailyTrendPointResponse> BuildDailyTrend(
+        string period,
+        DateOnly start,
+        DateOnly end,
+        List<BrigadeStoppage> rows)
+    {
+        if (period == "year")
+        {
+            var byMonth = rows.GroupBy(x => new DateOnly(x.ReportDate.Year, x.ReportDate.Month, 1))
+                .ToDictionary(g => g.Key, g => g.ToList());
+            var points = new List<BrigadeDailyTrendPointResponse>();
+            for (var m = 1; m <= 12; m++)
+            {
+                var monthStart = new DateOnly(start.Year, m, 1);
+                if (monthStart > end)
+                {
+                    break;
+                }
+
+                byMonth.TryGetValue(monthStart, out var bucket);
+                bucket ??= [];
+                var remarks = bucket.SelectMany(x => x.Remarks).ToList();
+                points.Add(new BrigadeDailyTrendPointResponse
+                {
+                    Date = monthStart,
+                    Label = monthStart.ToString("MM"),
+                    StoppageCount = bucket.Count,
+                    Hours = bucket.Sum(x => x.Hours),
+                    RemarkCount = remarks.Count,
+                    UnresolvedRemarkCount = remarks.Count(r => !r.IsResolved)
+                });
+            }
+
+            return points;
+        }
+
+        var byDay = rows.GroupBy(x => x.ReportDate).ToDictionary(g => g.Key, g => g.ToList());
+        var daily = new List<BrigadeDailyTrendPointResponse>();
+        for (var day = start; day <= end; day = day.AddDays(1))
+        {
+            byDay.TryGetValue(day, out var bucket);
+            bucket ??= [];
+            var remarks = bucket.SelectMany(x => x.Remarks).ToList();
+            var dense = period is "month" || (end.DayNumber - start.DayNumber) > 14;
+            daily.Add(new BrigadeDailyTrendPointResponse
+            {
+                Date = day,
+                Label = dense ? day.Day.ToString() : day.ToString("dd.MM"),
+                StoppageCount = bucket.Count,
+                Hours = bucket.Sum(x => x.Hours),
+                RemarkCount = remarks.Count,
+                UnresolvedRemarkCount = remarks.Count(r => !r.IsResolved)
+            });
+        }
+
+        return daily;
     }
 
     private async Task<bool> CanViewAsync(CancellationToken cancellationToken)

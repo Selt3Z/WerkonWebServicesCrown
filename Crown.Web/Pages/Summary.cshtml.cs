@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace Crown.Web.Pages;
 
 [Authorize]
-public sealed class SummaryModel(CrownApiClient api) : PageModel
+public sealed class SummaryModel(CrownApiClient api, AppTime time) : PageModel
 {
     private bool CanAccess =>
         User.IsInRole(AppRoles.Administrator)
@@ -39,14 +39,8 @@ public sealed class SummaryModel(CrownApiClient api) : PageModel
     /// <summary>Staff без выбранного подразделения — сводку не грузим.</summary>
     public bool NeedsUserPick => CanPickUser && (UserId is null || UserId == Guid.Empty);
 
-    public IReadOnlyList<int> AvailableYears
-    {
-        get
-        {
-            var current = DateTime.UtcNow.Year;
-            return Enumerable.Range(current - 4, 5).Reverse().ToList();
-        }
-    }
+    /// <summary>От года самой старой заявки до «сегодня» в AppTimeZone.</summary>
+    public IReadOnlyList<int> AvailableYears { get; private set; } = [];
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -56,9 +50,11 @@ public sealed class SummaryModel(CrownApiClient api) : PageModel
         }
 
         Period = SummaryReportPeriods.Normalize(Period);
-        var today = DateTime.Now;
+        var today = time.GetToday();
         Year ??= today.Year;
         Month ??= today.Month;
+
+        AvailableYears = await LoadAvailableYearsAsync(today.Year);
 
         // Обычный пользователь всегда смотрит себя — query userId игнорируем.
         if (!CanPickUser)
@@ -114,16 +110,33 @@ public sealed class SummaryModel(CrownApiClient api) : PageModel
         return Page();
     }
 
+    /// <summary>«Месяц» без year/month — всегда текущий месяц; year/month только в пикерах формы.</summary>
     public string PeriodUrl(string period) =>
         UiHelpers.BuildUrl(
             "/summary",
             ("period", period),
-            ("year", Year?.ToString()),
-            ("month", Month?.ToString()),
+            ("year", period == "year" ? Year?.ToString() : null),
             ("userId", CanPickUser ? UserId?.ToString() : null));
 
     public string SelfId =>
         User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+    private async Task<IReadOnlyList<int>> LoadAvailableYearsAsync(int todayYear)
+    {
+        var earliest = todayYear;
+        var result = await api.GetAsync<int>("api/summary/earliest-year", HttpContext.RequestAborted);
+        if (result.Ok)
+        {
+            earliest = Math.Min(result.Data, todayYear);
+        }
+
+        if (earliest > todayYear)
+        {
+            earliest = todayYear;
+        }
+
+        return Enumerable.Range(earliest, todayYear - earliest + 1).Reverse().ToList();
+    }
 }
 
 internal static class SummaryReportPeriods

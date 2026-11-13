@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace Crown.Web.Pages;
 
 [Authorize]
-public sealed class BrigadeRatingStoppageModel(CrownApiClient api) : PageModel
+public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time) : PageModel
 {
     private bool CanEnter =>
         User.IsInRole(AppRoles.Administrator)
@@ -61,8 +61,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api) : PageModel
         }
         else
         {
-            var today = DateOnly.FromDateTime(DateTime.Now);
-            Input.ReportDate = today;
+            Input.ReportDate = time.GetToday();
             Input.StoppedAt = "08:00";
             Input.Remarks = [new RemarkLineInput { IsManual = false }, new RemarkLineInput { IsManual = false }, new RemarkLineInput { IsManual = false }];
             if (Brigades.Count == 1)

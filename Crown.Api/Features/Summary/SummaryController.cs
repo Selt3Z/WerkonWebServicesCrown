@@ -1,9 +1,12 @@
 using System.Security.Claims;
 using Crown.Contracts.Summary;
 using Crown.Infrastructure.Identity;
+using Crown.Infrastructure.Persistence;
+using Crown.Infrastructure.Time;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Crown.Features.Summary;
 
@@ -12,8 +15,32 @@ namespace Crown.Features.Summary;
 [Authorize]
 public sealed class SummaryController(
     SummaryReportService summary,
-    UserManager<ApplicationUser> users) : ControllerBase
+    UserManager<ApplicationUser> users,
+    AppDbContext db,
+    AppTimeZone time) : ControllerBase
 {
+    /// <summary>Год самой старой заявки (локальный TZ) — для селекта периода.</summary>
+    [HttpGet("earliest-year")]
+    public async Task<ActionResult<int>> EarliestYear(CancellationToken cancellationToken)
+    {
+        if (!await CanAccessSummaryAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var minUtc = await db.ServiceRequests.AsNoTracking()
+            .Select(x => (DateTimeOffset?)x.SubmittedAt)
+            .MinAsync(cancellationToken);
+        var todayYear = time.GetToday().Year;
+        if (minUtc is null)
+        {
+            return Ok(todayYear);
+        }
+
+        var local = TimeZoneInfo.ConvertTime(minUtc.Value, time.TimeZoneInfo);
+        return Ok(Math.Min(local.Year, todayYear));
+    }
+
     [HttpGet]
     public async Task<ActionResult<SummaryResponse>> Get(
         [FromQuery] string? period = "today",
@@ -28,21 +55,12 @@ public sealed class SummaryController(
             return Unauthorized();
         }
 
-        var canPickUser = User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
-        if (!canPickUser)
+        if (!await CanAccessSummaryAsync(CancellationToken.None))
         {
-            if (!User.IsInRole(AppRoles.Department))
-            {
-                return Forbid();
-            }
-
-            var actor = await users.GetUserAsync(User);
-            if (actor is null || !actor.CanViewSummary)
-            {
-                return Forbid();
-            }
+            return Forbid();
         }
 
+        var canPickUser = User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
         var targetId = userId is Guid id && id != Guid.Empty ? id : currentId.Value;
 
         if (targetId != currentId.Value && !canPickUser)
@@ -65,5 +83,21 @@ public sealed class SummaryController(
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(raw, out var id) ? id : null;
+    }
+
+    private async Task<bool> CanAccessSummaryAsync(CancellationToken cancellationToken)
+    {
+        if (User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher))
+        {
+            return true;
+        }
+
+        if (!User.IsInRole(AppRoles.Department))
+        {
+            return false;
+        }
+
+        var actor = await users.GetUserAsync(User);
+        return actor is { CanViewSummary: true };
     }
 }

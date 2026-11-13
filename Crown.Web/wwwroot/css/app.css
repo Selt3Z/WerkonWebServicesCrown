@@ -4117,32 +4117,32 @@ button.app-user-role.app-user-role-link:focus-visible {
 }
 
 .summary-cards-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1100px) {
     .summary-cards-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
-/* Мобилка — тоже 2 в ряд, как «по статусам»; чуть плотнее паддинг. */
-@media (max-width: 560px) {
+/* Мобилка — по три в ряд. */
+@media (max-width: 640px) {
     .summary-cards-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.5rem;
     }
 
     .summary-cards-grid .summary-card {
-        padding: 0.65rem 0.7rem;
+        padding: 0.55rem 0.5rem;
     }
 
     .summary-cards-grid .summary-card-value {
-        font-size: 1.15rem;
+        font-size: 1.05rem;
     }
 
     .summary-cards-grid .summary-card-meta {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
     }
 }
 
@@ -4244,8 +4244,21 @@ button.app-user-role.app-user-role-link:focus-visible {
 
 .summary-comparison-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0.75rem;
+}
+
+@media (max-width: 1100px) {
+    .summary-comparison-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .summary-comparison-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
 }
 
 .summary-comparison-item {

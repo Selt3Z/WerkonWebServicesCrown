@@ -3,9 +3,69 @@
 @{
     ViewData["Title"] = "Рейтинг бригад";
     var d = Model.Dashboard;
+    var cmp = d?.PeriodComparison;
     var maxScore = d?.BrigadeRanking.Count > 0 ? Math.Max(1m, d.BrigadeRanking.Max(x => x.Score)) : 1m;
+    var maxHours = d?.BrigadeRanking.Count > 0 ? Math.Max(1m, d.BrigadeRanking.Max(x => x.TotalHours)) : 1m;
+    var maxStops = d?.BrigadeRanking.Count > 0 ? Math.Max(1, d.BrigadeRanking.Max(x => x.StoppageCount)) : 1;
+    var maxOpen = d?.BrigadeRanking.Count > 0 ? Math.Max(1, d.BrigadeRanking.Max(x => x.UnresolvedRemarkCount)) : 1;
+    var maxTrendStops = d?.DailyTrend.Count > 0 ? Math.Max(1, d.DailyTrend.Max(x => x.StoppageCount)) : 1;
+    var maxTrendHours = d?.DailyTrend.Count > 0 ? Math.Max(1m, d.DailyTrend.Max(x => x.Hours)) : 1m;
+    var maxStopper = d?.TopStoppers.Count > 0 ? Math.Max(1, d.TopStoppers.Max(x => x.StoppageCount)) : 1;
+    // Длина = доля Score (open*10 + hours + stops) от максимума; длиннее = хуже.
+    // Раньше было 100%-доля с полом 8% — при близких скорах оба бара схлопывались в 8%.
     string BarWidth(decimal score) =>
-        $"{Math.Clamp(100m - (score / maxScore * 100m), 8m, 100m).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+        CssPct(maxScore <= 0 ? 0 : Math.Round(score / maxScore * 100m, 1));
+    string CssPct(decimal value) =>
+        $"{Math.Clamp(value, 0m, 100m).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+    string HoursBar(decimal hours) => CssPct(maxHours <= 0 ? 0 : Math.Round(hours / maxHours * 100m, 1));
+    string CountBar(int value, int max) => CssPct(max <= 0 ? 0 : Math.Round(value * 100m / max, 1));
+    string TrendH(decimal value, decimal max) => CssPct(max <= 0 ? 0 : Math.Round(value / max * 100m, 1));
+    string FmtPeriod(DateOnly a, DateOnly b) => a == b ? a.ToString("dd.MM.yyyy") : $"{a:dd.MM.yyyy} — {b:dd.MM.yyyy}";
+    string FmtChange(decimal current, decimal previous)
+    {
+        var delta = current - previous;
+        if (delta == 0) return "0";
+        return delta > 0 ? $"+{delta:0.##}" : $"{delta:0.##}";
+    }
+    string FmtChangeInt(int current, int previous)
+    {
+        var delta = current - previous;
+        if (delta == 0) return "0";
+        return delta > 0 ? $"+{delta}" : $"{delta}";
+    }
+    // Больше остановок/часов/открытых — хуже (красный вверх).
+    string WorseClass(decimal current, decimal previous) =>
+        current == previous ? "summary-change-flat" : current > previous ? "summary-change-down" : "summary-change-up";
+    string WorseClassInt(int current, int previous) =>
+        current == previous ? "summary-change-flat" : current > previous ? "summary-change-down" : "summary-change-up";
+    // Выше % устранения — лучше.
+    string BetterClass(decimal current, decimal previous) =>
+        current == previous ? "summary-change-flat" : current > previous ? "summary-change-up" : "summary-change-down";
+    string FmtPctChange(decimal current, decimal previous)
+    {
+        if (previous == 0 && current == 0) return "0%";
+        if (previous == 0) return "—";
+        var pct = Math.Round((current - previous) / previous * 100m, 1);
+        return pct > 0 ? $"+{pct}%" : $"{pct}%";
+    }
+    var resolvedPct = d?.RemarkCount > 0 ? Math.Round(d.ResolvedRemarkCount * 100m / d.RemarkCount, 1) : 0m;
+    var unresolvedPct = d?.RemarkCount > 0 ? 100m - resolvedPct : 0m;
+    var pieStyle = d is null || d.RemarkCount == 0
+        ? "background: var(--r-border);"
+        : $"background: conic-gradient(#2f8f5b 0% {CssPct(resolvedPct)}, #c45c26 {CssPct(resolvedPct)} 100%);";
+    var trendClass = Model.Period == "year"
+        ? "summary-trend-chart-year"
+        : (Model.Period == "month" || (d is not null && d.DailyTrend.Count > 14)
+            ? "summary-trend-chart-dense"
+            : "");
+    var hoursByBrigade = (d?.BrigadeRanking ?? [])
+        .OrderByDescending(x => x.TotalHours)
+        .ThenBy(x => x.BrigadeName)
+        .ToList();
+    var loadByBrigade = (d?.BrigadeRanking ?? [])
+        .OrderByDescending(x => x.StoppageCount)
+        .ThenByDescending(x => x.UnresolvedRemarkCount)
+        .ToList();
     var stoppagesJson = System.Text.Json.JsonSerializer.Serialize(
         (d?.Stoppages ?? []).Select(s => new
         {
@@ -22,6 +82,14 @@
             unresolvedRemarkCount = s.UnresolvedRemarkCount,
             workDescription = s.WorkDescription
         }));
+    var exportHref = UiHelpers.BuildUrl(
+        "/brigade-rating",
+        ("handler", "Export"),
+        ("period", Model.Period),
+        ("from", Model.Period == "custom" ? Model.From?.ToString("yyyy-MM-dd") : null),
+        ("to", Model.Period == "custom" ? Model.To?.ToString("yyyy-MM-dd") : null),
+        ("year", Model.Period is "month" or "year" ? Model.Year?.ToString() : null),
+        ("month", Model.Period == "month" ? Model.Month?.ToString() : null));
 }
 
 @Html.AntiForgeryToken()
@@ -36,7 +104,7 @@
                 <a class="btn btn-success btn-sm crown-head-icon-btn" href="/brigade-rating/stoppage" title="Добавить остановку" aria-label="Добавить остановку">+</a>
             }
             <a class="btn btn-outline-secondary btn-sm crown-head-icon-btn"
-               href="@UiHelpers.BuildUrl("/brigade-rating", ("handler", "Export"), ("from", Model.From?.ToString("yyyy-MM-dd")), ("to", Model.To?.ToString("yyyy-MM-dd")))"
+               href="@exportHref"
                title="Выгрузить Excel за период"
                aria-label="Выгрузить Excel">
                 <span class="crown-xlsx-icon" aria-hidden="true"><span class="crown-xlsx-label">xlsx</span></span>
@@ -44,17 +112,70 @@
         </div>
     </div>
 
-    <form method="get" class="list-filters mb-3">
-        <div class="filter-field filter-field-inline">
-            <label class="form-label" for="br-from">С</label>
-            <input id="br-from" class="form-control" type="date" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+    <div class="brigade-rating-period-bar mb-3">
+        <div class="summary-period-switch" role="group" aria-label="Период">
+            <a class="btn btn-sm @(Model.Period == "today" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("today")">Сегодня</a>
+            <a class="btn btn-sm @(Model.Period == "month" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("month")">Месяц</a>
+            <a class="btn btn-sm @(Model.Period == "year" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("year")">Год</a>
+            <a class="btn btn-sm @(Model.Period == "custom" ? "btn-primary" : "btn-outline-secondary")"
+               href="@UiHelpers.BuildUrl("/brigade-rating", ("period", "custom"), ("from", Model.From?.ToString("yyyy-MM-dd")), ("to", Model.To?.ToString("yyyy-MM-dd")))">Период</a>
         </div>
-        <div class="filter-field filter-field-inline">
-            <label class="form-label" for="br-to">По</label>
-            <input id="br-to" class="form-control" type="date" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
-        </div>
-        <button type="submit" class="btn btn-primary">Показать</button>
-    </form>
+
+        @if (Model.Period == "month")
+        {
+            <form method="get" class="list-filters summary-period-picker mb-0">
+                <input type="hidden" name="period" value="month" />
+                <div class="filter-field filter-field-inline">
+                    <label class="form-label" for="br-month">Месяц</label>
+                    <select id="br-month" class="form-select" name="month" onchange="this.form.requestSubmit()">
+                        @for (var m = 1; m <= 12; m++)
+                        {
+                            <option value="@m" selected="@(Model.Month == m)">@System.Globalization.CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(m)</option>
+                        }
+                    </select>
+                </div>
+                <div class="filter-field filter-field-inline">
+                    <label class="form-label" for="br-year-m">Год</label>
+                    <select id="br-year-m" class="form-select" name="year" onchange="this.form.requestSubmit()">
+                        @foreach (var y in Model.AvailableYears)
+                        {
+                            <option value="@y" selected="@(Model.Year == y)">@y</option>
+                        }
+                    </select>
+                </div>
+            </form>
+        }
+        else if (Model.Period == "year")
+        {
+            <form method="get" class="list-filters summary-period-picker mb-0">
+                <input type="hidden" name="period" value="year" />
+                <div class="filter-field filter-field-inline">
+                    <label class="form-label" for="br-year">Год</label>
+                    <select id="br-year" class="form-select" name="year" onchange="this.form.requestSubmit()">
+                        @foreach (var y in Model.AvailableYears)
+                        {
+                            <option value="@y" selected="@(Model.Year == y)">@y</option>
+                        }
+                    </select>
+                </div>
+            </form>
+        }
+        else if (Model.Period == "custom")
+        {
+            <form method="get" class="list-filters summary-period-picker mb-0">
+                <input type="hidden" name="period" value="custom" />
+                <div class="filter-field filter-field-inline">
+                    <label class="form-label" for="br-from">С</label>
+                    <input id="br-from" class="form-control" type="date" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+                </div>
+                <div class="filter-field filter-field-inline">
+                    <label class="form-label" for="br-to">По</label>
+                    <input id="br-to" class="form-control" type="date" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+                </div>
+                <button type="submit" class="btn btn-primary">Показать</button>
+            </form>
+        }
+    </div>
 
     @if (!string.IsNullOrEmpty(Model.Error))
     {
@@ -66,7 +187,63 @@
     }
     else
     {
-        <p class="text-muted mb-3">Период: @d.PeriodStart.ToString("dd.MM.yyyy") — @d.PeriodEnd.ToString("dd.MM.yyyy")</p>
+        <div class="summary-period-toolbar">
+            <p class="summary-period-caption">Период: @FmtPeriod(d.PeriodStart, d.PeriodEnd)</p>
+        </div>
+
+        @if (cmp is not null)
+        {
+            <section class="entity-panel summary-comparison-panel mb-3">
+                <h2 class="section-title">Сравнение с прошлым периодом</h2>
+                <p class="summary-comparison-period">
+                    Прошлый период: @FmtPeriod(cmp.PreviousPeriodStart, cmp.PreviousPeriodEnd)
+                </p>
+                <div class="summary-comparison-grid">
+                    <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">Остановки</span>
+                        <span class="summary-comparison-value">@d.StoppageCount</span>
+                        <span class="@WorseClassInt(d.StoppageCount, cmp.PreviousStoppageCount)">
+                            @FmtChangeInt(d.StoppageCount, cmp.PreviousStoppageCount)
+                        </span>
+                    </article>
+                    <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">Часы простоя</span>
+                        <span class="summary-comparison-value">@d.TotalHours.ToString("0.##")</span>
+                        <span class="@WorseClass(d.TotalHours, cmp.PreviousTotalHours)">
+                            @FmtChange(d.TotalHours, cmp.PreviousTotalHours)
+                        </span>
+                    </article>
+                    <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">Пункты</span>
+                        <span class="summary-comparison-value">@d.RemarkCount</span>
+                        <span class="@WorseClassInt(d.RemarkCount, cmp.PreviousRemarkCount)">
+                            @FmtChangeInt(d.RemarkCount, cmp.PreviousRemarkCount)
+                        </span>
+                    </article>
+                    <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">Открытые</span>
+                        <span class="summary-comparison-value">@d.UnresolvedRemarkCount</span>
+                        <span class="@WorseClassInt(d.UnresolvedRemarkCount, cmp.PreviousUnresolvedRemarkCount)">
+                            @FmtChangeInt(d.UnresolvedRemarkCount, cmp.PreviousUnresolvedRemarkCount)
+                        </span>
+                    </article>
+                    <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">% устранения</span>
+                        <span class="summary-comparison-value">@d.ResolutionRatePercent.ToString("0.#")%</span>
+                        <span class="@BetterClass(d.ResolutionRatePercent, cmp.PreviousResolutionRatePercent)">
+                            @FmtPctChange(d.ResolutionRatePercent, cmp.PreviousResolutionRatePercent)
+                        </span>
+                    </article>
+                    <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">Ср. длительность</span>
+                        <span class="summary-comparison-value">@d.AverageHours.ToString("0.##") ч</span>
+                        <span class="@WorseClass(d.AverageHours, cmp.PreviousAverageHours)">
+                            @FmtChange(d.AverageHours, cmp.PreviousAverageHours)
+                        </span>
+                    </article>
+                </div>
+            </section>
+        }
 
         <section class="summary-cards summary-cards-grid mb-3">
             <article class="summary-card summary-card-compact">
@@ -81,6 +258,16 @@
             <article class="summary-card summary-card-compact">
                 <div class="summary-card-label">Часы простоя</div>
                 <div class="summary-card-value">@d.TotalHours.ToString("0.##")</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">% устранения</div>
+                <div class="summary-card-value">@d.ResolutionRatePercent.ToString("0.#")%</div>
+                <div class="summary-card-meta">культура закрытия пунктов</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Ср. длительность</div>
+                <div class="summary-card-value">@d.AverageHours.ToString("0.##") ч</div>
+                <div class="summary-card-meta">со временем пуска</div>
             </article>
         </section>
 
@@ -136,6 +323,143 @@
                 }
             </section>
         </div>
+
+        <div class="brigade-rating-split mb-3">
+            <section class="entity-panel">
+                <h2 class="section-title">Часы простоя по бригадам</h2>
+                @if (hoursByBrigade.Count == 0)
+                {
+                    <p class="text-muted mb-0">Нет данных.</p>
+                }
+                else
+                {
+                    <ul class="brigade-metric-bars">
+                        @foreach (var row in hoursByBrigade)
+                        {
+                            <li>
+                                <div class="brigade-metric-head">
+                                    <span>@row.BrigadeName</span>
+                                    <strong>@row.TotalHours.ToString("0.##") ч</strong>
+                                </div>
+                                <div class="brigade-rank-bar-track" aria-hidden="true">
+                                    <div class="brigade-metric-bar brigade-metric-bar-hours" style="width:@HoursBar(row.TotalHours)"></div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            <section class="entity-panel">
+                <h2 class="section-title">Остановки / открытые пункты</h2>
+                @if (loadByBrigade.Count == 0)
+                {
+                    <p class="text-muted mb-0">Нет данных.</p>
+                }
+                else
+                {
+                    <ul class="brigade-metric-bars">
+                        @foreach (var row in loadByBrigade)
+                        {
+                            <li>
+                                <div class="brigade-metric-head">
+                                    <span>@row.BrigadeName</span>
+                                    <strong>@row.StoppageCount ост. · @row.UnresolvedRemarkCount откр.</strong>
+                                </div>
+                                <div class="brigade-dual-bars" aria-hidden="true">
+                                    <div class="brigade-rank-bar-track">
+                                        <div class="brigade-metric-bar brigade-metric-bar-stops" style="width:@CountBar(row.StoppageCount, maxStops)"></div>
+                                    </div>
+                                    <div class="brigade-rank-bar-track">
+                                        <div class="brigade-metric-bar brigade-metric-bar-open" style="width:@CountBar(row.UnresolvedRemarkCount, maxOpen)"></div>
+                                    </div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                    <div class="summary-trend-legend mt-2">
+                        <span><i class="summary-trend-swatch brigade-swatch-stops"></i>Остановки</span>
+                        <span><i class="summary-trend-swatch brigade-swatch-open"></i>Открытые пункты</span>
+                    </div>
+                }
+            </section>
+        </div>
+
+        <div class="brigade-rating-split mb-3">
+            <section class="entity-panel">
+                <h2 class="section-title">Устранено vs открыто</h2>
+                @if (d.RemarkCount == 0)
+                {
+                    <p class="text-muted mb-0">Пунктов за период нет.</p>
+                }
+                else
+                {
+                    <div class="brigade-resolution-layout">
+                        <div class="brigade-resolution-pie" style="@pieStyle" title="Устранено @resolvedPct% · открыто @unresolvedPct%" aria-hidden="true"></div>
+                        <div class="brigade-resolution-stats">
+                            <div class="summary-revenue-mix-bar" aria-hidden="true">
+                                <span class="brigade-mix-resolved" style="width: @CssPct(resolvedPct)"></span>
+                                <span class="brigade-mix-open" style="width: @CssPct(unresolvedPct)"></span>
+                            </div>
+                            <div class="summary-revenue-mix-legend">
+                                <span>Устранено: @d.ResolvedRemarkCount (@resolvedPct.ToString("0.#")%)</span>
+                                <span>Открыто: @d.UnresolvedRemarkCount (@unresolvedPct.ToString("0.#")%)</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </section>
+
+            <section class="entity-panel">
+                <h2 class="section-title">Топ «кто остановил»</h2>
+                @if (d.TopStoppers.Count == 0)
+                {
+                    <p class="text-muted mb-0">Нет данных.</p>
+                }
+                else
+                {
+                    <ul class="brigade-metric-bars">
+                        @foreach (var s in d.TopStoppers)
+                        {
+                            <li>
+                                <div class="brigade-metric-head">
+                                    <span>@s.Name</span>
+                                    <strong>@s.StoppageCount · @s.TotalHours.ToString("0.##") ч</strong>
+                                </div>
+                                <div class="brigade-rank-bar-track" aria-hidden="true">
+                                    <div class="brigade-metric-bar brigade-metric-bar-stopper" style="width:@CountBar(s.StoppageCount, maxStopper)"></div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        </div>
+
+        @if (d.DailyTrend.Count > 0)
+        {
+            <section class="entity-panel summary-trend-panel mb-3">
+                <h2 class="section-title">Динамика за период</h2>
+                <div class="summary-trend-chart @trendClass">
+                    @foreach (var point in d.DailyTrend)
+                    {
+                        <div class="summary-trend-column" title="@point.Label: ост. @point.StoppageCount, @point.Hours.ToString("0.##") ч, пунктов @point.RemarkCount (откр. @point.UnresolvedRemarkCount)">
+                            <div class="summary-trend-bars">
+                                <span class="summary-trend-bar brigade-trend-stops" style="height: @TrendH(point.StoppageCount, maxTrendStops)"></span>
+                                <span class="summary-trend-bar brigade-trend-hours" style="height: @TrendH(point.Hours, maxTrendHours)"></span>
+                            </div>
+                            <div class="summary-trend-label-wrap">
+                                <span class="summary-trend-label">@point.Label</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="summary-trend-legend">
+                    <span><i class="summary-trend-swatch brigade-swatch-stops"></i>Остановки</span>
+                    <span><i class="summary-trend-swatch brigade-swatch-hours"></i>Часы</span>
+                </div>
+            </section>
+        }
 
         <section class="entity-panel">
             <h2 class="section-title">Остановки за период</h2>
@@ -234,8 +558,11 @@
 <script>
 (() => {
     const canEnter = @(Model.CanEnter ? "true" : "false");
+    const period = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Period));
     const from = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.From?.ToString("yyyy-MM-dd")));
     const to = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.To?.ToString("yyyy-MM-dd")));
+    const year = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Year?.ToString()));
+    const month = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Month?.ToString()));
     const allStoppages = @Html.Raw(stoppagesJson);
     const overlay = document.getElementById('brigadeRemarksOverlay');
     const list = document.getElementById('brigadeRemarksList');
@@ -259,7 +586,6 @@
     document.getElementById('brigadeStoppagesClose')?.addEventListener('click', () => closeOverlay(stopOverlay));
     stopOverlay?.addEventListener('click', (e) => { if (e.target === stopOverlay) closeOverlay(stopOverlay); });
 
-    // Проваливание в остановку по клику на строку (кроме кнопки пунктов).
     document.querySelectorAll('tr.crown-row-link').forEach(tr => {
         tr.addEventListener('click', (e) => {
             if (e.target.closest('button, a, input, select, label')) return;
@@ -268,7 +594,6 @@
         });
     });
 
-    // Клик по имени бригады → таблица её остановок.
     document.querySelectorAll('.brigade-rank-name-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.getAttribute('data-brigade-id');
@@ -319,6 +644,20 @@
         return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
+    function resolveAction(remarkId, nextResolved) {
+        const q = new URLSearchParams({
+            handler: 'ResolveRemark',
+            remarkId,
+            isResolved: nextResolved ? 'true' : 'false',
+            period: period || 'month'
+        });
+        if (from) q.set('from', from);
+        if (to) q.set('to', to);
+        if (year) q.set('year', year);
+        if (month) q.set('month', month);
+        return `/brigade-rating?${q.toString()}`;
+    }
+
     async function openRemarks(id) {
         list.innerHTML = '<p class="text-muted">Загрузка…</p>';
         err.classList.add('d-none');
@@ -346,7 +685,7 @@
                 if (canEnter) {
                     const form = document.createElement('form');
                     form.method = 'post';
-                    form.action = `/brigade-rating?handler=ResolveRemark&remarkId=${encodeURIComponent(r.id)}&isResolved=${r.isResolved ? 'false' : 'true'}&from=${encodeURIComponent(from || '')}&to=${encodeURIComponent(to || '')}`;
+                    form.action = resolveAction(r.id, !r.isResolved);
                     const token = document.createElement('input');
                     token.type = 'hidden';
                     token.name = '__RequestVerificationToken';

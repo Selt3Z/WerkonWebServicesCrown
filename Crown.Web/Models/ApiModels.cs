@@ -633,6 +633,8 @@ public sealed class SetRemarkResolvedRequest
 
 public sealed class BrigadeRatingDashboard
 {
+    public string Period { get; set; } = "month";
+    public int EarliestYear { get; set; }
     public DateOnly PeriodStart { get; set; }
     public DateOnly PeriodEnd { get; set; }
     public int StoppageCount { get; set; }
@@ -640,9 +642,44 @@ public sealed class BrigadeRatingDashboard
     public int ResolvedRemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
     public decimal TotalHours { get; set; }
+    public decimal ResolutionRatePercent { get; set; }
+    public decimal AverageHours { get; set; }
+    public BrigadeRatingPeriodComparison PeriodComparison { get; set; } = new();
+    public List<BrigadeDailyTrendPoint> DailyTrend { get; set; } = [];
+    public List<StopperTopItem> TopStoppers { get; set; } = [];
     public List<BrigadeRankItem> BrigadeRanking { get; set; } = [];
     public List<RemarkTopItem> TopRemarks { get; set; } = [];
     public List<BrigadeStoppageListItem> Stoppages { get; set; } = [];
+}
+
+public sealed class BrigadeRatingPeriodComparison
+{
+    public DateOnly PreviousPeriodStart { get; set; }
+    public DateOnly PreviousPeriodEnd { get; set; }
+    public int PreviousStoppageCount { get; set; }
+    public int PreviousRemarkCount { get; set; }
+    public int PreviousResolvedRemarkCount { get; set; }
+    public int PreviousUnresolvedRemarkCount { get; set; }
+    public decimal PreviousTotalHours { get; set; }
+    public decimal PreviousResolutionRatePercent { get; set; }
+    public decimal PreviousAverageHours { get; set; }
+}
+
+public sealed class BrigadeDailyTrendPoint
+{
+    public DateOnly Date { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public int StoppageCount { get; set; }
+    public decimal Hours { get; set; }
+    public int RemarkCount { get; set; }
+    public int UnresolvedRemarkCount { get; set; }
+}
+
+public sealed class StopperTopItem
+{
+    public string Name { get; set; } = string.Empty;
+    public int StoppageCount { get; set; }
+    public decimal TotalHours { get; set; }
 }
 
 public sealed class BrigadeRankItem

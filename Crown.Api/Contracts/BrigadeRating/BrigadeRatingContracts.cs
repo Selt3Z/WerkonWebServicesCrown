@@ -89,6 +89,12 @@ public sealed class SetRemarkResolvedRequest
 
 public sealed class BrigadeRatingDashboardResponse
 {
+    /// <summary>today | month | year | custom</summary>
+    public string Period { get; set; } = "month";
+
+    /// <summary>Год самой старой остановки в области видимости (для селекта).</summary>
+    public int EarliestYear { get; set; }
+
     public DateOnly PeriodStart { get; set; }
     public DateOnly PeriodEnd { get; set; }
     public int StoppageCount { get; set; }
@@ -96,9 +102,49 @@ public sealed class BrigadeRatingDashboardResponse
     public int ResolvedRemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
     public decimal TotalHours { get; set; }
+
+    /// <summary>Доля устранённых пунктов, 0–100.</summary>
+    public decimal ResolutionRatePercent { get; set; }
+
+    /// <summary>Средняя длительность остановки (часы), только со временем пуска.</summary>
+    public decimal AverageHours { get; set; }
+
+    public BrigadeRatingPeriodComparisonResponse PeriodComparison { get; set; } = new();
+    public List<BrigadeDailyTrendPointResponse> DailyTrend { get; set; } = [];
+    public List<StopperTopItemResponse> TopStoppers { get; set; } = [];
     public List<BrigadeRankItemResponse> BrigadeRanking { get; set; } = [];
     public List<RemarkTopItemResponse> TopRemarks { get; set; } = [];
     public List<BrigadeStoppageListItemResponse> Stoppages { get; set; } = [];
+}
+
+public sealed class BrigadeRatingPeriodComparisonResponse
+{
+    public DateOnly PreviousPeriodStart { get; set; }
+    public DateOnly PreviousPeriodEnd { get; set; }
+    public int PreviousStoppageCount { get; set; }
+    public int PreviousRemarkCount { get; set; }
+    public int PreviousResolvedRemarkCount { get; set; }
+    public int PreviousUnresolvedRemarkCount { get; set; }
+    public decimal PreviousTotalHours { get; set; }
+    public decimal PreviousResolutionRatePercent { get; set; }
+    public decimal PreviousAverageHours { get; set; }
+}
+
+public sealed class BrigadeDailyTrendPointResponse
+{
+    public DateOnly Date { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public int StoppageCount { get; set; }
+    public decimal Hours { get; set; }
+    public int RemarkCount { get; set; }
+    public int UnresolvedRemarkCount { get; set; }
+}
+
+public sealed class StopperTopItemResponse
+{
+    public string Name { get; set; } = string.Empty;
+    public int StoppageCount { get; set; }
+    public decimal TotalHours { get; set; }
 }
 
 public sealed class BrigadeRankItemResponse
