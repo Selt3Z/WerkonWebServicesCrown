@@ -23,6 +23,21 @@ public sealed class SaveStoppageActItemRequest
     public int SortOrder { get; set; }
 }
 
+public sealed class StoppageWorkItemResponse
+{
+    public Guid Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public sealed class SaveStoppageWorkItemRequest
+{
+    public string Text { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+    public int SortOrder { get; set; }
+}
+
 public sealed class StoppageRemarkResponse
 {
     public Guid Id { get; set; }
@@ -42,12 +57,16 @@ public class BrigadeStoppageListItemResponse
     public Guid BrigadeUserId { get; set; }
     public string BrigadeName { get; set; } = string.Empty;
     public string MasterName { get; set; } = string.Empty;
+    public Guid? MasterPersonId { get; set; }
     public string StoppedByName { get; set; } = string.Empty;
     public Guid? StoppedByUserId { get; set; }
+    public Guid? StoppedByPersonId { get; set; }
     public TimeOnly StoppedAt { get; set; }
     public TimeOnly? RestartedAt { get; set; }
     public decimal Hours { get; set; }
     public string WorkDescription { get; set; } = string.Empty;
+    public Guid? WorkItemId { get; set; }
+    public bool IsWorkManual { get; set; } = true;
     public int RemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
 }
@@ -74,11 +93,18 @@ public sealed class SaveBrigadeStoppageRequest
     public Guid BrigadeUserId { get; set; }
     public DateOnly ReportDate { get; set; }
     public string? MasterName { get; set; }
+    /// <summary>Мастер из персонала бригады; MasterName берётся из FullName.</summary>
+    public Guid? MasterPersonId { get; set; }
     public Guid? StoppedByUserId { get; set; }
+    /// <summary>Кто остановил из персонала бригады; StoppedByName = FullName.</summary>
+    public Guid? StoppedByPersonId { get; set; }
     public string? StoppedByName { get; set; }
     public TimeOnly StoppedAt { get; set; }
     public TimeOnly? RestartedAt { get; set; }
+    /// <summary>Ручной текст работы (если IsWorkManual).</summary>
     public string WorkDescription { get; set; } = string.Empty;
+    public Guid? WorkItemId { get; set; }
+    public bool IsWorkManual { get; set; } = true;
     public List<SaveStoppageRemarkRequest> Remarks { get; set; } = [];
 }
 
@@ -114,6 +140,7 @@ public sealed class BrigadeRatingDashboardResponse
     public List<StopperTopItemResponse> TopStoppers { get; set; } = [];
     public List<BrigadeRankItemResponse> BrigadeRanking { get; set; } = [];
     public List<RemarkTopItemResponse> TopRemarks { get; set; } = [];
+    public List<WorkTopItemResponse> TopWorks { get; set; } = [];
     public List<BrigadeStoppageListItemResponse> Stoppages { get; set; } = [];
 }
 
@@ -161,6 +188,12 @@ public sealed class BrigadeRankItemResponse
 }
 
 public sealed class RemarkTopItemResponse
+{
+    public string Text { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public sealed class WorkTopItemResponse
 {
     public string Text { get; set; } = string.Empty;
     public int Count { get; set; }

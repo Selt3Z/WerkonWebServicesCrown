@@ -14,13 +14,19 @@ public sealed class BrigadeStoppage
     /// <summary>Снимок названия бригады (DisplayName / UserName на момент записи).</summary>
     public string BrigadeName { get; set; } = string.Empty;
 
-    /// <summary>Снимок ФИО мастера (обычно тот же DisplayName).</summary>
+    /// <summary>Снимок ФИО мастера (из персонала или fallback).</summary>
     public string MasterName { get; set; } = string.Empty;
 
-    /// <summary>Кто остановил бригаду.</summary>
+    /// <summary>Мастер из справочника персонала подразделения (снимок имени в MasterName).</summary>
+    public Guid? MasterPersonId { get; set; }
+
+    /// <summary>Кто остановил (логин, legacy). Предпочтительно StoppedByPersonId.</summary>
     public Guid? StoppedByUserId { get; set; }
 
-    /// <summary>Снимок «должность + ФИО» / display name остановившего.</summary>
+    /// <summary>Кто остановил из персонала бригады (снимок в StoppedByName).</summary>
+    public Guid? StoppedByPersonId { get; set; }
+
+    /// <summary>Снимок ФИО / должности остановившего.</summary>
     public string StoppedByName { get; set; } = string.Empty;
 
     public TimeOnly StoppedAt { get; set; }
@@ -30,7 +36,13 @@ public sealed class BrigadeStoppage
     /// <summary>Часы простоя (считаются при сохранении).</summary>
     public decimal Hours { get; set; }
 
+    /// <summary>Снимок названия работы (из справочника или вручную).</summary>
     public string WorkDescription { get; set; } = string.Empty;
+
+    public Guid? WorkItemId { get; set; }
+
+    /// <summary>true = текст вручную, без WorkItemId.</summary>
+    public bool IsWorkManual { get; set; } = true;
 
     public DateTimeOffset CreatedAt { get; set; }
 

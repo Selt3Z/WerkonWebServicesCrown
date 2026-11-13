@@ -174,6 +174,7 @@ builder.Services.AddHealthChecks()
 var app = builder.Build();
 
 await DatabaseMigrationBootstrap.ApplyPendingMigrationsAsync(app);
+await StoppageWorkItemSeed.SeedFromExistingStoppagesAsync(app);
 
 if (app.Environment.IsDevelopment())
 {

@@ -1,0 +1,100 @@
+﻿@page "/brigade-rating/work-items"
+@model BrigadeRatingWorkItemsModel
+@{
+    ViewData["Title"] = "Выполняемые работы";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Выполняемые работы</h1>
+    <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" asp-page-handler="Add" class="list-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-grow">
+        <label class="form-label" for="new-work-text">Новая работа</label>
+        <input id="new-work-text" class="form-control" name="NewText" value="@Model.NewText" placeholder="Название работы" required />
+    </div>
+    <button type="submit" class="btn btn-success">Добавить</button>
+</form>
+
+<section class="entity-panel">
+    @* Десктоп: таблица без «Статус». Мобилка: карточки — иначе Текст схлопывается. *@
+    <div class="crown-table-wrap schedule-desktop-table">
+        <table class="table crown-table work-items-table">
+            <thead>
+            <tr>
+                <th style="width:3.5rem;">№</th>
+                <th>Текст</th>
+                <th style="width:14rem;"></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model.Items)
+            {
+                <tr class="@(!item.IsActive ? "text-muted" : null)">
+                    <td>@item.SortOrder</td>
+                    <td>
+                        <form method="post" asp-page-handler="Save" id="work-save-@item.Id" class="crown-op-form">
+                            <input type="hidden" name="EditId" value="@item.Id" />
+                            <input type="hidden" name="EditIsActive" value="@(item.IsActive ? "true" : "false")" />
+                            <input class="form-control act-item-text" name="EditText" value="@item.Text" required />
+                        </form>
+                    </td>
+                    <td class="text-end text-nowrap">
+                        <button type="submit" form="work-save-@item.Id" class="btn btn-outline-secondary btn-sm">Сохранить</button>
+                        <form method="post" asp-page-handler="Delete" class="crown-op-form d-inline">
+                            <input type="hidden" name="id" value="@item.Id" />
+                            <button type="submit" class="btn btn-outline-danger btn-sm"
+                                    data-confirm="Удалить работу из справочника? В уже созданных остановках она станет «Вручную», текст сохранится.">
+                                Удалить
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            @if (Model.Items.Count == 0)
+            {
+                <tr><td colspan="3" class="text-muted text-center">Пока пусто — добавьте типовые работы сверху.</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="schedule-mobile-cards work-items-mobile">
+        @if (Model.Items.Count == 0)
+        {
+            <p class="text-muted text-center mb-0">Пока пусто — добавьте типовые работы сверху.</p>
+        }
+        else
+        {
+            @foreach (var item in Model.Items)
+            {
+                <div class="schedule-card act-item-card @(!item.IsActive ? "text-muted" : null)">
+                    <div class="schedule-card-header">
+                        <span class="schedule-card-time">№ @item.SortOrder</span>
+                    </div>
+                    <form method="post" asp-page-handler="Save" id="work-save-m-@item.Id" class="crown-op-form act-item-card-form">
+                        <input type="hidden" name="EditId" value="@item.Id" />
+                        <input type="hidden" name="EditIsActive" value="@(item.IsActive ? "true" : "false")" />
+                        <input class="form-control act-item-text" name="EditText" value="@item.Text" required />
+                    </form>
+                    <div class="act-item-card-actions">
+                        <button type="submit" form="work-save-m-@item.Id" class="btn btn-outline-secondary btn-sm">Сохранить</button>
+                        <form method="post" asp-page-handler="Delete" class="crown-op-form">
+                            <input type="hidden" name="id" value="@item.Id" />
+                            <button type="submit" class="btn btn-outline-danger btn-sm"
+                                    data-confirm="Удалить работу из справочника? В уже созданных остановках она станет «Вручную», текст сохранится.">
+                                Удалить
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</section>

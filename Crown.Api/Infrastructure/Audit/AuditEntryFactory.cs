@@ -299,6 +299,24 @@ public sealed class AuditEntryFactory
                     : "/brigade-rating/act-items";
                 return true;
 
+            case StoppageWorkItem workItem:
+                entityType = AuditEntityTypes.StoppageWorkItem;
+                entityId = GetEntityId(entry, workItem.Id);
+                summary = GetStringValue(entry, nameof(StoppageWorkItem.Text), workItem.Text);
+                entityUrl = action == AuditActions.Deleted
+                    ? null
+                    : "/brigade-rating/work-items";
+                return true;
+
+            case PersonnelPerson person:
+                entityType = AuditEntityTypes.PersonnelPerson;
+                entityId = GetEntityId(entry, person.Id);
+                summary = GetStringValue(entry, nameof(PersonnelPerson.FullName), person.FullName);
+                entityUrl = action == AuditActions.Deleted
+                    ? null
+                    : $"/personnel/edit/{entityId}";
+                return true;
+
             case AppSetting setting:
                 entityType = AuditEntityTypes.AppSetting;
                 var key = entry.State == EntityState.Deleted

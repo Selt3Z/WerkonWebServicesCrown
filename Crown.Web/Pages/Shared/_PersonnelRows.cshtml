@@ -1,0 +1,13 @@
+@model List<PersonnelPerson>
+@foreach (var p in Model)
+{
+    <tr class="table-row-action @(p.IsActive ? null : "crown-row-archived")"
+        data-href="/personnel/edit/@p.Id"
+        tabindex="0"
+        role="link"
+        aria-label="Сотрудник: @p.FullName">
+        <td>@p.FullName</td>
+        <td>@(p.Position ?? "—")</td>
+        <td>@(p.IsActive ? "Активен" : "Неактивен")</td>
+    </tr>
+}

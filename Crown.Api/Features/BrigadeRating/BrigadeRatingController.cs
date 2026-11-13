@@ -182,6 +182,133 @@ public sealed class BrigadeRatingController(
         return NoContent();
     }
 
+    // ---------- Справочник выполняемых работ ----------
+
+    [HttpGet("work-items")]
+    public async Task<ActionResult<List<StoppageWorkItemResponse>>> ListWorkItems(
+        [FromQuery] bool activeOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var q = db.StoppageWorkItems.AsNoTracking().AsQueryable();
+        if (activeOnly)
+        {
+            q = q.Where(x => x.IsActive);
+        }
+
+        var items = await q
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Text)
+            .Select(x => new StoppageWorkItemResponse
+            {
+                Id = x.Id,
+                Text = x.Text,
+                IsActive = x.IsActive,
+                SortOrder = x.SortOrder
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(items);
+    }
+
+    [HttpPost("work-items")]
+    public async Task<ActionResult<StoppageWorkItemResponse>> CreateWorkItem(
+        [FromBody] SaveStoppageWorkItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsStaff())
+        {
+            return Forbid();
+        }
+
+        var text = (request.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return BadRequest(new { error = "work_item_text_required", message = "Укажите текст работы." });
+        }
+
+        var maxOrder = await db.StoppageWorkItems.MaxAsync(x => (int?)x.SortOrder, cancellationToken) ?? 0;
+        var entity = new StoppageWorkItem
+        {
+            Id = Guid.NewGuid(),
+            Text = text,
+            IsActive = request.IsActive,
+            SortOrder = request.SortOrder > 0 ? request.SortOrder : maxOrder + 1,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.StoppageWorkItems.Add(entity);
+        await db.SaveChangesAsync(cancellationToken);
+        return CreatedAtAction(nameof(ListWorkItems), MapWorkItem(entity));
+    }
+
+    [HttpPut("work-items/{id:guid}")]
+    public async Task<ActionResult<StoppageWorkItemResponse>> UpdateWorkItem(
+        Guid id,
+        [FromBody] SaveStoppageWorkItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsStaff())
+        {
+            return Forbid();
+        }
+
+        var entity = await db.StoppageWorkItems.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        var text = (request.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return BadRequest(new { error = "work_item_text_required", message = "Укажите текст работы." });
+        }
+
+        entity.Text = text;
+        entity.IsActive = request.IsActive;
+        if (request.SortOrder > 0)
+        {
+            entity.SortOrder = request.SortOrder;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(MapWorkItem(entity));
+    }
+
+    [HttpDelete("work-items/{id:guid}")]
+    public async Task<IActionResult> DeleteWorkItem(Guid id, CancellationToken cancellationToken)
+    {
+        if (!IsStaff())
+        {
+            return Forbid();
+        }
+
+        var entity = await db.StoppageWorkItems.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        // В остановках: работа → «Вручную», снимок WorkDescription сохраняем.
+        var linked = await db.BrigadeStoppages
+            .Where(x => x.WorkItemId == id)
+            .ToListAsync(cancellationToken);
+        foreach (var s in linked)
+        {
+            s.WorkItemId = null;
+            s.IsWorkManual = true;
+            // WorkDescription не трогаем.
+        }
+
+        db.StoppageWorkItems.Remove(entity);
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
     // ---------- Stoppages ----------
 
     [HttpGet("stoppages")]
@@ -443,6 +570,20 @@ public sealed class BrigadeRatingController(
             .Take(10)
             .ToList();
 
+        // Топ по тексту работы; пустые (не указана) пропускаем.
+        var topWorks = rows
+            .Where(x => !string.IsNullOrWhiteSpace(x.WorkDescription))
+            .GroupBy(x => x.WorkDescription.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new WorkTopItemResponse
+            {
+                Text = g.First().WorkDescription.Trim(),
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Text)
+            .Take(10)
+            .ToList();
+
         var topStoppers = rows
             .GroupBy(x => string.IsNullOrWhiteSpace(x.StoppedByName) ? "—" : x.StoppedByName.Trim(), StringComparer.OrdinalIgnoreCase)
             .Select(g => new StopperTopItemResponse
@@ -486,6 +627,7 @@ public sealed class BrigadeRatingController(
             TopStoppers = topStoppers,
             BrigadeRanking = ranking,
             TopRemarks = top,
+            TopWorks = topWorks,
             Stoppages = rows
                 .OrderByDescending(x => x.ReportDate)
                 .ThenByDescending(x => x.StoppedAt)
@@ -597,33 +739,118 @@ public sealed class BrigadeRatingController(
         }
 
         var brigadeName = DisplayOf(brigadeUser);
-        var masterName = string.IsNullOrWhiteSpace(request.MasterName)
-            ? brigadeName
-            : request.MasterName.Trim();
 
-        string stoppedByName;
-        Guid? stoppedById = request.StoppedByUserId;
-        if (stoppedById is Guid sid && sid != Guid.Empty)
+        // Мастер: из персонала этой бригады (снимок ФИО) либо свободный текст / название бригады.
+        Guid? masterPersonId = null;
+        string masterName;
+        if (request.MasterPersonId is Guid mpid && mpid != Guid.Empty)
         {
-            var stopper = await users.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == sid, cancellationToken);
-            if (stopper is null)
+            var person = await db.PersonnelPeople.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == mpid && x.OwnerUserId == brigadeUser.Id, cancellationToken);
+            if (person is null)
             {
-                return (null, null, "Пользователь «кто остановил» не найден.", "stopped_by_invalid");
+                return (null, null, "Выбранный мастер не найден в персонале бригады.", "master_invalid");
             }
 
-            stoppedByName = string.IsNullOrWhiteSpace(request.StoppedByName)
-                ? DisplayOf(stopper)
-                : request.StoppedByName.Trim();
+            // Неактивного можно оставить только если он уже был выбран в этой остановке.
+            if (!person.IsActive && existing?.MasterPersonId != person.Id)
+            {
+                return (null, null, "Выбранный мастер неактивен.", "master_inactive");
+            }
+
+            masterPersonId = person.Id;
+            masterName = person.FullName.Trim();
+        }
+        else
+        {
+            masterName = string.IsNullOrWhiteSpace(request.MasterName)
+                ? brigadeName
+                : request.MasterName.Trim();
+        }
+
+        // Работа: из справочника (снимок текста) или вручную; пустая строка допустима.
+        Guid? workItemId = null;
+        var isWorkManual = request.IsWorkManual || request.WorkItemId is null || request.WorkItemId == Guid.Empty;
+        string workDescription;
+        if (isWorkManual)
+        {
+            workDescription = (request.WorkDescription ?? string.Empty).Trim();
+        }
+        else
+        {
+            var workItem = await db.StoppageWorkItems.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.WorkItemId!.Value, cancellationToken);
+            if (workItem is null)
+            {
+                return (null, null, "Выбранная работа не найдена в справочнике.", "work_item_invalid");
+            }
+
+            workItemId = workItem.Id;
+            workDescription = workItem.Text.Trim();
+        }
+
+        // Колонка WorkDescription — varchar(500), текст справочника может быть длиннее.
+        if (workDescription.Length > 500)
+        {
+            return (null, null, "Текст работы длиннее 500 символов.", "work_too_long");
+        }
+
+        // Кто остановил: подразделение (StoppedByUserId) + опционально сотрудник из его персонала.
+        Guid? stoppedByPersonId = null;
+        Guid? stoppedById = null;
+        string stoppedByName;
+
+        if (request.StoppedByUserId is Guid sid && sid != Guid.Empty)
+        {
+            var stopperDept = await users.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == sid, cancellationToken);
+            if (stopperDept is null || !stopperDept.IsActive)
+            {
+                return (null, null, "Подразделение «кто остановил» не найдено.", "stopped_by_invalid");
+            }
+
+            if (!await users.IsInRoleAsync(stopperDept, AppRoles.Department))
+            {
+                return (null, null, "«Кто остановил» — только подразделение.", "stopped_by_not_department");
+            }
+
+            stoppedById = sid;
+
+            if (request.StoppedByPersonId is Guid spid && spid != Guid.Empty)
+            {
+                var stopperPerson = await db.PersonnelPeople.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == spid && x.OwnerUserId == sid, cancellationToken);
+                if (stopperPerson is null)
+                {
+                    return (null, null, "Сотрудник не найден в персонале выбранного подразделения.", "stopped_by_person_invalid");
+                }
+
+                if (!stopperPerson.IsActive && existing?.StoppedByPersonId != stopperPerson.Id)
+                {
+                    return (null, null, "Выбранный остановивший неактивен.", "stopped_by_person_inactive");
+                }
+
+                stoppedByPersonId = stopperPerson.Id;
+                stoppedByName = stopperPerson.FullName.Trim();
+            }
+            else
+            {
+                // Только подразделение — снимок DisplayName или ручной текст (legacy).
+                stoppedByName = string.IsNullOrWhiteSpace(request.StoppedByName)
+                    ? DisplayOf(stopperDept)
+                    : request.StoppedByName.Trim();
+            }
+        }
+        else if (request.StoppedByPersonId is Guid spidOnly && spidOnly != Guid.Empty)
+        {
+            return (null, null, "Сначала выберите подразделение, которое остановило.", "stopped_by_dept_required");
         }
         else
         {
             stoppedByName = (request.StoppedByName ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(stoppedByName))
             {
-                return (null, null, "Укажите, кто остановил бригаду.", "stopped_by_required");
+                return (null, null, "Укажите, кто остановил.", "stopped_by_required");
             }
-
-            stoppedById = null;
         }
 
         var builtRemarks = await BuildRemarksAsync(request.Remarks, cancellationToken);
@@ -642,13 +869,17 @@ public sealed class BrigadeRatingController(
         entity.BrigadeUserId = brigadeUser.Id;
         entity.BrigadeName = brigadeName;
         entity.MasterName = masterName;
+        entity.MasterPersonId = masterPersonId;
         entity.ReportDate = request.ReportDate;
         entity.StoppedByUserId = stoppedById;
+        entity.StoppedByPersonId = stoppedByPersonId;
         entity.StoppedByName = stoppedByName;
         entity.StoppedAt = request.StoppedAt;
         entity.RestartedAt = request.RestartedAt;
         entity.Hours = BrigadeStoppageHours.Compute(request.StoppedAt, request.RestartedAt);
-        entity.WorkDescription = (request.WorkDescription ?? string.Empty).Trim();
+        entity.WorkDescription = workDescription;
+        entity.WorkItemId = workItemId;
+        entity.IsWorkManual = isWorkManual;
         entity.LastModifiedAt = DateTimeOffset.UtcNow;
         entity.LastModifiedByUserId = CurrentUserId();
 
@@ -748,6 +979,14 @@ public sealed class BrigadeRatingController(
         SortOrder = x.SortOrder
     };
 
+    private static StoppageWorkItemResponse MapWorkItem(StoppageWorkItem x) => new()
+    {
+        Id = x.Id,
+        Text = x.Text,
+        IsActive = x.IsActive,
+        SortOrder = x.SortOrder
+    };
+
     private static StoppageRemarkResponse MapRemark(StoppageRemark r) => new()
     {
         Id = r.Id,
@@ -767,12 +1006,16 @@ public sealed class BrigadeRatingController(
         BrigadeUserId = x.BrigadeUserId,
         BrigadeName = x.BrigadeName,
         MasterName = x.MasterName,
+        MasterPersonId = x.MasterPersonId,
         StoppedByName = x.StoppedByName,
         StoppedByUserId = x.StoppedByUserId,
+        StoppedByPersonId = x.StoppedByPersonId,
         StoppedAt = x.StoppedAt,
         RestartedAt = x.RestartedAt,
         Hours = x.Hours,
         WorkDescription = x.WorkDescription,
+        WorkItemId = x.WorkItemId,
+        IsWorkManual = x.IsWorkManual,
         RemarkCount = x.Remarks.Count,
         UnresolvedRemarkCount = x.Remarks.Count(r => !r.IsResolved)
     };
@@ -787,12 +1030,16 @@ public sealed class BrigadeRatingController(
             BrigadeUserId = item.BrigadeUserId,
             BrigadeName = item.BrigadeName,
             MasterName = item.MasterName,
+            MasterPersonId = item.MasterPersonId,
             StoppedByName = item.StoppedByName,
             StoppedByUserId = item.StoppedByUserId,
+            StoppedByPersonId = item.StoppedByPersonId,
             StoppedAt = item.StoppedAt,
             RestartedAt = item.RestartedAt,
             Hours = item.Hours,
             WorkDescription = item.WorkDescription,
+            WorkItemId = item.WorkItemId,
+            IsWorkManual = item.IsWorkManual,
             RemarkCount = item.RemarkCount,
             UnresolvedRemarkCount = item.UnresolvedRemarkCount,
             Remarks = x.Remarks

@@ -15,6 +15,8 @@ public static class AuditEntityTypes
     public const string Documentation = "Documentation";
     public const string BrigadeStoppage = "BrigadeStoppage";
     public const string StoppageActItem = "StoppageActItem";
+    public const string StoppageWorkItem = "StoppageWorkItem";
+    public const string PersonnelPerson = "PersonnelPerson";
     public const string AppSetting = "AppSetting";
     public const string User = "User";
 }

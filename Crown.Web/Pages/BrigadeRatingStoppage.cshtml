@@ -44,33 +44,78 @@
             </select>
         </div>
         <div class="mb-2">
-            <label class="form-label" asp-for="Input.MasterName">ФИО мастера</label>
-            <input class="form-control" asp-for="Input.MasterName" placeholder="ФИО мастера бригады" />
+            <label class="form-label" for="master-select">ФИО мастера</label>
+            <input type="hidden" asp-for="Input.MasterName" id="master-name" />
+            <select class="form-select" asp-for="Input.MasterPersonId" id="master-select">
+                @if (Model.Input.MasterPersonId is null && !string.IsNullOrWhiteSpace(Model.Input.MasterName))
+                {
+                    <option value="" selected data-name="@Model.Input.MasterName">@Model.Input.MasterName (без привязки)</option>
+                }
+                else
+                {
+                    <option value="">— не выбран —</option>
+                }
+                @foreach (var p in Model.MasterPersonnel)
+                {
+                    var label = string.IsNullOrWhiteSpace(p.Position) ? p.FullName : $"{p.FullName} — {p.Position}";
+                    if (Model.Input.MasterPersonId == p.Id)
+                    {
+                        <option value="@p.Id" selected data-name="@p.FullName">@label@(p.IsActive ? "" : " (неактивен)")</option>
+                    }
+                    else
+                    {
+                        <option value="@p.Id" data-name="@p.FullName">@label</option>
+                    }
+                }
+            </select>
         </div>
         <div class="mb-2">
             <label class="form-label" asp-for="Input.ReportDate">Дата (отчётные сутки) <span class="crown-req">*</span></label>
             <input class="form-control" type="date" asp-for="Input.ReportDate" required />
         </div>
         <div class="mb-2">
-            <label class="form-label" asp-for="Input.StoppedByUserId">Кто остановил</label>
-            <select class="form-select" asp-for="Input.StoppedByUserId">
-                <option value="">— вручную / другой —</option>
-                @foreach (var u in Model.Users)
+            <label class="form-label" asp-for="Input.StoppedByUserId">Кто остановил <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.StoppedByUserId" id="stopped-by-dept" required>
+                <option value="">— выберите подразделение —</option>
+                @foreach (var u in Model.Departments)
                 {
                     if (Model.Input.StoppedByUserId == u.Id)
                     {
-                        <option value="@u.Id" selected>@u.DisplayName</option>
+                        <option value="@u.Id" selected data-name="@u.DisplayName">@u.DisplayName</option>
                     }
                     else
                     {
-                        <option value="@u.Id">@u.DisplayName</option>
+                        <option value="@u.Id" data-name="@u.DisplayName">@u.DisplayName</option>
                     }
                 }
             </select>
         </div>
         <div class="mb-2">
-            <label class="form-label" asp-for="Input.StoppedByName">ФИО / должность</label>
-            <input class="form-control" asp-for="Input.StoppedByName" placeholder="если не из списка пользователей" />
+            <label class="form-label" for="stopped-by-person">ФИО / должность</label>
+            <input type="hidden" asp-for="Input.StoppedByName" id="stopped-by-name" />
+            <select class="form-select" asp-for="Input.StoppedByPersonId" id="stopped-by-person">
+                @if (Model.Input.StoppedByPersonId is null && !string.IsNullOrWhiteSpace(Model.Input.StoppedByName) && Model.Input.StoppedByUserId is null)
+                {
+                    <option value="" selected data-name="@Model.Input.StoppedByName">@Model.Input.StoppedByName (без привязки)</option>
+                }
+                else
+                {
+                    <option value="">— не выбран —</option>
+                }
+                @foreach (var p in Model.StopperPersonnel)
+                {
+                    var label = string.IsNullOrWhiteSpace(p.Position) ? p.FullName : $"{p.FullName} — {p.Position}";
+                    if (Model.Input.StoppedByPersonId == p.Id)
+                    {
+                        <option value="@p.Id" selected data-name="@p.FullName">@label@(p.IsActive ? "" : " (неактивен)")</option>
+                    }
+                    else
+                    {
+                        <option value="@p.Id" data-name="@p.FullName">@label</option>
+                    }
+                }
+            </select>
+            <div class="form-text"><a href="/personnel">Персонал</a>: если пусто — добавьте сотрудников.</div>
         </div>
         <div class="mb-2">
             <label class="form-label" asp-for="Input.StoppedAt">Время остановки <span class="crown-req">*</span></label>
@@ -81,8 +126,32 @@
             <input class="form-control" type="time" asp-for="Input.RestartedAt" />
         </div>
         <div class="mb-2" style="grid-column: 1 / -1;">
-            <label class="form-label" asp-for="Input.WorkDescription">Выполняемая работа</label>
-            <input class="form-control" asp-for="Input.WorkDescription" />
+            <div class="d-flex align-items-end justify-content-between gap-2 mb-1">
+                <label class="form-label mb-0" for="work-select">Выполняемая работа</label>
+                <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/work-items">Справочник</a>
+            </div>
+            @{
+                var workManual = Model.Input.IsWorkManual || Model.Input.WorkItemId is null;
+            }
+            <input type="hidden" id="work-ismanual" name="Input.IsWorkManual" value="@(workManual ? "true" : "false")" />
+            <div class="brigade-work-editor">
+                <select class="form-select" asp-for="Input.WorkItemId" id="work-select">
+                    <option value="">— Вручную —</option>
+                    @foreach (var w in Model.WorkItems)
+                    {
+                        if (!workManual && Model.Input.WorkItemId == w.Id)
+                        {
+                            <option value="@w.Id" selected>@w.Text</option>
+                        }
+                        else
+                        {
+                            <option value="@w.Id">@w.Text</option>
+                        }
+                    }
+                </select>
+                <input class="form-control mt-1 @(workManual ? "" : "d-none")" asp-for="Input.WorkDescription" id="work-text"
+                       placeholder="Выполняемая работа вручную" />
+            </div>
         </div>
     </div>
 
@@ -154,17 +223,71 @@
     const addBtn = document.getElementById('add-remark-row');
     const actItems = @Html.Raw(actItemsJson);
     const brigadeSelect = document.getElementById('brigade-select');
-    const masterInput = document.querySelector('[name="Input.MasterName"]');
+    const masterName = document.getElementById('master-name');
+    const masterSelect = document.getElementById('master-select');
+    const stoppedByDept = document.getElementById('stopped-by-dept');
+    const stoppedByName = document.getElementById('stopped-by-name');
+    const stoppedByPerson = document.getElementById('stopped-by-person');
 
-    // Подставляем ФИО мастера из названия бригады, если поле пустое.
-    brigadeSelect?.addEventListener('change', () => {
-        if (!masterInput) return;
-        if (masterInput.value && masterInput.dataset.touched === '1') return;
-        const opt = brigadeSelect.selectedOptions[0];
-        const name = opt?.getAttribute('data-name') || '';
-        if (name) masterInput.value = name;
+    function brigadeDisplayName() {
+        return brigadeSelect?.selectedOptions[0]?.getAttribute('data-name') || '';
+    }
+    function deptDisplayName() {
+        return stoppedByDept?.selectedOptions[0]?.getAttribute('data-name') || '';
+    }
+    function syncPersonName(select, hidden, fallback) {
+        if (!select || !hidden) return;
+        const opt = select.selectedOptions[0];
+        hidden.value = select.value ? (opt?.getAttribute('data-name') || '') : (fallback || '');
+    }
+    masterSelect?.addEventListener('change', () => syncPersonName(masterSelect, masterName, brigadeDisplayName()));
+    stoppedByPerson?.addEventListener('change', () => syncPersonName(stoppedByPerson, stoppedByName, deptDisplayName()));
+
+    function fillPersonnelSelect(select, people, emptyLabel) {
+        if (!select) return;
+        select.innerHTML = `<option value="">${emptyLabel}</option>`;
+        people.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.dataset.name = p.fullName;
+            opt.textContent = p.position ? `${p.fullName} — ${p.position}` : p.fullName;
+            select.appendChild(opt);
+        });
+    }
+
+    async function loadPersonnel(ownerId, select, emptyLabel) {
+        fillPersonnelSelect(select, [], emptyLabel);
+        if (!ownerId) return;
+        try {
+            const res = await fetch(`/brigade-rating/stoppage?handler=Personnel&ownerUserId=${encodeURIComponent(ownerId)}`);
+            if (!res.ok) return;
+            const people = await res.json();
+            fillPersonnelSelect(select, people, emptyLabel);
+        } catch { /* ignore */ }
+    }
+
+    // Смена бригады → персонал мастера.
+    brigadeSelect?.addEventListener('change', async () => {
+        if (masterName) masterName.value = brigadeDisplayName();
+        await loadPersonnel(brigadeSelect.value, masterSelect, '— не выбран —');
     });
-    masterInput?.addEventListener('input', () => { masterInput.dataset.touched = '1'; });
+
+    // Смена подразделения «кто остановил» → его персонал в ФИО.
+    stoppedByDept?.addEventListener('change', async () => {
+        if (stoppedByName) stoppedByName.value = deptDisplayName();
+        await loadPersonnel(stoppedByDept.value, stoppedByPerson, '— не выбран —');
+    });
+
+    // Работа: из справочника или вручную (как «Вручную» у пунктов акта).
+    const workSelect = document.getElementById('work-select');
+    const workText = document.getElementById('work-text');
+    const workManualInput = document.getElementById('work-ismanual');
+    workSelect?.addEventListener('change', () => {
+        const manual = !workSelect.value;
+        workManualInput.value = manual ? 'true' : 'false';
+        workText.classList.toggle('d-none', !manual);
+        if (!manual) workText.value = '';
+    });
 
     function syncRow(row) {
         const sel = row.querySelector('.remark-act');

@@ -107,6 +107,9 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
 
+                    b.Property<bool>("IsWorkManual")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTimeOffset?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -117,6 +120,9 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("MasterPersonId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateOnly>("ReportDate")
                         .HasColumnType("date");
@@ -132,6 +138,9 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<Guid?>("StoppedByPersonId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("StoppedByUserId")
                         .HasColumnType("uuid");
 
@@ -140,13 +149,22 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<Guid?>("WorkItemId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BrigadeUserId");
 
+                    b.HasIndex("MasterPersonId");
+
                     b.HasIndex("ReportDate");
 
+                    b.HasIndex("StoppedByPersonId");
+
                     b.HasIndex("StoppedByUserId");
+
+                    b.HasIndex("WorkItemId");
 
                     b.ToTable("BrigadeStoppages");
                 });
@@ -452,6 +470,41 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("ParkingLots");
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.PersonnelPerson", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Position")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FullName");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("PersonnelPeople");
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.RequestAttachment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -748,6 +801,35 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("IsResolved");
 
                     b.ToTable("StoppageRemarks");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.StoppageWorkItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("SortOrder");
+
+                    b.ToTable("StoppageWorkItems");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.Vehicle", b =>
@@ -1355,10 +1437,25 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("StoppedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Crown.Domain.Entities.PersonnelPerson", null)
+                        .WithMany()
+                        .HasForeignKey("MasterPersonId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Crown.Domain.Entities.PersonnelPerson", null)
+                        .WithMany()
+                        .HasForeignKey("StoppedByPersonId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Crown.Domain.Entities.StoppageWorkItem", null)
+                        .WithMany()
+                        .HasForeignKey("WorkItemId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.CatalogPart", b =>
-                {
+            {
                     b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
@@ -1420,6 +1517,15 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("EquipmentAsset");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.PersonnelPerson", b =>
+                {
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.RequestAttachment", b =>

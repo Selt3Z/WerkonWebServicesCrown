@@ -100,6 +100,7 @@
         <div class="crown-page-head-actions">
             @if (Model.CanEnter)
             {
+                <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/work-items" title="Справочник выполняемых работ">Выполняемые работы</a>
                 <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/act-items" title="Справочник пунктов по акту">Пункты акта</a>
                 <a class="btn btn-success btn-sm crown-head-icon-btn" href="/brigade-rating/stoppage" title="Добавить остановку" aria-label="Добавить остановку">+</a>
             }
@@ -112,7 +113,7 @@
         </div>
     </div>
 
-    <div class="brigade-rating-period-bar mb-3">
+    <div class="brigade-rating-period-bar">
         <div class="summary-period-switch" role="group" aria-label="Период">
             <a class="btn btn-sm @(Model.Period == "today" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("today")">Сегодня</a>
             <a class="btn btn-sm @(Model.Period == "month" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("month")">Месяц</a>
@@ -271,38 +272,38 @@
             </article>
         </section>
 
-        <div class="brigade-rating-split mb-3">
-            <section class="entity-panel">
-                <h2 class="section-title">Рейтинг бригад</h2>
-                @if (d.BrigadeRanking.Count == 0)
-                {
-                    <p class="text-muted mb-0">Нет остановок за период.</p>
-                }
-                else
-                {
-                    <ol class="brigade-rank-list">
-                        @foreach (var row in d.BrigadeRanking)
-                        {
-                            <li class="brigade-rank-item">
-                                <div class="brigade-rank-head">
-                                    <button type="button"
-                                            class="brigade-rank-name-btn"
-                                            data-brigade-id="@row.BrigadeUserId"
-                                            data-brigade-name="@row.BrigadeName">
-                                        @row.BrigadeName
-                                    </button>
-                                    <span class="text-muted">@row.MasterName</span>
-                                    <span class="brigade-rank-meta">@row.UnresolvedRemarkCount откр. · @row.TotalHours.ToString("0.##") ч · @row.StoppageCount ост.</span>
-                                </div>
-                                <div class="brigade-rank-bar-track" aria-hidden="true">
-                                    <div class="brigade-rank-bar" style="width:@BarWidth(row.Score)"></div>
-                                </div>
-                            </li>
-                        }
-                    </ol>
-                }
-            </section>
+        <section class="entity-panel mb-3">
+            <h2 class="section-title">Рейтинг бригад</h2>
+            @if (d.BrigadeRanking.Count == 0)
+            {
+                <p class="text-muted mb-0">Нет остановок за период.</p>
+            }
+            else
+            {
+                <ol class="brigade-rank-list">
+                    @foreach (var row in d.BrigadeRanking)
+                    {
+                        <li class="brigade-rank-item">
+                            <div class="brigade-rank-head">
+                                <button type="button"
+                                        class="brigade-rank-name-btn"
+                                        data-brigade-id="@row.BrigadeUserId"
+                                        data-brigade-name="@row.BrigadeName">
+                                    @row.BrigadeName
+                                </button>
+                                <span class="text-muted">@row.MasterName</span>
+                                <span class="brigade-rank-meta">@row.UnresolvedRemarkCount откр. · @row.TotalHours.ToString("0.##") ч · @row.StoppageCount ост.</span>
+                            </div>
+                            <div class="brigade-rank-bar-track" aria-hidden="true">
+                                <div class="brigade-rank-bar" style="width:@BarWidth(row.Score)"></div>
+                            </div>
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
 
+        <div class="brigade-rating-split mb-3">
             <section class="entity-panel">
                 <h2 class="section-title">Топ-10 замечаний</h2>
                 @if (d.TopRemarks.Count == 0)
@@ -317,6 +318,26 @@
                             <li>
                                 <span class="brigade-top-count">@r.Count</span>
                                 <span>@r.Text</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+
+            <section class="entity-panel">
+                <h2 class="section-title">Топ-10 работ</h2>
+                @if (d.TopWorks.Count == 0)
+                {
+                    <p class="text-muted mb-0">Работы в остановках не указаны.</p>
+                }
+                else
+                {
+                    <ol class="brigade-top-remarks">
+                        @foreach (var w in d.TopWorks)
+                        {
+                            <li>
+                                <span class="brigade-top-count">@w.Count</span>
+                                <span>@w.Text</span>
                             </li>
                         }
                     </ol>

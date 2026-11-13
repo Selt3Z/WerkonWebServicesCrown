@@ -731,6 +731,13 @@ a.history-user-link:hover {
     flex-direction: column;
     align-items: flex-end;
     gap: 0.45rem;
+    margin-bottom: 0.35rem; /* плотнее к «Период» / сравнению */
+}
+
+.brigade-rating-period-bar + .summary-period-toolbar,
+.brigade-rating-period-bar ~ .summary-period-toolbar {
+    margin-top: 0;
+    margin-bottom: 0.35rem;
 }
 
 .brigade-rating-period-bar .summary-period-switch {
@@ -739,6 +746,7 @@ a.history-user-link:hover {
 
 .brigade-rating-period-bar .list-filters {
     margin-left: auto;
+    margin-bottom: 0 !important; /* иначе list-filters даёт 1rem под годом */
     width: auto;
     max-width: 100%;
 }
@@ -823,7 +831,7 @@ a.history-user-link:hover {
     flex: 0 0 auto;
     height: 100%;
     min-width: 0;
-    background: linear-gradient(90deg, #2765a8, #2f8f5b);
+    background: #2f8f5b; /* как сегмент pie «устранено» */
 }
 
 .brigade-mix-open {
@@ -831,7 +839,7 @@ a.history-user-link:hover {
     flex: 0 0 auto;
     height: 100%;
     min-width: 0;
-    background: linear-gradient(90deg, #c45c26, #e08a4f);
+    background: #c45c26; /* как сегмент pie «открыто» */
 }
 
 .brigade-rank-list {

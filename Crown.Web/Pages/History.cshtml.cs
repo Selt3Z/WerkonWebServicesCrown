@@ -41,6 +41,8 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
         ("Documentation", "Документация"),
         ("BrigadeStoppage", "Остановка бригады"),
         ("StoppageActItem", "Пункт акта"),
+        ("StoppageWorkItem", "Выполняемая работа"),
+        ("PersonnelPerson", "Сотрудник"),
         ("AppSetting", "Настройки"),
         ("User", "Пользователь")
     ];

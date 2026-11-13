@@ -32,6 +32,8 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     public DbSet<BrigadeStoppage> BrigadeStoppages => Set<BrigadeStoppage>();
     public DbSet<StoppageRemark> StoppageRemarks => Set<StoppageRemark>();
     public DbSet<StoppageActItem> StoppageActItems => Set<StoppageActItem>();
+    public DbSet<StoppageWorkItem> StoppageWorkItems => Set<StoppageWorkItem>();
+    public DbSet<PersonnelPerson> PersonnelPeople => Set<PersonnelPerson>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -357,6 +359,9 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.Hours).HasPrecision(10, 2);
             entity.HasIndex(x => x.ReportDate);
             entity.HasIndex(x => x.BrigadeUserId);
+            entity.HasIndex(x => x.WorkItemId);
+            entity.HasIndex(x => x.MasterPersonId);
+            entity.HasIndex(x => x.StoppedByPersonId);
             entity.HasOne<ApplicationUser>()
                 .WithMany()
                 .HasForeignKey(x => x.BrigadeUserId)
@@ -364,6 +369,18 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.HasOne<ApplicationUser>()
                 .WithMany()
                 .HasForeignKey(x => x.StoppedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<StoppageWorkItem>()
+                .WithMany()
+                .HasForeignKey(x => x.WorkItemId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<PersonnelPerson>()
+                .WithMany()
+                .HasForeignKey(x => x.MasterPersonId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<PersonnelPerson>()
+                .WithMany()
+                .HasForeignKey(x => x.StoppedByPersonId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -389,6 +406,26 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.Text).HasMaxLength(2000).IsRequired();
             entity.HasIndex(x => x.IsActive);
             entity.HasIndex(x => x.SortOrder);
+        });
+
+        modelBuilder.Entity<StoppageWorkItem>(entity =>
+        {
+            entity.Property(x => x.Text).HasMaxLength(2000).IsRequired();
+            entity.HasIndex(x => x.IsActive);
+            entity.HasIndex(x => x.SortOrder);
+        });
+
+        modelBuilder.Entity<PersonnelPerson>(entity =>
+        {
+            entity.Property(x => x.FullName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Position).HasMaxLength(200);
+            entity.HasIndex(x => x.OwnerUserId);
+            entity.HasIndex(x => x.FullName);
+            entity.HasIndex(x => x.IsActive);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -569,6 +569,39 @@ public sealed class SaveStoppageActItemRequest
     public int SortOrder { get; set; }
 }
 
+public sealed class StoppageWorkItem
+{
+    public Guid Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public sealed class SaveStoppageWorkItemRequest
+{
+    public string Text { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+    public int SortOrder { get; set; }
+}
+
+public sealed class PersonnelPerson
+{
+    public Guid Id { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public string OwnerDisplayName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string? Position { get; set; }
+    public bool IsActive { get; set; }
+}
+
+public sealed class SavePersonnelPersonRequest
+{
+    public Guid? OwnerUserId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string? Position { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
 public sealed class StoppageRemarkItem
 {
     public Guid Id { get; set; }
@@ -588,12 +621,16 @@ public class BrigadeStoppageListItem
     public Guid BrigadeUserId { get; set; }
     public string BrigadeName { get; set; } = string.Empty;
     public string MasterName { get; set; } = string.Empty;
+    public Guid? MasterPersonId { get; set; }
     public string StoppedByName { get; set; } = string.Empty;
     public Guid? StoppedByUserId { get; set; }
+    public Guid? StoppedByPersonId { get; set; }
     public TimeOnly StoppedAt { get; set; }
     public TimeOnly? RestartedAt { get; set; }
     public decimal Hours { get; set; }
     public string WorkDescription { get; set; } = string.Empty;
+    public Guid? WorkItemId { get; set; }
+    public bool IsWorkManual { get; set; } = true;
     public int RemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
 }
@@ -618,11 +655,15 @@ public sealed class SaveBrigadeStoppageRequest
     public Guid BrigadeUserId { get; set; }
     public DateOnly ReportDate { get; set; }
     public string? MasterName { get; set; }
+    public Guid? MasterPersonId { get; set; }
     public Guid? StoppedByUserId { get; set; }
+    public Guid? StoppedByPersonId { get; set; }
     public string? StoppedByName { get; set; }
     public TimeOnly StoppedAt { get; set; }
     public TimeOnly? RestartedAt { get; set; }
     public string WorkDescription { get; set; } = string.Empty;
+    public Guid? WorkItemId { get; set; }
+    public bool IsWorkManual { get; set; } = true;
     public List<SaveStoppageRemarkRequest> Remarks { get; set; } = [];
 }
 
@@ -649,6 +690,7 @@ public sealed class BrigadeRatingDashboard
     public List<StopperTopItem> TopStoppers { get; set; } = [];
     public List<BrigadeRankItem> BrigadeRanking { get; set; } = [];
     public List<RemarkTopItem> TopRemarks { get; set; } = [];
+    public List<WorkTopItem> TopWorks { get; set; } = [];
     public List<BrigadeStoppageListItem> Stoppages { get; set; } = [];
 }
 
@@ -695,6 +737,12 @@ public sealed class BrigadeRankItem
 }
 
 public sealed class RemarkTopItem
+{
+    public string Text { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public sealed class WorkTopItem
 {
     public string Text { get; set; } = string.Empty;
     public int Count { get; set; }

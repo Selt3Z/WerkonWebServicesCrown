@@ -23,9 +23,18 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
 
     public List<BrigadeParticipant> Brigades { get; private set; } = [];
 
-    public List<RequestAssignee> Users { get; private set; } = [];
+    /// <summary>Подразделения для «Кто остановил» (assignees = Department).</summary>
+    public List<RequestAssignee> Departments { get; private set; } = [];
 
     public List<StoppageActItem> ActItems { get; private set; } = [];
+
+    public List<StoppageWorkItem> WorkItems { get; private set; } = [];
+
+    /// <summary>Персонал выбранной бригады (мастер).</summary>
+    public List<PersonnelPerson> MasterPersonnel { get; private set; } = [];
+
+    /// <summary>Персонал подразделения, которое остановило.</summary>
+    public List<PersonnelPerson> StopperPersonnel { get; private set; } = [];
 
     public string? Error { get; private set; }
 
@@ -56,8 +65,10 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             }
 
             Input = FromDetail(result.Data);
-            // Если у текущей бригады забрали право — всё равно показываем её в селекте.
             EnsureCurrentBrigadeInList(result.Data.BrigadeUserId, result.Data.BrigadeName);
+            await LoadWorkItemsAsync(Input.WorkItemId);
+            await LoadMasterPersonnelAsync(Input.BrigadeUserId, Input.MasterPersonId);
+            await LoadStopperPersonnelAsync(Input.StoppedByUserId, Input.StoppedByPersonId);
         }
         else
         {
@@ -69,9 +80,30 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
                 Input.BrigadeUserId = Brigades[0].Id;
                 Input.MasterName = Brigades[0].Name;
             }
+
+            await LoadWorkItemsAsync(null);
+            await LoadMasterPersonnelAsync(Input.BrigadeUserId, null);
+            await LoadStopperPersonnelAsync(Input.StoppedByUserId, null);
         }
 
         return Page();
+    }
+
+    /// <summary>Персонал владельца для JS (мастер или остановивший).</summary>
+    public async Task<IActionResult> OnGetPersonnelAsync(Guid ownerUserId)
+    {
+        if (!CanEnter)
+        {
+            return Forbid();
+        }
+
+        var people = await FetchPersonnelAsync(ownerUserId, null);
+        return new JsonResult(people.Select(p => new
+        {
+            id = p.Id,
+            fullName = p.FullName,
+            position = p.Position
+        }));
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -83,10 +115,20 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
 
         await LoadLookupsAsync();
         EnsureCurrentBrigadeInList(Input.BrigadeUserId, Input.BrigadeNameHint);
+        await LoadWorkItemsAsync(Input.WorkItemId);
+        await LoadMasterPersonnelAsync(Input.BrigadeUserId, Input.MasterPersonId);
+        await LoadStopperPersonnelAsync(Input.StoppedByUserId, Input.StoppedByPersonId);
 
         if (Input.BrigadeUserId == Guid.Empty)
         {
             Error = "Выберите бригаду.";
+            EnsureRemarkSlots();
+            return Page();
+        }
+
+        if (Input.StoppedByUserId is null || Input.StoppedByUserId == Guid.Empty)
+        {
+            Error = "Выберите подразделение, которое остановило.";
             EnsureRemarkSlots();
             return Page();
         }
@@ -137,16 +179,22 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             return Page();
         }
 
+        var workManual = Input.IsWorkManual || Input.WorkItemId is null || Input.WorkItemId == Guid.Empty;
+
         var payload = new SaveBrigadeStoppageRequest
         {
             BrigadeUserId = Input.BrigadeUserId,
             ReportDate = Input.ReportDate,
             MasterName = Input.MasterName,
+            MasterPersonId = Input.MasterPersonId is Guid mpid && mpid != Guid.Empty ? mpid : null,
             StoppedByUserId = Input.StoppedByUserId,
+            StoppedByPersonId = Input.StoppedByPersonId is Guid spid && spid != Guid.Empty ? spid : null,
             StoppedByName = Input.StoppedByName,
             StoppedAt = stoppedAt,
             RestartedAt = restartedAt,
             WorkDescription = Input.WorkDescription?.Trim() ?? string.Empty,
+            WorkItemId = workManual ? null : Input.WorkItemId,
+            IsWorkManual = workManual,
             Remarks = remarks
         };
 
@@ -191,6 +239,9 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         if (!result.Ok)
         {
             await LoadLookupsAsync();
+            await LoadWorkItemsAsync(Input.WorkItemId);
+            await LoadMasterPersonnelAsync(Input.BrigadeUserId, Input.MasterPersonId);
+            await LoadStopperPersonnelAsync(Input.StoppedByUserId, Input.StoppedByPersonId);
             Error = result.Error ?? "Не удалось удалить остановку.";
             EnsureRemarkSlots();
             return Page();
@@ -236,15 +287,50 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             HttpContext.RequestAborted);
         Brigades = brigades.Data ?? [];
 
-        var users = await api.GetAsync<List<RequestAssignee>>(
+        var depts = await api.GetAsync<List<RequestAssignee>>(
             "api/requests/assignees",
             HttpContext.RequestAborted);
-        Users = users.Data ?? [];
+        Departments = depts.Data ?? [];
 
         var acts = await api.GetAsync<List<StoppageActItem>>(
             "api/brigade-rating/act-items?activeOnly=true",
             HttpContext.RequestAborted);
         ActItems = acts.Data ?? [];
+    }
+
+    private async Task LoadWorkItemsAsync(Guid? currentWorkItemId)
+    {
+        var works = await api.GetAsync<List<StoppageWorkItem>>(
+            "api/brigade-rating/work-items",
+            HttpContext.RequestAborted);
+        WorkItems = (works.Data ?? [])
+            .Where(x => x.IsActive || (currentWorkItemId is Guid cid && x.Id == cid))
+            .ToList();
+    }
+
+    private async Task LoadMasterPersonnelAsync(Guid brigadeUserId, Guid? currentMasterId) =>
+        MasterPersonnel = await FetchPersonnelAsync(brigadeUserId, currentMasterId);
+
+    private async Task LoadStopperPersonnelAsync(Guid? deptUserId, Guid? currentPersonId) =>
+        StopperPersonnel = deptUserId is Guid id
+            ? await FetchPersonnelAsync(id, currentPersonId)
+            : [];
+
+    private async Task<List<PersonnelPerson>> FetchPersonnelAsync(Guid ownerUserId, Guid? keepId)
+    {
+        if (ownerUserId == Guid.Empty)
+        {
+            return [];
+        }
+
+        var url = UiHelpers.BuildUrl(
+            "api/personnel",
+            ("ownerUserId", ownerUserId.ToString()),
+            ("take", "500"));
+        var result = await api.GetAsync<PagedResponse<PersonnelPerson>>(url, HttpContext.RequestAborted);
+        return (result.Data?.Items ?? [])
+            .Where(x => x.IsActive || (keepId is Guid kid && x.Id == kid))
+            .ToList();
     }
 
     private static bool TryParseTime(string? raw, out TimeOnly value)
@@ -260,11 +346,15 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         BrigadeNameHint = d.BrigadeName,
         ReportDate = d.ReportDate,
         MasterName = d.MasterName,
+        MasterPersonId = d.MasterPersonId,
         StoppedByUserId = d.StoppedByUserId,
+        StoppedByPersonId = d.StoppedByPersonId,
         StoppedByName = d.StoppedByName,
         StoppedAt = d.StoppedAt.ToString("HH:mm"),
         RestartedAt = d.RestartedAt?.ToString("HH:mm"),
         WorkDescription = d.WorkDescription,
+        WorkItemId = d.WorkItemId,
+        IsWorkManual = d.IsWorkManual || d.WorkItemId is null,
         Remarks = d.Remarks
             .OrderBy(r => r.SortOrder)
             .Select(r => new RemarkLineInput
@@ -282,15 +372,18 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
     public sealed class StoppageFormInput
     {
         public Guid BrigadeUserId { get; set; }
-        /// <summary>Имя бригады из detail — если её уже нет в списке участников.</summary>
         public string? BrigadeNameHint { get; set; }
         public DateOnly ReportDate { get; set; }
         public string? MasterName { get; set; }
+        public Guid? MasterPersonId { get; set; }
         public Guid? StoppedByUserId { get; set; }
+        public Guid? StoppedByPersonId { get; set; }
         public string? StoppedByName { get; set; }
         public string? StoppedAt { get; set; }
         public string? RestartedAt { get; set; }
         public string? WorkDescription { get; set; }
+        public Guid? WorkItemId { get; set; }
+        public bool IsWorkManual { get; set; } = true;
         public List<RemarkLineInput> Remarks { get; set; } = [];
     }
 

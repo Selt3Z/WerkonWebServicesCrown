@@ -1,0 +1,156 @@
+@page "/personnel"
+@model PersonnelModel
+@{
+    ViewData["Title"] = "Персонал";
+    var addHref = Model.IsStaff && Model.OwnerUserId is Guid oid
+        ? $"/personnel/edit?ownerUserId={oid}"
+        : "/personnel/edit";
+    var resetHref = Model.IsStaff && Model.OwnerUserId is Guid ro
+        ? $"/personnel?ownerUserId={ro}"
+        : "/personnel";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Персонал</h1>
+    @if (Model.CanEdit)
+    {
+        <a class="btn btn-success" href="@addHref">Добавить сотрудника</a>
+    }
+</div>
+
+@if (Model.IsStaff)
+{
+    <form method="get" class="list-filters summary-user-picker mb-3">
+        <div class="filter-field filter-field-inline filter-field-grow">
+            <label class="form-label" for="pers-owner">Подразделение (персонал)</label>
+            <select id="pers-owner" class="form-select" name="ownerUserId" onchange="this.form.requestSubmit()">
+                <option value="">— выберите подразделение —</option>
+                @foreach (var u in Model.Owners)
+                {
+                    if (Model.OwnerUserId == u.Id)
+                    {
+                        <option value="@u.Id" selected>@u.DisplayName (@u.UserName)</option>
+                    }
+                    else
+                    {
+                        <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
+                    }
+                }
+            </select>
+        </div>
+        <input type="hidden" name="q" value="@Model.Q" />
+        <input type="hidden" name="state" value="@Model.State" />
+    </form>
+}
+
+@if (Model.IsStaff && Model.OwnerUserId is null)
+{
+    <p class="text-muted">Выберите подразделение, чтобы посмотреть и править его персонал. Своего списка у администратора и диспетчера нет.</p>
+}
+else
+{
+    <form method="get" class="list-filters clients-filters mb-3">
+        @if (Model.IsStaff && Model.OwnerUserId is Guid keepOwner)
+        {
+            <input type="hidden" name="ownerUserId" value="@keepOwner" />
+        }
+        <div class="filter-field filter-field-inline filter-field-search">
+            <label class="form-label" for="pers-q">Поиск</label>
+            <input id="pers-q" class="form-control" type="search" name="q" value="@Model.Q" placeholder="ФИО или должность" />
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="pers-state">Статус</label>
+            <select id="pers-state" class="form-select" name="state">
+                @if (string.IsNullOrEmpty(Model.State))
+                {
+                    <option value="" selected>Все</option>
+                }
+                else
+                {
+                    <option value="">Все</option>
+                }
+                @if (Model.State == "active")
+                {
+                    <option value="active" selected>Активные</option>
+                }
+                else
+                {
+                    <option value="active">Активные</option>
+                }
+                @if (Model.State == "inactive")
+                {
+                    <option value="inactive" selected>Неактивные</option>
+                }
+                else
+                {
+                    <option value="inactive">Неактивные</option>
+                }
+            </select>
+        </div>
+    </form>
+
+    <div class="action-bar mb-3">
+        <button class="btn btn-primary" type="button" id="btn-pers-filters">Найти</button>
+        <a class="btn btn-secondary" href="@resetHref">Сбросить</a>
+    </div>
+    <script>
+    document.getElementById('btn-pers-filters')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelector('form.list-filters.clients-filters')?.requestSubmit();
+    });
+    </script>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+
+    <div class="crown-table-wrap schedule-desktop-table">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>ФИО</th>
+                <th>Должность</th>
+                <th>Статус</th>
+            </tr>
+            </thead>
+            <tbody data-infinite-scroll
+                   data-more-url="@UiHelpers.BuildUrl("/personnel",
+                       ("handler", "More"),
+                       ("q", Model.Q),
+                       ("state", Model.State),
+                       ("ownerUserId", Model.IsStaff ? Model.OwnerUserId?.ToString() : null))"
+                   data-skip="@Model.Items.Count"
+                   data-has-more="@(Model.HasMore ? "true" : "false")">
+            @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+            {
+                <tr class="crown-empty-row"><td colspan="3" class="text-muted text-center">Сотрудников нет.</td></tr>
+            }
+            else
+            {
+                <partial name="_PersonnelRows" model="Model.Items" />
+            }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="schedule-mobile-cards"
+         data-infinite-scroll
+         data-more-url="@UiHelpers.BuildUrl("/personnel",
+             ("handler", "MoreCards"),
+             ("q", Model.Q),
+             ("state", Model.State),
+             ("ownerUserId", Model.IsStaff ? Model.OwnerUserId?.ToString() : null))"
+         data-skip="@Model.Items.Count"
+         data-has-more="@(Model.HasMore ? "true" : "false")">
+        @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+        {
+            <p class="text-muted text-center mb-0">Сотрудников нет.</p>
+        }
+        else
+        {
+            <partial name="_PersonnelCards" model="Model.Items" />
+        }
+    </div>
+    <div class="infinite-scroll-sentinel" hidden></div>
+}

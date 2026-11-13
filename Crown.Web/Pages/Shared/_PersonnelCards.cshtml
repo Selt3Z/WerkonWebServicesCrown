@@ -1,0 +1,15 @@
+@model List<PersonnelPerson>
+@foreach (var p in Model)
+{
+    <div class="schedule-card table-row-action @(p.IsActive ? null : "crown-row-archived")"
+         data-href="/personnel/edit/@p.Id"
+         tabindex="0"
+         role="link"
+         aria-label="Сотрудник: @p.FullName">
+        <div class="schedule-card-header">
+            <span class="schedule-card-time">@(p.Position ?? "—")</span>
+            <span class="schedule-card-header-trailing">@(p.IsActive ? "Активен" : "Неактивен")</span>
+        </div>
+        <div class="schedule-card-title">@p.FullName</div>
+    </div>
+}

@@ -1,0 +1,74 @@
+@page "/personnel/edit/{id:guid?}"
+@model PersonnelSaveModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Редактирование сотрудника" : "Новый сотрудник";
+    var backHref = Model.IsStaff && (Model.Input.OwnerUserId ?? Model.OwnerUserId) is Guid oid
+        ? $"/personnel?ownerUserId={oid}"
+        : "/personnel";
+}
+
+<h1 class="section-title">@(Model.IsEdit ? "Редактирование сотрудника" : "Новый сотрудник")</h1>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (!(Model.IsStaff && Model.Id is null && Model.OwnerUserId is null && string.IsNullOrEmpty(Model.Input.FullName)))
+{
+    <form method="post" class="crown-form form-panel">
+        @if (Model.IsStaff)
+        {
+            <input type="hidden" asp-for="OwnerUserId" />
+            <input type="hidden" asp-for="Input.OwnerUserId" />
+            <div class="mb-3">
+                <label class="form-label">Подразделение</label>
+                <input class="form-control form-control-locked" readonly tabindex="-1"
+                       value="@(Model.Owners.FirstOrDefault(x => x.Id == (Model.Input.OwnerUserId ?? Model.OwnerUserId))?.DisplayName
+                               ?? (Model.Input.OwnerUserId ?? Model.OwnerUserId)?.ToString()
+                               ?? "—")" />
+            </div>
+        }
+        else
+        {
+            <div class="mb-3">
+                <label class="form-label">Подразделение</label>
+                <input class="form-control form-control-locked" readonly tabindex="-1"
+                       value="@(User.FindFirst(CrownAuthHandler.DisplayNameClaim)?.Value
+                               ?? User.Identity?.Name
+                               ?? "—")" />
+            </div>
+        }
+
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.FullName">ФИО <span class="crown-req">*</span></label>
+            <input class="form-control" asp-for="Input.FullName" required maxlength="200" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.Position">Должность</label>
+            <input class="form-control" asp-for="Input.Position" maxlength="200" placeholder="напр. Мастер" />
+        </div>
+
+        <div class="mb-3 form-check">
+            <input class="form-check-input" type="checkbox" asp-for="Input.IsActive" />
+            <label class="form-check-label" asp-for="Input.IsActive">Активен</label>
+        </div>
+
+        <div class="crown-form-actions">
+            <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
+            <a class="btn btn-outline-secondary btn-lg" href="@backHref">Отмена</a>
+            @if (Model.IsEdit)
+            {
+                <button type="submit" asp-page-handler="Delete" formnovalidate class="btn btn-outline-danger btn-lg"
+                        data-confirm="Удалить сотрудника? В уже созданных остановках имя мастера сохранится.">
+                    Удалить
+                </button>
+            }
+        </div>
+    </form>
+}
+else
+{
+    <a class="btn btn-outline-secondary" href="/personnel">К списку</a>
+}
