@@ -151,6 +151,8 @@ builder.Services.AddScoped<SystemDiagnosticsService>();
 builder.Services.AddHostedService<AuditRetentionHostedService>();
 builder.Services.AddScoped<Crown.Infrastructure.Documentation.DocumentationTrashPurgeService>();
 builder.Services.AddHostedService<Crown.Infrastructure.Documentation.DocumentationTrashRetentionHostedService>();
+builder.Services.AddScoped<Crown.Infrastructure.Documentation.DocumentationInboxSyncService>();
+builder.Services.AddHostedService<Crown.Infrastructure.Documentation.DocumentationInboxSyncHostedService>();
 
 builder.Services.AddSingleton<AppTimeZone>();
 builder.Services.AddSingleton<WarehouseInventoryPdfGenerator>();

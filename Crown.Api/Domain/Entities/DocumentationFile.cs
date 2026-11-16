@@ -21,6 +21,12 @@ public sealed class DocumentationFile
     /// <summary>Относительный путь внутри каталога вложений (docs/...).</summary>
     public string StoragePath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Ключ из share-inbox: относительный путь файла внутри папки подразделения
+    /// (для идемпотентного повторного синка). null — обычная загрузка через UI.
+    /// </summary>
+    public string? InboxSourceKey { get; set; }
+
     public DateTimeOffset UploadedAt { get; set; }
 
     public Guid? UploadedByUserId { get; set; }

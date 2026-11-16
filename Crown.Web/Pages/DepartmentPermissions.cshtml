@@ -1,11 +1,19 @@
 @page "/settings/department-permissions"
 @model DepartmentPermissionsModel
+@functions {
+    private static string RoleBadgeClass(string? role) => role switch
+    {
+        AppRoles.Brigade => "bg-warning text-dark",
+        AppRoles.Customer => "bg-info text-dark",
+        _ => "bg-primary"
+    };
+}
 @{
     ViewData["Title"] = "Права подразделений";
 }
 
 <div class="crown-page-head">
-    <h1 class="section-title">Права роли «Подразделение»</h1>
+    <h1 class="section-title">Права подразделений, заказчиков и бригад</h1>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
@@ -14,11 +22,12 @@
 }
 
 <p class="text-muted mb-3">
-    Галочки только у учёток с ролью «Подразделение».
+    Галочки у учёток с ролями «Подразделение», «Заказчик» и «Бригада».
     Без «своего оборудования» можно запрашивать единицы и держать чужие на балансе.
-    «Рейтинг бригад» — доступ к разделу и участие в рейтинге (это подразделение = бригада).
-    «Оператор рейтинга» — может добавлять/править/удалять остановки.
-    Без документации — раздел скрыт, чужие файлы всё ещё можно смотреть.
+    «Рейтинг бригад» — только просмотр: раздел, рейтинг и таблицы остановок/проверок.
+    «Оператор рейтинга» — работа с разделом: добавление, правка и удаление остановок, проверок, пунктов акта и выполняемых работ.
+    Бригадой в рейтинге считается роль «Бригада» (номер и цех задаются в карточке пользователя).
+    Без документации — подраздел скрыт, чужие файлы всё ещё можно смотреть.
 </p>
 
 <form method="post" class="department-permissions-form">
@@ -26,7 +35,7 @@
         <table class="table crown-table department-permissions-table">
             <thead>
             <tr>
-                <th>Подразделение</th>
+                <th>Пользователь</th>
                 <th class="text-center" title="В списке исполнителей заявок">Исполнитель</th>
                 <th class="text-center" title="Может подавать заявки RequestKind.SpecTech">Заявки на спецтехнику</th>
                 <th class="text-center" title="CRUD единиц оборудования">Своё оборудование</th>
@@ -34,8 +43,8 @@
                 <th class="text-center" title="Просмотр страницы Спецтехника">Спецтехника</th>
                 <th class="text-center" title="Просмотр страницы Склад">Склад</th>
                 <th class="text-center" title="Просмотр страницы Сводка">Сводка</th>
-                <th class="text-center" title="Доступ к разделу + фигурант рейтинга (подразделение = бригада)">Рейтинг бригад</th>
-                <th class="text-center" title="Добавление и правка остановок">Оператор рейтинга</th>
+                <th class="text-center" title="Только просмотр: рейтинг и таблицы остановок/проверок">Рейтинг бригад</th>
+                <th class="text-center" title="Работа с разделом: остановки, проверки, пункты акта, выполняемые работы">Оператор рейтинга</th>
                 <th class="text-center" title="Раздел документации + запись">Документация</th>
             </tr>
             </thead>
@@ -47,9 +56,24 @@
                 <tr class="@(!u.IsActive ? "crown-row-archived" : null)">
                     <td title="@u.DisplayName">
                         @u.DisplayName
+                        <span class="badge @RoleBadgeClass(u.Role) ms-1">@AppRoles.Display(u.Role)</span>
                         @if (!u.IsActive)
                         {
                             <span class="badge bg-secondary ms-1">выкл.</span>
+                        }
+                        @if (u.Role == AppRoles.Brigade
+                            && (!string.IsNullOrWhiteSpace(u.BrigadeNumber) || !string.IsNullOrWhiteSpace(u.BrigadeWorkshop)))
+                        {
+                            <div class="text-muted small">
+                                @if (!string.IsNullOrWhiteSpace(u.BrigadeNumber))
+                                {
+                                    <span>№ @u.BrigadeNumber</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(u.BrigadeWorkshop))
+                                {
+                                    <span>@(string.IsNullOrWhiteSpace(u.BrigadeNumber) ? null : " · ")цех @u.BrigadeWorkshop</span>
+                                }
+                            </div>
                         }
                         <input type="hidden" name="Rows[@i].UserId" value="@u.UserId" />
                     </td>
@@ -88,7 +112,7 @@
             }
             @if (Model.Users.Count == 0)
             {
-                <tr><td colspan="11" class="text-muted text-center">Нет пользователей с ролью «Подразделение».</td></tr>
+                <tr><td colspan="11" class="text-muted text-center">Нет пользователей с ролями «Подразделение», «Заказчик» или «Бригада».</td></tr>
             }
             </tbody>
         </table>

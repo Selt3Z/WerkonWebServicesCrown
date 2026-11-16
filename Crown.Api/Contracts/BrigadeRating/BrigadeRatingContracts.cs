@@ -6,6 +6,12 @@ public sealed class BrigadeParticipantResponse
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
+
+    /// <summary>Цех бригады (для формы проверок — подставляется в поле «Цех»).</summary>
+    public string? Workshop { get; set; }
+
+    /// <summary>Номер бригады.</summary>
+    public string? Number { get; set; }
 }
 
 public sealed class StoppageActItemResponse

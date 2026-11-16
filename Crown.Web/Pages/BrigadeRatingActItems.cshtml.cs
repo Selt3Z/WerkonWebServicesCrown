@@ -6,9 +6,14 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Crown.Web.Pages;
 
-[Authorize(Roles = AppRoles.Staff)]
+[Authorize]
 public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
 {
+    private bool CanOperate =>
+        User.IsInRole(AppRoles.Administrator)
+        || User.IsInRole(AppRoles.Dispatcher)
+        || User.FindFirst(CrownAuthHandler.CanOperateBrigadeRatingClaim)?.Value == "1";
+
     public List<StoppageActItem> Items { get; private set; } = [];
 
     public string? Error { get; private set; }
@@ -27,12 +32,22 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
         await LoadAsync();
         return Page();
     }
 
     public async Task<IActionResult> OnPostAddAsync()
     {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
         var text = (NewText ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -63,6 +78,11 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnPostSaveAsync()
     {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
         if (EditId is not Guid id)
         {
             return RedirectToPage();
@@ -98,6 +118,11 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnPostDeleteAsync(Guid id)
     {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
         var result = await api.DeleteAsync($"api/brigade-rating/act-items/{id}", HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {

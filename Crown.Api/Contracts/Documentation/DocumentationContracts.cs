@@ -121,3 +121,27 @@ public sealed class DocumentationAdminUserToggle
     public Guid UserId { get; set; }
     public bool DocumentationEnabled { get; set; }
 }
+
+public sealed class DocumentationInboxInfoResponse
+{
+    public Guid OwnerUserId { get; set; }
+    public string FolderKey { get; set; } = string.Empty;
+    public string HostInboxPath { get; set; } = string.Empty;
+    public string RelativeInboxPath { get; set; } = string.Empty;
+    public int PendingFileCount { get; set; }
+    public long MaxInboxFileBytes { get; set; }
+}
+
+public sealed class DocumentationInboxSyncResponse
+{
+    public Guid? OwnerUserId { get; set; }
+    public string? FolderKey { get; set; }
+    public string HostInboxPath { get; set; } = string.Empty;
+    public int Imported { get; set; }
+    public int Updated { get; set; }
+    public int Skipped { get; set; }
+    public int Failed { get; set; }
+    public int FoldersCreated { get; set; }
+    public int PendingBefore { get; set; }
+    public List<string> Messages { get; set; } = [];
+}

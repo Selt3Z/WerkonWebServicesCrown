@@ -20,7 +20,7 @@ public sealed class BrigadeRatingController(
     UserManager<ApplicationUser> users,
     AppTimeZone time) : ControllerBase
 {
-    // ---------- Участники (Department + CanViewBrigadeRating) ----------
+    // ---------- Участники (роль Brigade) ----------
 
     [HttpGet("brigades")]
     public async Task<ActionResult<List<BrigadeParticipantResponse>>> ListParticipants(
@@ -31,9 +31,9 @@ public sealed class BrigadeRatingController(
             return Forbid();
         }
 
-        var departmentUsers = await users.GetUsersInRoleAsync(AppRoles.Department);
-        IEnumerable<ApplicationUser> q = departmentUsers
-            .Where(u => u.IsActive && u.CanViewBrigadeRating);
+        // Бригада = роль Brigade (флаг CanViewBrigadeRating — только право смотреть раздел, не признак бригады).
+        var brigadeUsers = await users.GetUsersInRoleAsync(AppRoles.Brigade);
+        IEnumerable<ApplicationUser> q = brigadeUsers.Where(u => u.IsActive);
 
         // Staff и оператор видят всех участников; обычная бригада — только себя.
         if (!IsStaff() && !await CanOperateAsync(cancellationToken))
@@ -48,7 +48,9 @@ public sealed class BrigadeRatingController(
             {
                 Id = u.Id,
                 Name = DisplayOf(u),
-                UserName = u.UserName ?? string.Empty
+                UserName = u.UserName ?? string.Empty,
+                Workshop = string.IsNullOrWhiteSpace(u.BrigadeWorkshop) ? null : u.BrigadeWorkshop.Trim(),
+                Number = string.IsNullOrWhiteSpace(u.BrigadeNumber) ? null : u.BrigadeNumber.Trim()
             })
             .ToList();
 
@@ -93,7 +95,7 @@ public sealed class BrigadeRatingController(
         [FromBody] SaveStoppageActItemRequest request,
         CancellationToken cancellationToken)
     {
-        if (!IsStaff())
+        if (!await CanOperateAsync(cancellationToken))
         {
             return Forbid();
         }
@@ -124,7 +126,7 @@ public sealed class BrigadeRatingController(
         [FromBody] SaveStoppageActItemRequest request,
         CancellationToken cancellationToken)
     {
-        if (!IsStaff())
+        if (!await CanOperateAsync(cancellationToken))
         {
             return Forbid();
         }
@@ -155,7 +157,7 @@ public sealed class BrigadeRatingController(
     [HttpDelete("act-items/{id:guid}")]
     public async Task<IActionResult> DeleteActItem(Guid id, CancellationToken cancellationToken)
     {
-        if (!IsStaff())
+        if (!await CanOperateAsync(cancellationToken))
         {
             return Forbid();
         }
@@ -175,6 +177,16 @@ public sealed class BrigadeRatingController(
             r.ActItemId = null;
             r.IsManual = true;
             // Text / Comment не трогаем.
+        }
+
+        // Так же для нарушений в проверках: FK уже обнулит ActItemId, добавляем флаг «Вручную».
+        var linkedInspection = await db.BrigadeInspectionRemarks
+            .Where(x => x.ActItemId == id)
+            .ToListAsync(cancellationToken);
+        foreach (var r in linkedInspection)
+        {
+            r.ActItemId = null;
+            r.IsManual = true;
         }
 
         db.StoppageActItems.Remove(entity);
@@ -220,7 +232,7 @@ public sealed class BrigadeRatingController(
         [FromBody] SaveStoppageWorkItemRequest request,
         CancellationToken cancellationToken)
     {
-        if (!IsStaff())
+        if (!await CanOperateAsync(cancellationToken))
         {
             return Forbid();
         }
@@ -251,7 +263,7 @@ public sealed class BrigadeRatingController(
         [FromBody] SaveStoppageWorkItemRequest request,
         CancellationToken cancellationToken)
     {
-        if (!IsStaff())
+        if (!await CanOperateAsync(cancellationToken))
         {
             return Forbid();
         }
@@ -282,7 +294,7 @@ public sealed class BrigadeRatingController(
     [HttpDelete("work-items/{id:guid}")]
     public async Task<IActionResult> DeleteWorkItem(Guid id, CancellationToken cancellationToken)
     {
-        if (!IsStaff())
+        if (!await CanOperateAsync(cancellationToken))
         {
             return Forbid();
         }
@@ -727,21 +739,17 @@ public sealed class BrigadeRatingController(
             cancellationToken);
         if (brigadeUser is null || !brigadeUser.IsActive)
         {
-            return (null, null, "Выберите участника рейтинга (подразделение с галочкой «Рейтинг бригад»).", "brigade_invalid");
+            return (null, null, "Выберите бригаду (активный пользователь с ролью «Бригада»).", "brigade_invalid");
         }
 
-        // Менять на бригаду без флага нельзя; оставить текущую (даже без флага) — можно.
-        var keepingSameBrigade = existing is not null && existing.BrigadeUserId == request.BrigadeUserId;
-        if (!keepingSameBrigade && !brigadeUser.CanViewBrigadeRating)
+        // Участник рейтинга — строго роль Brigade (старые остановки с Department
+        // правятся после смены роли пользователя на «Бригада»).
+        if (!await users.IsInRoleAsync(brigadeUser, AppRoles.Brigade))
         {
-            return (null, null, "Выберите участника рейтинга (подразделение с галочкой «Рейтинг бригад»).", "brigade_invalid");
+            return (null, null, "Участник рейтинга должен иметь роль «Бригада».", "brigade_not_brigade");
         }
 
-        if (!await users.IsInRoleAsync(brigadeUser, AppRoles.Department))
-        {
-            return (null, null, "Участник рейтинга должен иметь роль «Подразделение».", "brigade_not_department");
-        }
-
+        // Снимок имени бригады вместе с номером: «Имя №номер».
         var brigadeName = DisplayOf(brigadeUser);
 
         // Мастер: из персонала этой бригады (снимок ФИО) либо свободный текст / название бригады.
@@ -840,7 +848,7 @@ public sealed class BrigadeRatingController(
             {
                 // Только подразделение — снимок DisplayName или ручной текст (legacy).
                 stoppedByName = string.IsNullOrWhiteSpace(request.StoppedByName)
-                    ? DisplayOf(stopperDept)
+                    ? DisplayOf(stopperDept, isBrigade: false)
                     : request.StoppedByName.Trim();
             }
         }
@@ -1234,7 +1242,7 @@ public sealed class BrigadeRatingController(
             return true;
         }
 
-        if (!User.IsInRole(AppRoles.Department))
+        if (!IsMatrixRole())
         {
             return false;
         }
@@ -1251,7 +1259,7 @@ public sealed class BrigadeRatingController(
             return true;
         }
 
-        if (!User.IsInRole(AppRoles.Department))
+        if (!IsMatrixRole())
         {
             return false;
         }
@@ -1259,6 +1267,10 @@ public sealed class BrigadeRatingController(
         var user = await users.GetUserAsync(User);
         return user is { IsActive: true, CanOperateBrigadeRating: true };
     }
+
+    /// <summary>Department / Customer / Brigade — роли, которым права рейтинга выдаются матрицей.</summary>
+    private bool IsMatrixRole() =>
+        AppRoles.SwitchableRoles.Any(User.IsInRole);
 
     /// <summary>UserManager шарит DbContext — иначе SaveChanges может UPDATE AspNetUsers по stale ConcurrencyStamp.</summary>
     private void DetachTrackedUsers()
@@ -1278,6 +1290,10 @@ public sealed class BrigadeRatingController(
         return Guid.TryParse(raw, out var id) ? id : null;
     }
 
-    private static string DisplayOf(ApplicationUser u) =>
-        string.IsNullOrWhiteSpace(u.DisplayName) ? (u.UserName ?? string.Empty) : u.DisplayName;
+    /// <summary>
+    /// Имя для списков/снимков. По умолчанию считаем пользователя бригадой (все участники рейтинга
+    /// в роли Brigade) и добавляем « №номер»; для «кто остановил» (Department) передаём isBrigade: false.
+    /// </summary>
+    private static string DisplayOf(ApplicationUser u, bool isBrigade = true) =>
+        UserDisplay.FormatUserDisplay(u, isBrigade);
 }

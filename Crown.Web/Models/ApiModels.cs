@@ -7,17 +7,26 @@ public static class AppRoles
     public const string Administrator = "Administrator";
     public const string Dispatcher = "Dispatcher";
     public const string Department = "Department";
+    public const string Customer = "Customer";
+    public const string Brigade = "Brigade";
 
     /// <summary>Админ или диспетчер — ведут заявки, оборудование, каталог, журнал.</summary>
     public const string Staff = Administrator + "," + Dispatcher;
 
-    public static readonly string[] All = [Administrator, Dispatcher, Department];
+    public static readonly string[] All = [Administrator, Dispatcher, Department, Customer, Brigade];
+
+    /// <summary>Роли, между которыми админ может переключать пользователя.</summary>
+    public static readonly string[] Switchable = [Department, Customer, Brigade];
+
+    public static bool IsSwitchable(string? role) => role is Department or Customer or Brigade;
 
     public static string Display(string? role) => role switch
     {
         Administrator => "Администратор",
         Dispatcher => "Диспетчер",
         Department => "Подразделение",
+        Customer => "Заказчик",
+        Brigade => "Бригада",
         "Initiator" => "Подразделение",
         _ => role ?? string.Empty
     };
@@ -420,6 +429,9 @@ public sealed class UserListItem
     public Guid Id { get; set; }
     public string UserName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public string? DocumentationTitle { get; set; }
+    public string? BrigadeNumber { get; set; }
+    public string? BrigadeWorkshop { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public DateTime? LastActivityAtUtc { get; set; }
@@ -517,6 +529,30 @@ public sealed class DocumentationAdminUser
     public bool DocumentationEnabled { get; set; }
 }
 
+public sealed class DocumentationInboxInfo
+{
+    public Guid OwnerUserId { get; set; }
+    public string FolderKey { get; set; } = string.Empty;
+    public string HostInboxPath { get; set; } = string.Empty;
+    public string RelativeInboxPath { get; set; } = string.Empty;
+    public int PendingFileCount { get; set; }
+    public long MaxInboxFileBytes { get; set; }
+}
+
+public sealed class DocumentationInboxSyncResult
+{
+    public Guid? OwnerUserId { get; set; }
+    public string? FolderKey { get; set; }
+    public string HostInboxPath { get; set; } = string.Empty;
+    public int Imported { get; set; }
+    public int Updated { get; set; }
+    public int Skipped { get; set; }
+    public int Failed { get; set; }
+    public int FoldersCreated { get; set; }
+    public int PendingBefore { get; set; }
+    public List<string> Messages { get; set; } = [];
+}
+
 public sealed class UpdateDocumentationSettingsRequest
 {
     public List<DocumentationAdminUserToggle> Users { get; set; } = [];
@@ -533,6 +569,9 @@ public sealed class DepartmentPermissionUser
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string? BrigadeNumber { get; set; }
+    public string? BrigadeWorkshop { get; set; }
     public bool IsActive { get; set; }
     public bool CanBeExecutor { get; set; }
     public bool CanCreateTransportRequests { get; set; }
@@ -571,6 +610,8 @@ public sealed class BrigadeParticipant
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
+    public string? Workshop { get; set; }
+    public string? Number { get; set; }
 }
 
 public sealed class StoppageActItem
@@ -691,6 +732,116 @@ public sealed class SetRemarkResolvedRequest
     public bool IsResolved { get; set; }
 }
 
+// ---------- Проверки бригад ----------
+
+public enum BrigadeInspectionKind
+{
+    Supervising = 1,
+    Pdk = 2,
+    Pbiot = 3
+}
+
+public enum BrigadeInspectionOutcome
+{
+    Prescription = 1,
+    Remark = 2,
+    Stoppage = 3
+}
+
+public sealed class BrigadeInspectionRemarkItem
+{
+    public Guid Id { get; set; }
+    public Guid? ActItemId { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public string? Comment { get; set; }
+    public bool IsManual { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public class BrigadeInspectionListItem
+{
+    public Guid Id { get; set; }
+    public BrigadeInspectionKind Kind { get; set; }
+    public int SequenceNo { get; set; }
+    public DateOnly ReportDate { get; set; }
+    public string Workshop { get; set; } = string.Empty;
+    public Guid BrigadeUserId { get; set; }
+    public string BrigadeNumber { get; set; } = string.Empty;
+    public Guid? MasterPersonId { get; set; }
+    public string MasterName { get; set; } = string.Empty;
+    public string? Well { get; set; }
+    public Guid? CheckerPersonId { get; set; }
+    public string CheckerName { get; set; } = string.Empty;
+    public string? CheckerPosition { get; set; }
+    public DateOnly? FixDate { get; set; }
+    public bool FixDateIsManual { get; set; }
+    public string? FixDateManualText { get; set; }
+    public BrigadeInspectionOutcome? Outcome { get; set; }
+    public bool StopPoint { get; set; }
+    public bool HasExplanation { get; set; }
+    public Guid? DepartmentUserId { get; set; }
+    public string? DepartmentName { get; set; }
+    public string? FixResponsibleText { get; set; }
+    public string? FixReportText { get; set; }
+    public Guid? FixResponsiblePersonId { get; set; }
+    public string? FixResponsibleName { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+    public int RemarkCount { get; set; }
+    public List<string> RemarkTexts { get; set; } = [];
+}
+
+public sealed class BrigadeInspectionDetail : BrigadeInspectionListItem
+{
+    public List<BrigadeInspectionRemarkItem> Remarks { get; set; } = [];
+}
+
+public sealed class SaveInspectionRemarkRequest
+{
+    public Guid? ActItemId { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public string? Comment { get; set; }
+    public bool IsManual { get; set; }
+}
+
+public sealed class SaveBrigadeInspectionRequest
+{
+    public BrigadeInspectionKind Kind { get; set; }
+    public DateOnly ReportDate { get; set; }
+    public Guid BrigadeUserId { get; set; }
+    public Guid? MasterPersonId { get; set; }
+    public string? MasterName { get; set; }
+    public string? NewMasterFullName { get; set; }
+    public string? NewMasterPosition { get; set; }
+    public string? Well { get; set; }
+    public Guid? DepartmentUserId { get; set; }
+    public Guid? CheckerPersonId { get; set; }
+    public string? CheckerName { get; set; }
+    public string? CheckerPosition { get; set; }
+    public string? NewCheckerFullName { get; set; }
+    public string? NewCheckerPosition { get; set; }
+    public DateOnly? FixDate { get; set; }
+    public bool FixDateIsManual { get; set; }
+    public string? FixDateManualText { get; set; }
+    public BrigadeInspectionOutcome? Outcome { get; set; }
+    public bool StopPoint { get; set; }
+    public bool HasExplanation { get; set; }
+    public string? FixResponsibleText { get; set; }
+    public string? FixReportText { get; set; }
+    public Guid? FixResponsiblePersonId { get; set; }
+    public string? FixResponsibleName { get; set; }
+    public List<SaveInspectionRemarkRequest> Remarks { get; set; } = [];
+}
+
+public sealed class WorkshopPersonnelItem
+{
+    public Guid Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string? Position { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public string BrigadeName { get; set; } = string.Empty;
+}
+
 public sealed class BrigadeRatingDashboard
 {
     public string Period { get; set; } = "month";
@@ -804,6 +955,9 @@ public sealed class SaveUserRequest
     public string? Password { get; set; }
     public string? CurrentPassword { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+    public string? DocumentationTitle { get; set; }
+    public string? BrigadeNumber { get; set; }
+    public string? BrigadeWorkshop { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
 }

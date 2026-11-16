@@ -23,12 +23,22 @@ public sealed class DepartmentPermissionsController : ControllerBase
     public async Task<ActionResult<List<DepartmentPermissionUserResponse>>> GetList(
         CancellationToken cancellationToken)
     {
-        var inRole = await _users.GetUsersInRoleAsync(AppRoles.Department);
-        var items = inRole
-            .OrderByDescending(x => x.IsActive)
-            .ThenBy(x => x.DisplayName)
-            .ThenBy(x => x.UserName)
-            .Select(Map)
+        // Собираем (пользователь, роль) по трём ролям матрицы; у пользователя одна роль,
+        // но на случай нескольких берём первую по порядку SwitchableRoles.
+        var rows = new Dictionary<Guid, (ApplicationUser User, string Role)>();
+        foreach (var role in AppRoles.SwitchableRoles)
+        {
+            foreach (var user in await _users.GetUsersInRoleAsync(role))
+            {
+                rows.TryAdd(user.Id, (user, role));
+            }
+        }
+
+        var items = rows.Values
+            .OrderByDescending(x => x.User.IsActive)
+            .ThenBy(x => x.User.DisplayName)
+            .ThenBy(x => x.User.UserName)
+            .Select(x => Map(x.User, x.Role))
             .ToList();
 
         return Ok(items);
@@ -57,8 +67,8 @@ public sealed class DepartmentPermissionsController : ControllerBase
                 continue;
             }
 
-            // Только роль Department — админов/диспетчеров не трогаем.
-            if (!await _users.IsInRoleAsync(user, AppRoles.Department))
+            // Только Department / Customer / Brigade — админов/диспетчеров не трогаем.
+            if (!await IsMatrixRoleAsync(user))
             {
                 continue;
             }
@@ -79,11 +89,28 @@ public sealed class DepartmentPermissionsController : ControllerBase
         return NoContent();
     }
 
-    private static DepartmentPermissionUserResponse Map(ApplicationUser x) => new()
+    private async Task<bool> IsMatrixRoleAsync(ApplicationUser user)
+    {
+        foreach (var role in AppRoles.SwitchableRoles)
+        {
+            if (await _users.IsInRoleAsync(user, role))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static DepartmentPermissionUserResponse Map(ApplicationUser x, string role) => new()
     {
         UserId = x.Id,
-        DisplayName = string.IsNullOrWhiteSpace(x.DisplayName) ? (x.UserName ?? string.Empty) : x.DisplayName,
+        // Бригада — «Имя №номер», остальные — просто имя (общий helper).
+        DisplayName = UserDisplay.FormatUserDisplay(x, isBrigade: role == AppRoles.Brigade),
         UserName = x.UserName ?? string.Empty,
+        Role = role,
+        BrigadeNumber = role == AppRoles.Brigade ? x.BrigadeNumber : null,
+        BrigadeWorkshop = role == AppRoles.Brigade ? x.BrigadeWorkshop : null,
         IsActive = x.IsActive,
         CanBeExecutor = x.CanBeExecutor,
         CanCreateTransportRequests = x.CanCreateTransportRequests,

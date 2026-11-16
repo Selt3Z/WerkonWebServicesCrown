@@ -26,6 +26,7 @@ public sealed class DocumentationController : ControllerBase
     private readonly AttachmentPreviewService _preview;
     private readonly AppSettingsService _settings;
     private readonly Crown.Infrastructure.Documentation.DocumentationTrashPurgeService _trashPurge;
+    private readonly Crown.Infrastructure.Documentation.DocumentationInboxSyncService _inboxSync;
 
     public DocumentationController(
         AppDbContext db,
@@ -33,7 +34,8 @@ public sealed class DocumentationController : ControllerBase
         AttachmentStorageService storage,
         AttachmentPreviewService preview,
         AppSettingsService settings,
-        Crown.Infrastructure.Documentation.DocumentationTrashPurgeService trashPurge)
+        Crown.Infrastructure.Documentation.DocumentationTrashPurgeService trashPurge,
+        Crown.Infrastructure.Documentation.DocumentationInboxSyncService inboxSync)
     {
         _db = db;
         _users = users;
@@ -41,6 +43,7 @@ public sealed class DocumentationController : ControllerBase
         _preview = preview;
         _settings = settings;
         _trashPurge = trashPurge;
+        _inboxSync = inboxSync;
     }
 
     /// <summary>Подразделы — только роль Department с включённой документацией.</summary>
@@ -60,19 +63,24 @@ public sealed class DocumentationController : ControllerBase
             .Select(g => new { OwnerUserId = g.Key, FileCount = g.Count(), TotalSizeBytes = g.Sum(x => x.SizeBytes) })
             .ToDictionaryAsync(x => x.OwnerUserId, cancellationToken);
 
-        return Ok(owners.Select(x =>
-        {
-            stats.TryGetValue(x.Id, out var st);
-            return new DocumentationSectionResponse
+        // Свой раздел — всегда первым, дальше по заголовку.
+        return Ok(owners
+            .Select(x =>
             {
-                UserId = x.Id,
-                DisplayName = CleanSectionTitle(x.DisplayName),
-                UserName = string.Empty,
-                CanWrite = isAdmin || isDispatcher || me == x.Id,
-                FileCount = st?.FileCount ?? 0,
-                TotalSizeBytes = st?.TotalSizeBytes ?? 0
-            };
-        }).ToList());
+                stats.TryGetValue(x.Id, out var st);
+                return new DocumentationSectionResponse
+                {
+                    UserId = x.Id,
+                    DisplayName = ResolveSectionTitle(x),
+                    UserName = string.Empty,
+                    CanWrite = isAdmin || isDispatcher || me == x.Id,
+                    FileCount = st?.FileCount ?? 0,
+                    TotalSizeBytes = st?.TotalSizeBytes ?? 0
+                };
+            })
+            .OrderByDescending(x => x.UserId == me)
+            .ThenBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList());
     }
 
     private async Task<List<ApplicationUser>> ListAccessibleOwnersAsync(CancellationToken cancellationToken)
@@ -82,7 +90,7 @@ public sealed class DocumentationController : ControllerBase
         _ = cancellationToken;
         return departmentUsers
             .Where(x => x.IsActive && x.DocumentationEnabled)
-            .OrderBy(x => x.DisplayName)
+            .OrderBy(x => ResolveSectionTitle(x), StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(x => x.UserName)
             .ToList();
     }
@@ -106,7 +114,7 @@ public sealed class DocumentationController : ControllerBase
         }
 
         var ownerIds = sections.Select(x => x.Id).ToList();
-        var ownerNames = sections.ToDictionary(x => x.Id, x => CleanSectionTitle(x.DisplayName));
+        var ownerNames = sections.ToDictionary(x => x.Id, ResolveSectionTitle);
         var term = query.ToLowerInvariant();
         var like = $"%{EscapeLike(query)}%";
 
@@ -324,7 +332,7 @@ public sealed class DocumentationController : ControllerBase
         return Ok(new DocumentationBrowseResponse
         {
             OwnerUserId = ownerUserId,
-            OwnerDisplayName = CleanSectionTitle(owner.DisplayName),
+            OwnerDisplayName = ResolveSectionTitle(owner),
             FolderId = folderId,
             FolderName = folder?.Name,
             ParentFolderId = folder?.ParentFolderId,
@@ -438,7 +446,7 @@ public sealed class DocumentationController : ControllerBase
         return Ok(new DocumentationTrashResponse
         {
             OwnerUserId = ownerUserId,
-            OwnerDisplayName = CleanSectionTitle(owner.DisplayName),
+            OwnerDisplayName = ResolveSectionTitle(owner),
             CanClearTrash = isAdmin,
             RetentionDays = retentionDays,
             Items = items
@@ -703,6 +711,79 @@ public sealed class DocumentationController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
+
+    /// <summary>Путь share-inbox и число файлов, ждущих импорта.</summary>
+    [HttpGet("sections/{ownerUserId:guid}/inbox")]
+    public async Task<ActionResult<DocumentationInboxInfoResponse>> GetInboxInfo(
+        Guid ownerUserId,
+        CancellationToken cancellationToken)
+    {
+        var writeError = await EnsureCanWriteAsync(ownerUserId, cancellationToken);
+        if (writeError is not null)
+        {
+            return writeError;
+        }
+
+        var owner = await _users.Users.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == ownerUserId, cancellationToken);
+        if (owner is null)
+        {
+            return NotFound();
+        }
+
+        var info = _inboxSync.GetInboxInfo(owner);
+        return Ok(new DocumentationInboxInfoResponse
+        {
+            OwnerUserId = info.OwnerUserId,
+            FolderKey = info.FolderKey,
+            HostInboxPath = info.HostInboxPath,
+            RelativeInboxPath = info.RelativeInboxPath,
+            PendingFileCount = info.PendingFileCount,
+            MaxInboxFileBytes = info.MaxInboxFileBytes
+        });
+    }
+
+    /// <summary>Ручной импорт из docs-inbox/{логин}/ в раздел (CanWrite).</summary>
+    [HttpPost("sections/{ownerUserId:guid}/sync-inbox")]
+    public async Task<ActionResult<DocumentationInboxSyncResponse>> SyncInbox(
+        Guid ownerUserId,
+        CancellationToken cancellationToken)
+    {
+        var writeError = await EnsureCanWriteAsync(ownerUserId, cancellationToken);
+        if (writeError is not null)
+        {
+            return writeError;
+        }
+
+        var result = await _inboxSync.SyncOwnerAsync(ownerUserId, GetUserId(), cancellationToken);
+        return Ok(ToInboxSyncResponse(result));
+    }
+
+    /// <summary>Админ: прогнать inbox по всем разделам сразу.</summary>
+    [HttpPost("sync-inbox")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<ActionResult<DocumentationInboxSyncResponse>> SyncAllInbox(
+        CancellationToken cancellationToken)
+    {
+        var result = await _inboxSync.SyncAllAsync(cancellationToken);
+        return Ok(ToInboxSyncResponse(result));
+    }
+
+    private static DocumentationInboxSyncResponse ToInboxSyncResponse(
+        Crown.Infrastructure.Documentation.DocumentationInboxSyncResult result) =>
+        new()
+        {
+            OwnerUserId = result.OwnerUserId,
+            FolderKey = result.FolderKey,
+            HostInboxPath = result.HostInboxPath,
+            Imported = result.Imported,
+            Updated = result.Updated,
+            Skipped = result.Skipped,
+            Failed = result.Failed,
+            FoldersCreated = result.FoldersCreated,
+            PendingBefore = result.PendingBefore,
+            Messages = result.Messages
+        };
 
     [HttpPost("sections/{ownerUserId:guid}/files")]
     [RequestSizeLimit(25_000_000)]
@@ -1042,6 +1123,18 @@ public sealed class DocumentationController : ControllerBase
         raw.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
+
+    /// <summary>Кастомный заголовок раздела или очищенное DisplayName.</summary>
+    private static string ResolveSectionTitle(ApplicationUser user)
+    {
+        var custom = (user.DocumentationTitle ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(custom))
+        {
+            return custom;
+        }
+
+        return CleanSectionTitle(user.DisplayName);
+    }
 
     /// <summary>Без логина и хвоста « / пользователь».</summary>
     private static string CleanSectionTitle(string? displayName)

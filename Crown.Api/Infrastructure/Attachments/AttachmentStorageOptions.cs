@@ -23,4 +23,7 @@ public sealed class AttachmentStorageOptions
     public string? LegacyHostPath { get; set; }
 
     public long MaxFileBytes { get; set; } = 20 * 1024 * 1024;
+
+    /// <summary>Лимит одного файла из docs-inbox (share), по умолчанию 512 МБ.</summary>
+    public long MaxInboxFileBytes { get; set; } = 512L * 1024 * 1024;
 }

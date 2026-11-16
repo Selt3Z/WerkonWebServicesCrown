@@ -10,6 +10,12 @@ public static class AppRoles
     /// <summary>Подразделение: подаёт заявки другим подразделениям и исполняет назначенные.</summary>
     public const string Department = "Department";
 
+    /// <summary>Заказчик: внешний/внутренний заказчик работ; права выдаются матрицей прав.</summary>
+    public const string Customer = "Customer";
+
+    /// <summary>Бригада: фигурант рейтинга бригад (номер и цех хранятся в ApplicationUser).</summary>
+    public const string Brigade = "Brigade";
+
     /// <summary>Старое имя роли — только для миграций/совместимости чтения.</summary>
     public const string InitiatorLegacy = "Initiator";
 
@@ -17,14 +23,29 @@ public static class AppRoles
     [
         Administrator,
         Dispatcher,
-        Department
+        Department,
+        Customer,
+        Brigade
     ];
 
     public static readonly string[] BusinessUsers =
     [
         Administrator,
         Dispatcher,
-        Department
+        Department,
+        Customer,
+        Brigade
+    ];
+
+    /// <summary>
+    /// Роли, между которыми админ может переключать пользователя
+    /// и которым выдаются права через матрицу «Права подразделений».
+    /// </summary>
+    public static readonly string[] SwitchableRoles =
+    [
+        Department,
+        Customer,
+        Brigade
     ];
 
     public static readonly string[] CanManageUsers =
@@ -58,4 +79,8 @@ public static class AppRoles
 
     public static bool IsDispatcherLikeRole(string? role) =>
         role is Dispatcher or Administrator;
+
+    /// <summary>Department / Customer / Brigade — роли, которыми управляет админ из UI и матрицы прав.</summary>
+    public static bool IsSwitchableRole(string? role) =>
+        role is Department or Customer or Brigade;
 }

@@ -31,6 +31,10 @@
 {
     <div class="alert alert-danger">@Model.Error</div>
 }
+@if (!string.IsNullOrEmpty(Model.Info))
+{
+    <div class="alert alert-success">@Model.Info</div>
+}
 
 @if (b is not null)
 {
@@ -94,7 +98,25 @@
                     <button type="submit" class="btn btn-primary">Загрузить</button>
                 </div>
             </form>
+            <form method="post" asp-page-handler="SyncInbox" class="filter-field filter-field-inline">
+                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                <label class="form-label" for="sync-inbox-btn">Share inbox</label>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <button id="sync-inbox-btn" type="submit" class="btn btn-outline-primary">
+                        Импорт из inbox@(Model.Inbox is { PendingFileCount: > 0 } ? $" ({Model.Inbox.PendingFileCount})" : "")
+                    </button>
+                </div>
+            </form>
         </div>
+        @if (Model.Inbox is not null)
+        {
+            <p class="form-text mb-3">
+                Большие деревья кладите на диск:
+                <code>@Model.Inbox.HostInboxPath</code>
+                (лимит файла @(Model.Inbox.MaxInboxFileBytes / (1024 * 1024)) МБ; автокаждые ~5 мин).
+            </p>
+        }
     }
 
     <div class="crown-table-wrap">

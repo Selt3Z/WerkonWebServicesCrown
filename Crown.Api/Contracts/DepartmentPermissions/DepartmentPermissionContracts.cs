@@ -5,6 +5,10 @@ public sealed class DepartmentPermissionUserResponse
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
+    /// <summary>Department / Customer / Brigade.</summary>
+    public string Role { get; set; } = string.Empty;
+    public string? BrigadeNumber { get; set; }
+    public string? BrigadeWorkshop { get; set; }
     public bool IsActive { get; set; }
     public bool CanBeExecutor { get; set; }
     public bool CanCreateTransportRequests { get; set; }

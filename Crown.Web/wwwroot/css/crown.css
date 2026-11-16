@@ -380,14 +380,47 @@ a.history-user-link:hover {
     background: #fff;
 }
 
-/* Явно «не редактируется»: инициатор / владелец каталога. */
+/* Явно «не редактируется»: инициатор / владелец каталога / цех. */
 .form-control-locked,
-.form-control[readonly].form-control-locked {
+.form-control[readonly].form-control-locked,
+.form-control:disabled.form-control-locked {
     background-color: var(--r-surface-muted, #e9ecef);
     color: var(--r-text-secondary, #495057);
     cursor: default;
     pointer-events: none;
     opacity: 1;
+}
+
+/*
+ * Форма «Добавить»: лейблы в 2 строки (min-height) + прижаты вниз —
+ * инпуты/селекты в одной строке сетки на одном уровне, без «скачков».
+ */
+.brigade-add-form-grid {
+    align-items: start;
+}
+
+.brigade-add-form-grid > .mb-2 {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.brigade-add-form-grid > .mb-2 > .form-label,
+.brigade-add-form-grid > .mb-2 > .form-label.d-block,
+.brigade-add-form-grid > .mb-2 > .d-flex.align-items-end:first-child {
+    box-sizing: border-box;
+    min-height: 2.4rem;
+    margin-bottom: 0.2rem;
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.35rem;
+}
+
+.brigade-add-form-grid > .mb-2 > .form-control,
+.brigade-add-form-grid > .mb-2 > .form-select,
+.brigade-add-form-grid > .mb-2 > .d-flex.flex-wrap {
+    margin-top: 0;
 }
 
 .file-preview-image-wrap {
@@ -1046,6 +1079,20 @@ a.history-user-link:hover {
 
 .crown-row-link:hover {
     background: rgba(15, 60, 110, 0.04);
+}
+
+/* Проверки бригад: таблицы по 10–13 колонок — горизонтальный скролл вместо схлопывания. */
+.inspections-table-wrap {
+    overflow-x: auto;
+}
+
+.inspections-table td.inspection-remarks {
+    min-width: 16rem;
+    white-space: normal;
+}
+
+.inspections-table .inspection-remark-line + .inspection-remark-line {
+    margin-top: 0.15rem;
 }
 
 .brigade-stoppages-panel {

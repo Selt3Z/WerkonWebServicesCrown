@@ -8,6 +8,10 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
 
     public long MaxFileBytes => _options.MaxFileBytes;
 
+    public long MaxInboxFileBytes => _options.MaxInboxFileBytes;
+
+    public const string DocsInboxFolderName = "docs-inbox";
+
     public string RootPath => _options.RootPath;
 
     public string HostPath =>
@@ -97,6 +101,51 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
         var size = fs.Length;
         return (relative.Replace('\\', '/'), size);
     }
+
+    /// <summary>Абсолютный путь к корню share-inbox внутри контейнера.</summary>
+    public string GetDocsInboxAbsoluteRoot()
+    {
+        Directory.CreateDirectory(_options.RootPath);
+        var absolute = GetAbsolutePath(DocsInboxFolderName);
+        Directory.CreateDirectory(absolute);
+        return absolute;
+    }
+
+    /// <summary>Путь на хосте для UI/инструкции: {HostPath}/docs-inbox/…</summary>
+    public string GetDocsInboxHostPath(string? ownerFolderKey = null)
+    {
+        var hostRoot = HostPath.Replace('\\', '/').TrimEnd('/');
+        var path = $"{hostRoot}/{DocsInboxFolderName}";
+        if (!string.IsNullOrWhiteSpace(ownerFolderKey))
+        {
+            path = $"{path}/{ownerFolderKey.Trim()}";
+        }
+
+        return path;
+    }
+
+    public string GetOwnerInboxAbsolutePath(string ownerFolderKey)
+    {
+        var root = GetDocsInboxAbsoluteRoot();
+        var safe = SanitizeFolderSegment(ownerFolderKey);
+        var absolute = Path.Combine(root, safe);
+        Directory.CreateDirectory(absolute);
+        return absolute;
+    }
+
+    public static string SanitizeFolderSegment(string name)
+    {
+        var value = (name ?? string.Empty).Trim();
+        foreach (var c in Path.GetInvalidFileNameChars())
+        {
+            value = value.Replace(c, '_');
+        }
+
+        value = value.Replace(' ', '_');
+        return string.IsNullOrWhiteSpace(value) ? "unknown" : value;
+    }
+
+    public static string SanitizeFileNamePublic(string fileName) => SanitizeFileName(fileName);
 
     public void DeleteIfExists(string relativePath)
     {

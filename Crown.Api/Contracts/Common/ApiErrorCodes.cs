@@ -17,6 +17,10 @@ public static class ApiErrorCodes
     public const string CurrentPasswordRequired = "current_password_required";
     public const string CurrentPasswordInvalid = "current_password_invalid";
     public const string RoleNotFound = "role_not_found";
+    public const string BrigadeNumberRequired = "brigade_number_required";
+    public const string BrigadeWorkshopRequired = "brigade_workshop_required";
+    public const string BrigadeNumberTooLong = "brigade_number_too_long";
+    public const string BrigadeWorkshopTooLong = "brigade_workshop_too_long";
 
     public const string PasswordTooShort = "password_too_short";
     public const string PasswordRequiresDigit = "password_requires_digit";

@@ -28,10 +28,17 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
 
     public string? Error { get; private set; }
 
+    /// <summary>Редактирование: роль можно менять только внутри Подразделение/Заказчик/Бригада.</summary>
+    public bool CanSwitchRole =>
+        !IsNew && !IsProtectedAdmin && !IsSelf && AppRoles.IsSwitchable(Input.Role);
+
     public sealed class InputModel
     {
         public string? UserName { get; set; }
         public string? DisplayName { get; set; }
+        public string? DocumentationTitle { get; set; }
+        public string? BrigadeNumber { get; set; }
+        public string? BrigadeWorkshop { get; set; }
         public string? Role { get; set; }
         public bool IsActive { get; set; }
         public string? Password { get; set; }
@@ -109,10 +116,32 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
             }
         }
 
+        // Для роли Бригада номер и цех обязательны (дублирует серверную проверку — быстрее фидбэк).
+        if (Input.Role == AppRoles.Brigade)
+        {
+            if (string.IsNullOrWhiteSpace(Input.BrigadeNumber))
+            {
+                Error = "Для роли «Бригада» укажите номер бригады.";
+                return Page();
+            }
+
+            if (string.IsNullOrWhiteSpace(Input.BrigadeWorkshop))
+            {
+                Error = "Для роли «Бригада» укажите цех.";
+                return Page();
+            }
+        }
+
+        var isBrigade = Input.Role == AppRoles.Brigade;
         var body = new SaveUserRequest
         {
             UserName = Input.UserName.Trim(),
             DisplayName = Input.DisplayName.Trim(),
+            DocumentationTitle = string.IsNullOrWhiteSpace(Input.DocumentationTitle)
+                ? null
+                : Input.DocumentationTitle.Trim(),
+            BrigadeNumber = isBrigade ? Input.BrigadeNumber?.Trim() : null,
+            BrigadeWorkshop = isBrigade ? Input.BrigadeWorkshop?.Trim() : null,
             Role = Input.Role,
             // Свой профиль / seed-admin: чекбокс скрыт, IsActive уходит hidden-полем с исходным значением.
             IsActive = IsProtectedAdmin || IsSelf || Input.IsActive,
@@ -147,6 +176,9 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
         {
             UserName = user.UserName,
             DisplayName = user.DisplayName,
+            DocumentationTitle = user.DocumentationTitle,
+            BrigadeNumber = user.BrigadeNumber,
+            BrigadeWorkshop = user.BrigadeWorkshop,
             Role = user.Role,
             IsActive = user.IsActive
         };

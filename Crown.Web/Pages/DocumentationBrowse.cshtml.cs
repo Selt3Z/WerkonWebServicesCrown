@@ -26,11 +26,47 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
 
     public DocumentationBrowse? Browse { get; private set; }
 
+    public DocumentationInboxInfo? Inbox { get; private set; }
+
     public string? Error { get; private set; }
+
+    public string? Info { get; private set; }
 
     public async Task<IActionResult> OnGetAsync()
     {
         return await LoadAsync();
+    }
+
+    public async Task<IActionResult> OnPostSyncInboxAsync()
+    {
+        var result = await api.PostAsync<DocumentationInboxSyncResult>(
+            $"api/documentation/sections/{OwnerUserId}/sync-inbox",
+            body: null,
+            HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            Error = result.Error ?? "Импорт из inbox не выполнен.";
+            await LoadAsync();
+            return Page();
+        }
+
+        var r = result.Data;
+        Info =
+            $"Inbox: импортировано {r.Imported}, обновлено {r.Updated}, пропущено {r.Skipped}, ошибок {r.Failed}"
+            + (r.FoldersCreated > 0 ? $", папок создано {r.FoldersCreated}" : "")
+            + ".";
+        if (r.Messages.Count > 0)
+        {
+            Info += " " + string.Join(" ", r.Messages.Take(5));
+        }
+
+        await LoadAsync();
+        return Page();
     }
 
     public async Task<IActionResult> OnPostCreateFolderAsync()
@@ -176,6 +212,17 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
         }
 
         Browse = result.Data;
+        if (Browse.CanWrite)
+        {
+            var inbox = await api.GetAsync<DocumentationInboxInfo>(
+                $"api/documentation/sections/{OwnerUserId}/inbox",
+                HttpContext.RequestAborted);
+            if (inbox.Ok)
+            {
+                Inbox = inbox.Data;
+            }
+        }
+
         return Page();
     }
 }

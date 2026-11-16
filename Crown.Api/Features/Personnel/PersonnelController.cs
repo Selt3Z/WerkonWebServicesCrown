@@ -128,7 +128,7 @@ public sealed class PersonnelController : ControllerBase
 
         if (!await IsDepartmentUserAsync(ownerId))
         {
-            return BadRequest(new { error = "owner_not_initiator", message = "Персонал только у пользователей с ролью «Подразделение»." });
+            return BadRequest(new { error = "owner_not_initiator", message = "Персонал только у пользователей с ролью «Подразделение» или «Бригада»." });
         }
 
         var entity = new PersonnelPerson
@@ -184,6 +184,17 @@ public sealed class PersonnelController : ControllerBase
             await _db.BrigadeStoppages
                 .Where(x => x.StoppedByPersonId == entity.Id)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.StoppedByPersonId, (Guid?)null), cancellationToken);
+
+            // Так же в проверках бригад: снимки имён остаются, ссылки на человека убираем.
+            await _db.BrigadeInspections
+                .Where(x => x.MasterPersonId == entity.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.MasterPersonId, (Guid?)null), cancellationToken);
+            await _db.BrigadeInspections
+                .Where(x => x.CheckerPersonId == entity.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.CheckerPersonId, (Guid?)null), cancellationToken);
+            await _db.BrigadeInspections
+                .Where(x => x.FixResponsiblePersonId == entity.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.FixResponsiblePersonId, (Guid?)null), cancellationToken);
 
             entity.OwnerUserId = newOwner;
         }
@@ -295,10 +306,16 @@ public sealed class PersonnelController : ControllerBase
         return selfId is not null && selfId == ownerUserId;
     }
 
+    /// <summary>
+    /// Владелец персонала: подразделение или бригада (мастера бригад из формы рейтинга — «Добавить»).
+    /// Имя метода историческое.
+    /// </summary>
     private async Task<bool> IsDepartmentUserAsync(Guid userId)
     {
         var user = await _users.FindByIdAsync(userId.ToString());
-        return user is not null && await _users.IsInRoleAsync(user, AppRoles.Department);
+        return user is not null
+            && (await _users.IsInRoleAsync(user, AppRoles.Department)
+                || await _users.IsInRoleAsync(user, AppRoles.Brigade));
     }
 
     private async Task<string> ResolveOwnerNameAsync(Guid ownerUserId, CancellationToken cancellationToken)

@@ -34,6 +34,8 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     public DbSet<StoppageActItem> StoppageActItems => Set<StoppageActItem>();
     public DbSet<StoppageWorkItem> StoppageWorkItems => Set<StoppageWorkItem>();
     public DbSet<PersonnelPerson> PersonnelPeople => Set<PersonnelPerson>();
+    public DbSet<BrigadeInspection> BrigadeInspections => Set<BrigadeInspection>();
+    public DbSet<BrigadeInspectionRemark> BrigadeInspectionRemarks => Set<BrigadeInspectionRemark>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -184,6 +186,9 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.CanViewBrigadeRating).HasDefaultValue(false);
             entity.Property(x => x.CanOperateBrigadeRating).HasDefaultValue(false);
             entity.Property(x => x.DocumentationEnabled).HasDefaultValue(true);
+            entity.Property(x => x.DocumentationTitle).HasMaxLength(200);
+            entity.Property(x => x.BrigadeNumber).HasMaxLength(50);
+            entity.Property(x => x.BrigadeWorkshop).HasMaxLength(100);
         });
 
         modelBuilder.Entity<DocumentationFolder>(entity =>
@@ -210,9 +215,14 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.FileName).HasMaxLength(260).IsRequired();
             entity.Property(x => x.ContentType).HasMaxLength(120);
             entity.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.InboxSourceKey).HasMaxLength(1000);
             entity.HasIndex(x => x.OwnerUserId);
             entity.HasIndex(x => x.FolderId);
             entity.HasIndex(x => x.DeletedAt);
+            // Идемпотентность inbox: один живой файл на ключ источника в разделе.
+            entity.HasIndex(x => new { x.OwnerUserId, x.InboxSourceKey })
+                .IsUnique()
+                .HasFilter("\"InboxSourceKey\" IS NOT NULL AND \"DeletedAt\" IS NULL");
             entity.HasOne(x => x.Folder)
                 .WithMany(x => x.Files)
                 .HasForeignKey(x => x.FolderId)
@@ -426,6 +436,66 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
                 .WithMany()
                 .HasForeignKey(x => x.OwnerUserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BrigadeInspection>(entity =>
+        {
+            entity.Property(x => x.Kind).HasConversion<int>();
+            entity.Property(x => x.Workshop).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.BrigadeNumberSnapshot).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.MasterName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Well).HasMaxLength(200);
+            entity.Property(x => x.CheckerName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.CheckerPosition).HasMaxLength(200);
+            entity.Property(x => x.FixDateManualText).HasMaxLength(200);
+            entity.Property(x => x.DepartmentName).HasMaxLength(200);
+            entity.Property(x => x.FixResponsibleText).HasMaxLength(500);
+            entity.Property(x => x.FixReportText).HasMaxLength(2000);
+            entity.Property(x => x.FixResponsibleName).HasMaxLength(200);
+            // Номер «№» уникален внутри вида проверки.
+            entity.HasIndex(x => new { x.Kind, x.SequenceNo }).IsUnique();
+            entity.HasIndex(x => x.ReportDate);
+            entity.HasIndex(x => x.BrigadeUserId);
+            entity.HasIndex(x => x.MasterPersonId);
+            entity.HasIndex(x => x.CheckerPersonId);
+            entity.HasIndex(x => x.FixResponsiblePersonId);
+            entity.HasIndex(x => x.DepartmentUserId);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.BrigadeUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.DepartmentUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<PersonnelPerson>()
+                .WithMany()
+                .HasForeignKey(x => x.MasterPersonId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<PersonnelPerson>()
+                .WithMany()
+                .HasForeignKey(x => x.CheckerPersonId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<PersonnelPerson>()
+                .WithMany()
+                .HasForeignKey(x => x.FixResponsiblePersonId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<BrigadeInspectionRemark>(entity =>
+        {
+            entity.Property(x => x.Text).HasMaxLength(2000).IsRequired();
+            entity.Property(x => x.Comment).HasMaxLength(1000);
+            entity.HasIndex(x => x.InspectionId);
+            entity.HasIndex(x => x.ActItemId);
+            entity.HasOne(x => x.Inspection)
+                .WithMany(x => x.Remarks)
+                .HasForeignKey(x => x.InspectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<StoppageActItem>()
+                .WithMany()
+                .HasForeignKey(x => x.ActItemId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

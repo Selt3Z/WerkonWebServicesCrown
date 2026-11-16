@@ -397,7 +397,9 @@ WerkonWebServicesRatchet/.docker-cli/
 # Local scrapes / enrichment dumps (repo root)
 /avtoservisy*
 /*.json
-/docs
+/*.xlsx
+/docs/*
+!/docs/DOCUMENTATION-INBOX.md
 
 Crown.Api/.docker-cli/docker
 Crown.Api/.docker-cli/docker-compose

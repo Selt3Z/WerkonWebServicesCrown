@@ -98,6 +98,8 @@
     <div class="crown-page-head">
         <h1 class="section-title">Рейтинг бригад</h1>
         <div class="crown-page-head-actions">
+            @* Просмотр проверок — всем с доступом к разделу; запись — только оператор (проверяется на странице/API). *@
+            <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/inspections" title="Проверки бригад">Проверки</a>
             @if (Model.CanEnter)
             {
                 <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/work-items" title="Справочник выполняемых работ">Выполняемые работы</a>

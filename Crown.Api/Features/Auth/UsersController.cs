@@ -15,6 +15,10 @@ namespace Crown.Features.Auth;
 [Authorize]
 public sealed class UsersController : ControllerBase
 {
+    // Длины колонок AspNetUsers.BrigadeNumber / BrigadeWorkshop (см. AppDbContext).
+    private const int BrigadeNumberMaxLength = 50;
+    private const int BrigadeWorkshopMaxLength = 100;
+
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<IdentityRole<Guid>> _roleManager;
     private readonly AppDbContext _db;
@@ -104,11 +108,19 @@ public sealed class UsersController : ControllerBase
             return BadRequest(ApiErrors.FromCode(validationError));
         }
 
+        var role = request.Role.Trim();
         var user = new ApplicationUser
         {
             Id = Guid.NewGuid(),
             UserName = request.UserName.Trim(),
             DisplayName = request.DisplayName.Trim(),
+            // Заголовок раздела — только у роли Department (у остальных нет своего раздела).
+            DocumentationTitle = IsDepartmentRole(role)
+                ? NormalizeDocumentationTitle(request.DocumentationTitle)
+                : null,
+            // Номер/цех — только у роли Brigade.
+            BrigadeNumber = IsBrigadeRole(role) ? NormalizeBrigadeField(request.BrigadeNumber) : null,
+            BrigadeWorkshop = IsBrigadeRole(role) ? NormalizeBrigadeField(request.BrigadeWorkshop) : null,
             Email = $"{request.UserName.Trim()}@local",
             EmailConfirmed = true,
             IsActive = request.IsActive
@@ -121,7 +133,7 @@ public sealed class UsersController : ControllerBase
             return BadRequest(ApiErrors.FromIdentityErrors(createResult.Errors));
         }
 
-        await _userManager.AddToRoleAsync(user, request.Role.Trim());
+        await _userManager.AddToRoleAsync(user, role);
 
         return CreatedAtAction(nameof(GetById), new { id = user.Id }, await MapListItemAsync(user));
     }
@@ -180,6 +192,17 @@ public sealed class UsersController : ControllerBase
             }
         }
 
+        var newRole = request.Role.Trim();
+        var roleChanged = !string.Equals(currentRole, newRole, StringComparison.Ordinal);
+
+        // Смена роли разрешена только внутри тройки Department/Customer/Brigade (и с обеих сторон).
+        // Проверяем ДО любых изменений, чтобы не сохранить профиль при отказе по роли.
+        if (roleChanged
+            && (!AppRoles.IsSwitchableRole(currentRole) || !AppRoles.IsSwitchableRole(newRole)))
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.RoleImmutable));
+        }
+
         var currentUser = await _userManager.GetUserAsync(User);
 
         if (!request.IsActive && currentUser is not null && currentUser.Id == user.Id)
@@ -188,6 +211,13 @@ public sealed class UsersController : ControllerBase
         }
 
         user.DisplayName = request.DisplayName.Trim();
+        // Поля зависят от НОВОЙ роли: при уходе с Department/Brigade значения очищаются,
+        // при входе в роль берутся из запроса.
+        user.DocumentationTitle = IsDepartmentRole(newRole)
+            ? NormalizeDocumentationTitle(request.DocumentationTitle)
+            : null;
+        user.BrigadeNumber = IsBrigadeRole(newRole) ? NormalizeBrigadeField(request.BrigadeNumber) : null;
+        user.BrigadeWorkshop = IsBrigadeRole(newRole) ? NormalizeBrigadeField(request.BrigadeWorkshop) : null;
         // Seed admin нельзя деактивировать из UI/API — иначе потеряем вход в систему.
         user.IsActive = isProtectedAdmin || request.IsActive;
 
@@ -222,12 +252,24 @@ public sealed class UsersController : ControllerBase
             return BadRequest(ApiErrors.FromIdentityErrors(updateResult.Errors));
         }
 
-        // Роль фиксируется при создании: смена Department→другая orphan'ит раздел документации
-        // и ломает права/каталог. Нужна новая учётка, не переклейка роли.
-        if (!isProtectedAdmin
-            && !string.Equals(currentRole, request.Role.Trim(), StringComparison.Ordinal))
+        // Переключение роли внутри Department/Customer/Brigade (проверено выше).
+        // Protected admin сюда не попадает: его роль сверена на ProtectedAdminRoleImmutable.
+        if (roleChanged)
         {
-            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.RoleImmutable));
+            if (!string.IsNullOrEmpty(currentRole))
+            {
+                var removeResult = await _userManager.RemoveFromRoleAsync(user, currentRole);
+                if (!removeResult.Succeeded)
+                {
+                    return BadRequest(ApiErrors.FromIdentityErrors(removeResult.Errors));
+                }
+            }
+
+            var addResult = await _userManager.AddToRoleAsync(user, newRole);
+            if (!addResult.Succeeded)
+            {
+                return BadRequest(ApiErrors.FromIdentityErrors(addResult.Errors));
+            }
         }
 
         return Ok(await MapListItemAsync(user));
@@ -323,6 +365,11 @@ public sealed class UsersController : ControllerBase
         }
 
         user.DisplayName = request.DisplayName.Trim();
+        // Self: только Department может менять заголовок раздела документации.
+        if (await _userManager.IsInRoleAsync(user, AppRoles.Department))
+        {
+            user.DocumentationTitle = NormalizeDocumentationTitle(request.DocumentationTitle);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -417,6 +464,33 @@ public sealed class UsersController : ControllerBase
             return ApiErrorCodes.RoleNotFound;
         }
 
+        // Для роли Brigade номер и цех обязательны (и ограничены длиной колонок).
+        if (IsBrigadeRole(request.Role.Trim()))
+        {
+            var number = NormalizeBrigadeField(request.BrigadeNumber);
+            var workshop = NormalizeBrigadeField(request.BrigadeWorkshop);
+
+            if (number is null)
+            {
+                return ApiErrorCodes.BrigadeNumberRequired;
+            }
+
+            if (workshop is null)
+            {
+                return ApiErrorCodes.BrigadeWorkshopRequired;
+            }
+
+            if (number.Length > BrigadeNumberMaxLength)
+            {
+                return ApiErrorCodes.BrigadeNumberTooLong;
+            }
+
+            if (workshop.Length > BrigadeWorkshopMaxLength)
+            {
+                return ApiErrorCodes.BrigadeWorkshopTooLong;
+            }
+        }
+
         return null;
     }
 
@@ -429,10 +503,31 @@ public sealed class UsersController : ControllerBase
             Id = user.Id,
             UserName = user.UserName ?? string.Empty,
             DisplayName = user.DisplayName,
+            DocumentationTitle = user.DocumentationTitle,
+            BrigadeNumber = user.BrigadeNumber,
+            BrigadeWorkshop = user.BrigadeWorkshop,
             Role = roles.OrderBy(x => x).FirstOrDefault() ?? string.Empty,
             IsActive = user.IsActive,
             LastActivityAtUtc = user.LastActivityAtUtc
         };
+    }
+
+    private static string? NormalizeDocumentationTitle(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    private static bool IsDepartmentRole(string? role) =>
+        string.Equals(role, AppRoles.Department, StringComparison.Ordinal);
+
+    private static bool IsBrigadeRole(string? role) =>
+        string.Equals(role, AppRoles.Brigade, StringComparison.Ordinal);
+
+    private static string? NormalizeBrigadeField(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return trimmed.Length == 0 ? null : trimmed;
     }
 
     // Seed:AdminUserName по умолчанию "admin" — логин/роль не меняем из UI.

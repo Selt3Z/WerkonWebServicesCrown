@@ -1,0 +1,202 @@
+﻿@page "/brigade-rating/inspections"
+@model BrigadeRatingInspectionsModel
+@{
+    ViewData["Title"] = "Проверки";
+    // Клик по строке — правка (форма пока общая со страницей остановки); только у оператора.
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Проверки</h1>
+    <div class="crown-page-head-actions">
+        <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating">К рейтингу</a>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@* ---------- Супервайзинг ---------- *@
+<section class="entity-panel">
+    <div class="crown-page-head">
+        <h2 class="section-title">Супервайзинг</h2>
+        @if (Model.CanEnter)
+        {
+            <a class="btn btn-success btn-sm crown-head-icon-btn" href="/brigade-rating/stoppage?inspectionKind=Supervising" title="Добавить проверку Супервайзинг" aria-label="Добавить проверку Супервайзинг">+</a>
+        }
+    </div>
+    <div class="crown-table-wrap inspections-table-wrap">
+        <table class="table crown-table inspections-table">
+            <thead>
+            <tr>
+                <th>№</th>
+                <th>Дата</th>
+                <th>Цех</th>
+                <th>Бригада №</th>
+                <th>ФИО Мастера</th>
+                <th>Предписание / Замечание / Остановка</th>
+                <th>Скважина</th>
+                <th>Нарушения</th>
+                <th>Должность</th>
+                <th>ФИО Проверяющего</th>
+                <th>Остановочный пункт</th>
+                <th>Объяснительная</th>
+                <th>Дата устранения</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var i in Model.Supervising)
+            {
+                <tr class="@(Model.CanEnter ? "crown-row-link" : null)" data-href="@(Model.CanEnter ? $"/brigade-rating/stoppage?inspectionId={i.Id}" : null)">
+                    <td>@i.SequenceNo</td>
+                    <td class="text-nowrap">@i.ReportDate.ToString("dd.MM.yyyy")</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.Workshop)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.BrigadeNumber)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.MasterName)</td>
+                    <td>@BrigadeRatingInspectionsModel.OutcomeLabel(i.Outcome)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.Well)</td>
+                    <td class="inspection-remarks">
+                        @foreach (var t in i.RemarkTexts)
+                        {
+                            <div class="inspection-remark-line">@t</div>
+                        }
+                    </td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerPosition)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerName)</td>
+                    <td>@(i.StopPoint ? "Да" : "Нет")</td>
+                    <td>@(i.HasExplanation ? "Да" : "Нет")</td>
+                    <td class="text-nowrap">@BrigadeRatingInspectionsModel.FixDateLabel(i)</td>
+                </tr>
+            }
+            @if (Model.Supervising.Count == 0)
+            {
+                <tr><td colspan="13" class="text-muted text-center">Нет надзорных проверок.</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@* ---------- ПДК ---------- *@
+<section class="entity-panel">
+    <div class="crown-page-head">
+        <h2 class="section-title">ПДК</h2>
+        @if (Model.CanEnter)
+        {
+            <a class="btn btn-success btn-sm crown-head-icon-btn" href="/brigade-rating/stoppage?inspectionKind=Pdk" title="Добавить проверку ПДК" aria-label="Добавить проверку ПДК">+</a>
+        }
+    </div>
+    <div class="crown-table-wrap inspections-table-wrap">
+        <table class="table crown-table inspections-table">
+            <thead>
+            <tr>
+                <th>№</th>
+                <th>Дата</th>
+                <th>Цех</th>
+                <th>Бригада №</th>
+                <th>ФИО Мастера</th>
+                <th>Кол-во нарушений</th>
+                <th>Должность</th>
+                <th>ФИО Проверяющего</th>
+                <th>Дата устранения</th>
+                <th>Ответственный за устранения</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var i in Model.Pdk)
+            {
+                <tr class="@(Model.CanEnter ? "crown-row-link" : null)" data-href="@(Model.CanEnter ? $"/brigade-rating/stoppage?inspectionId={i.Id}" : null)">
+                    <td>@i.SequenceNo</td>
+                    <td class="text-nowrap">@i.ReportDate.ToString("dd.MM.yyyy")</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.Workshop)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.BrigadeNumber)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.MasterName)</td>
+                    <td>@i.RemarkCount</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerPosition)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerName)</td>
+                    <td class="text-nowrap">@BrigadeRatingInspectionsModel.FixDateLabel(i)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.FixResponsibleText)</td>
+                </tr>
+            }
+            @if (Model.Pdk.Count == 0)
+            {
+                <tr><td colspan="10" class="text-muted text-center">Нет проверок ПДК.</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@* ---------- ПБиОТ ---------- *@
+<section class="entity-panel">
+    <div class="crown-page-head">
+        <h2 class="section-title">ПБиОТ</h2>
+        @if (Model.CanEnter)
+        {
+            <a class="btn btn-success btn-sm crown-head-icon-btn" href="/brigade-rating/stoppage?inspectionKind=Pbiot" title="Добавить проверку ПБиОТ" aria-label="Добавить проверку ПБиОТ">+</a>
+        }
+    </div>
+    <div class="crown-table-wrap inspections-table-wrap">
+        <table class="table crown-table inspections-table">
+            <thead>
+            <tr>
+                <th>№</th>
+                <th>Дата</th>
+                <th>Цех</th>
+                <th>Бригада №</th>
+                <th>ФИО Мастера</th>
+                <th>Скважина</th>
+                <th>Нарушения</th>
+                <th>Должность</th>
+                <th>ФИО Проверяющего</th>
+                <th>Дата устранения</th>
+                <th>Отчёт об устранении</th>
+                <th>Ответственный за устранения</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var i in Model.Pbiot)
+            {
+                <tr class="@(Model.CanEnter ? "crown-row-link" : null)" data-href="@(Model.CanEnter ? $"/brigade-rating/stoppage?inspectionId={i.Id}" : null)">
+                    <td>@i.SequenceNo</td>
+                    <td class="text-nowrap">@i.ReportDate.ToString("dd.MM.yyyy")</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.Workshop)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.BrigadeNumber)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.MasterName)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.Well)</td>
+                    <td class="inspection-remarks">
+                        @foreach (var t in i.RemarkTexts)
+                        {
+                            <div class="inspection-remark-line">@t</div>
+                        }
+                    </td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerPosition)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerName)</td>
+                    <td class="text-nowrap">@BrigadeRatingInspectionsModel.FixDateLabel(i)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.FixReportText)</td>
+                    <td>@BrigadeRatingInspectionsModel.Dash(i.FixResponsibleName)</td>
+                </tr>
+            }
+            @if (Model.Pbiot.Count == 0)
+            {
+                <tr><td colspan="12" class="text-muted text-center">Нет проверок ПБиОТ.</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@section Scripts {
+<script>
+(() => {
+    document.querySelectorAll('tr.crown-row-link').forEach(tr => {
+        tr.addEventListener('click', (e) => {
+            if (e.target.closest('button, a, input, select, label')) return;
+            const href = tr.getAttribute('data-href');
+            if (href) window.location.href = href;
+        });
+    });
+})();
+</script>
+}

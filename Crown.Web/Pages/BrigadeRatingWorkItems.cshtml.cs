@@ -6,9 +6,14 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Crown.Web.Pages;
 
-[Authorize(Roles = AppRoles.Staff)]
+[Authorize]
 public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 {
+    private bool CanOperate =>
+        User.IsInRole(AppRoles.Administrator)
+        || User.IsInRole(AppRoles.Dispatcher)
+        || User.FindFirst(CrownAuthHandler.CanOperateBrigadeRatingClaim)?.Value == "1";
+
     public List<StoppageWorkItem> Items { get; private set; } = [];
 
     public string? Error { get; private set; }
@@ -27,12 +32,22 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnGetAsync()
     {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
         await LoadAsync();
         return Page();
     }
 
     public async Task<IActionResult> OnPostAddAsync()
     {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
         var text = (NewText ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -52,7 +67,7 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 
         if (!result.Ok)
         {
-            Error = result.Error ?? "Не удалось добавить.";
+            Error = result.Error;
             await LoadAsync();
             return Page();
         }
@@ -63,9 +78,16 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnPostSaveAsync()
     {
-        if (EditId is not Guid id)
+        if (!CanOperate)
         {
-            return RedirectToPage();
+            return Forbid();
+        }
+
+        if (EditId is null)
+        {
+            Error = "Не указана работа.";
+            await LoadAsync();
+            return Page();
         }
 
         var text = (EditText ?? string.Empty).Trim();
@@ -77,7 +99,7 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
         }
 
         var result = await api.PutAsync<StoppageWorkItem>(
-            $"api/brigade-rating/work-items/{id}",
+            $"api/brigade-rating/work-items/{EditId}",
             new SaveStoppageWorkItemRequest { Text = text, IsActive = EditIsActive },
             HttpContext.RequestAborted);
         if (result.IsUnauthorized)
@@ -87,7 +109,7 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 
         if (!result.Ok)
         {
-            Error = result.Error ?? "Не удалось сохранить.";
+            Error = result.Error;
             await LoadAsync();
             return Page();
         }
@@ -98,6 +120,11 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnPostDeleteAsync(Guid id)
     {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
         var result = await api.DeleteAsync($"api/brigade-rating/work-items/{id}", HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {
@@ -106,13 +133,12 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 
         if (!result.Ok)
         {
-            TempData["Warn"] = result.Error ?? "Не удалось удалить.";
-        }
-        else
-        {
-            TempData["Ok"] = "Работа удалена.";
+            Error = result.Error;
+            await LoadAsync();
+            return Page();
         }
 
+        TempData["Ok"] = "Удалено.";
         return RedirectToPage();
     }
 
@@ -121,19 +147,13 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
         var result = await api.GetAsync<List<StoppageWorkItem>>(
             "api/brigade-rating/work-items",
             HttpContext.RequestAborted);
-        if (result.IsUnauthorized)
+        if (result.Ok && result.Data is not null)
         {
-            Items = [];
-            return;
+            Items = result.Data;
         }
-
-        if (!result.Ok)
+        else if (!string.IsNullOrEmpty(result.Error))
         {
             Error ??= result.Error;
-            Items = [];
-            return;
         }
-
-        Items = result.Data ?? [];
     }
 }

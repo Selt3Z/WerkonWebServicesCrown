@@ -1,138 +1,247 @@
-@page "/brigade-rating/stoppage/{id:guid?}"
+﻿@page "/brigade-rating/stoppage/{id:guid?}"
 @model BrigadeRatingStoppageModel
+@using Crown.Web.Models
 @{
-    ViewData["Title"] = Model.IsEdit ? "Правка остановки" : "Новая остановка";
+    ViewData["Title"] = Model.PageTitle;
     var actItemsJson = System.Text.Json.JsonSerializer.Serialize(
         Model.ActItems.Select(a => new { id = a.Id, text = a.Text }));
+
+    // Серверное начальное состояние видимости секций (JS потом держит его в актуальном виде).
+    var curMode = Model.IsInspection ? "inspection" : "stoppage";
+    var curKind = Model.Input.Kind.ToString();
+    string Hid(string mode, string? kinds = null) =>
+        mode == curMode && (kinds is null || kinds.Split(' ').Contains(curKind)) ? "" : "d-none";
+
+    var isSupervising = Model.IsInspection && Model.Input.Kind == BrigadeInspectionKind.Supervising;
+    var brigadeSelected = Model.Input.BrigadeUserId != Guid.Empty;
+    var workManual = Model.Input.IsWorkManual || Model.Input.WorkItemId is null;
+    var locked = Model.IsEdit ? "1" : null;
+
+    // Опции селекта персонала: «не выбран» / «(без привязки)» + люди + «Добавить».
+    async Task PersonOptions(IEnumerable<PersonnelPerson> people, Guid? selectedId, string? legacyName, string? legacyPosition, bool showLegacy, bool canAdd, bool addPending)
+    {
+        if (selectedId is null && showLegacy && !addPending && !string.IsNullOrWhiteSpace(legacyName))
+        {
+            <option value="" selected data-name="@legacyName" data-position="@legacyPosition">@legacyName (без привязки)</option>
+        }
+        else
+        {
+            <option value="">— не выбран —</option>
+        }
+
+        foreach (var p in people)
+        {
+            var label = string.IsNullOrWhiteSpace(p.Position) ? p.FullName : $"{p.FullName} — {p.Position}";
+            var suffix = p.IsActive ? "" : " (неактивен)";
+            if (selectedId == p.Id)
+            {
+                <option value="@p.Id" selected data-name="@p.FullName" data-position="@p.Position">@label@suffix</option>
+            }
+            else
+            {
+                <option value="@p.Id" data-name="@p.FullName" data-position="@p.Position">@label</option>
+            }
+        }
+
+        if (canAdd && addPending)
+        {
+            <option value="__add__" selected>Добавить</option>
+        }
+        else if (canAdd)
+        {
+            <option value="__add__">Добавить</option>
+        }
+    }
+
+    async Task DepartmentOptions(Guid? selectedId, string emptyLabel)
+    {
+        <option value="">@emptyLabel</option>
+        foreach (var u in Model.Departments)
+        {
+            if (selectedId == u.Id)
+            {
+                <option value="@u.Id" selected data-name="@u.DisplayName">@u.DisplayName</option>
+            }
+            else
+            {
+                <option value="@u.Id" data-name="@u.DisplayName">@u.DisplayName</option>
+            }
+        }
+    }
 }
 
 <div class="crown-page-head">
-    <h1 class="section-title">@(Model.IsEdit ? "Правка остановки" : "Новая остановка")</h1>
-    <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+    <h1 class="section-title" id="page-title">@Model.PageTitle</h1>
+    <div class="crown-page-head-actions d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/brigade-rating/inspections">Проверки</a>
+        <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+    </div>
 </div>
+
+@if (!string.IsNullOrEmpty(Model.Success))
+{
+    <div class="alert alert-success" id="success-alert" role="alert">@Model.Success</div>
+}
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
-    <div class="alert alert-danger">@Model.Error</div>
+    <div class="alert alert-danger" id="server-error" role="alert">@Model.Error</div>
 }
+
+<div class="alert alert-danger d-none" id="client-error" role="alert"></div>
 
 @if (Model.Brigades.Count == 0)
 {
     <div class="alert alert-warning">
-        Нет участников рейтинга. В матрице прав поставьте галочку «Рейтинг бригад» нужным подразделениям.
+        Нет участников рейтинга. Создайте активных пользователей с ролью «Бригада» (номер и цех) в разделе «Пользователи».
     </div>
 }
 
-<form method="post" class="crown-form form-panel" id="stoppage-form">
-    <input type="hidden" asp-for="Input.BrigadeNameHint" />
-    <div class="transport-form-grid">
+<form method="post" class="crown-form form-panel" id="entry-form">
+    @* Идентификаторы правки живут в форме: после первого сохранения страница остаётся на create-URL,
+       но следующий POST должен обновлять запись, а не создавать дубль. *@
+    <input type="hidden" name="Id" id="field-id" value="@Model.Id" />
+    <input type="hidden" name="InspectionId" id="field-inspection-id" value="@Model.InspectionId" />
+    <input type="hidden" asp-for="Input.BrigadeNameHint" data-reset />
+
+    @* При правке радио заблокированы (disabled не отправляется) — значения дублируем скрытыми полями. *@
+    @if (Model.IsEdit)
+    {
+        <input type="hidden" name="Input.Mode" value="@Model.ActiveMode" data-locked-field />
+        @if (Model.IsInspection)
+        {
+            <input type="hidden" name="Input.Kind" value="@Model.Input.Kind" data-locked-field />
+        }
+    }
+
+    <div class="mb-2 d-flex flex-wrap align-items-center gap-3">
+        <span class="form-label mb-0">Тип</span>
+        <div class="form-check form-check-inline m-0">
+            <input class="form-check-input" type="radio" name="Input.Mode" id="mode-stoppage" value="Stoppage"
+                   @(Model.IsInspection ? null : "checked") disabled="@(Model.IsEdit)" data-locked="@locked" />
+            <label class="form-check-label" for="mode-stoppage">Остановка</label>
+        </div>
+        <div class="form-check form-check-inline m-0">
+            <input class="form-check-input" type="radio" name="Input.Mode" id="mode-inspection" value="Inspection"
+                   @(Model.IsInspection ? "checked" : null) disabled="@(Model.IsEdit)" data-locked="@locked" />
+            <label class="form-check-label" for="mode-inspection">Проверка</label>
+        </div>
+    </div>
+
+    <div class="mb-2 d-flex flex-wrap align-items-center gap-3 @Hid("inspection")" data-mode="inspection" id="kind-block">
+        <span class="form-label mb-0">Вид проверки</span>
+        @foreach (var (kindValue, kindLabel) in new[] { ("Supervising", "Супервайзинг"), ("Pdk", "ПДК"), ("Pbiot", "ПБиОТ") })
+        {
+            <div class="form-check form-check-inline m-0">
+                <input class="form-check-input" type="radio" name="Input.Kind" id="kind-@kindValue" value="@kindValue"
+                       @(curKind == kindValue ? "checked" : null) disabled="@(Model.IsEdit)" data-locked="@locked" />
+                <label class="form-check-label" for="kind-@kindValue">@kindLabel</label>
+            </div>
+        }
+    </div>
+
+    <div class="transport-form-grid brigade-add-form-grid">
+        @* ---------- Общие поля ---------- *@
         <div class="mb-2">
-            <label class="form-label" asp-for="Input.BrigadeUserId">Бригада <span class="crown-req">*</span></label>
+            <label class="form-label" for="brigade-select">Бригада <span class="crown-req">*</span></label>
             <select class="form-select" asp-for="Input.BrigadeUserId" id="brigade-select" required>
                 <option value="">— выберите —</option>
                 @foreach (var b in Model.Brigades)
                 {
                     if (Model.Input.BrigadeUserId == b.Id)
                     {
-                        <option value="@b.Id" selected data-name="@b.Name">@b.Name</option>
+                        <option value="@b.Id" selected data-name="@b.Name" data-workshop="@b.Workshop">@b.Name</option>
                     }
                     else
                     {
-                        <option value="@b.Id" data-name="@b.Name">@b.Name</option>
+                        <option value="@b.Id" data-name="@b.Name" data-workshop="@b.Workshop">@b.Name</option>
                     }
                 }
             </select>
         </div>
+
+        <div class="mb-2 @Hid("inspection")" data-mode="inspection">
+            <label class="form-label" for="workshop-input">Цех</label>
+            <input class="form-control form-control-locked" type="text" id="workshop-input"
+                   value="@Model.CurrentWorkshop" readonly disabled tabindex="-1" aria-readonly="true" />
+        </div>
+
         <div class="mb-2">
-            <label class="form-label" for="master-select">ФИО мастера</label>
-            <input type="hidden" asp-for="Input.MasterName" id="master-name" />
+            <label class="form-label" for="master-select">
+                ФИО мастера <span class="crown-req @(isSupervising ? "" : "d-none")" id="master-req">*</span>
+            </label>
+            <input type="hidden" asp-for="Input.MasterName" id="master-name" data-reset />
             <select class="form-select" asp-for="Input.MasterPersonId" id="master-select">
-                @if (Model.Input.MasterPersonId is null && !string.IsNullOrWhiteSpace(Model.Input.MasterName))
-                {
-                    <option value="" selected data-name="@Model.Input.MasterName">@Model.Input.MasterName (без привязки)</option>
-                }
-                else
-                {
-                    <option value="">— не выбран —</option>
-                }
-                @foreach (var p in Model.MasterPersonnel)
-                {
-                    var label = string.IsNullOrWhiteSpace(p.Position) ? p.FullName : $"{p.FullName} — {p.Position}";
-                    if (Model.Input.MasterPersonId == p.Id)
-                    {
-                        <option value="@p.Id" selected data-name="@p.FullName">@label@(p.IsActive ? "" : " (неактивен)")</option>
-                    }
-                    else
-                    {
-                        <option value="@p.Id" data-name="@p.FullName">@label</option>
-                    }
+                @{
+                    await PersonOptions(
+                        Model.MasterPersonnel,
+                        Model.Input.MasterPersonId,
+                        Model.Input.MasterName,
+                        null,
+                        showLegacy: true,
+                        canAdd: brigadeSelected,
+                        addPending: Model.IsAddPending("Input.MasterPersonId"));
                 }
             </select>
+            <div class="d-flex gap-2 mt-1 d-none" id="master-add">
+                <input class="form-control" type="text" name="Input.NewMasterPosition" value="@Model.Input.NewMasterPosition"
+                       placeholder="Должность" maxlength="200" autocomplete="off" />
+                <input class="form-control" type="text" name="Input.NewMasterFullName" value="@Model.Input.NewMasterFullName"
+                       placeholder="ФИО" maxlength="200" autocomplete="off" />
+            </div>
         </div>
+
         <div class="mb-2">
-            <label class="form-label" asp-for="Input.ReportDate">Дата (отчётные сутки) <span class="crown-req">*</span></label>
-            <input class="form-control" type="date" asp-for="Input.ReportDate" required />
+            <label class="form-label" for="report-date">
+                <span data-mode="stoppage" class="@Hid("stoppage")">Дата (отчётные сутки)</span><span data-mode="inspection" class="@Hid("inspection")">Дата</span>
+                <span class="crown-req">*</span>
+            </label>
+            <input class="form-control" type="date" asp-for="Input.ReportDate" id="report-date" required />
         </div>
-        <div class="mb-2">
-            <label class="form-label" asp-for="Input.StoppedByUserId">Кто остановил <span class="crown-req">*</span></label>
+
+        @* ---------- Остановка ---------- *@
+        <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
+            <label class="form-label" for="stopped-by-dept">Кто остановил <span class="crown-req">*</span></label>
             <select class="form-select" asp-for="Input.StoppedByUserId" id="stopped-by-dept" required>
-                <option value="">— выберите подразделение —</option>
-                @foreach (var u in Model.Departments)
-                {
-                    if (Model.Input.StoppedByUserId == u.Id)
-                    {
-                        <option value="@u.Id" selected data-name="@u.DisplayName">@u.DisplayName</option>
-                    }
-                    else
-                    {
-                        <option value="@u.Id" data-name="@u.DisplayName">@u.DisplayName</option>
-                    }
-                }
+                @{ await DepartmentOptions(Model.Input.StoppedByUserId, "— выберите подразделение —"); }
             </select>
         </div>
-        <div class="mb-2">
+        <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
             <label class="form-label" for="stopped-by-person">ФИО / должность</label>
-            <input type="hidden" asp-for="Input.StoppedByName" id="stopped-by-name" />
+            <input type="hidden" asp-for="Input.StoppedByName" id="stopped-by-name" data-reset />
             <select class="form-select" asp-for="Input.StoppedByPersonId" id="stopped-by-person">
-                @if (Model.Input.StoppedByPersonId is null && !string.IsNullOrWhiteSpace(Model.Input.StoppedByName) && Model.Input.StoppedByUserId is null)
-                {
-                    <option value="" selected data-name="@Model.Input.StoppedByName">@Model.Input.StoppedByName (без привязки)</option>
-                }
-                else
-                {
-                    <option value="">— не выбран —</option>
-                }
-                @foreach (var p in Model.StopperPersonnel)
-                {
-                    var label = string.IsNullOrWhiteSpace(p.Position) ? p.FullName : $"{p.FullName} — {p.Position}";
-                    if (Model.Input.StoppedByPersonId == p.Id)
-                    {
-                        <option value="@p.Id" selected data-name="@p.FullName">@label@(p.IsActive ? "" : " (неактивен)")</option>
-                    }
-                    else
-                    {
-                        <option value="@p.Id" data-name="@p.FullName">@label</option>
-                    }
+                @{
+                    await PersonOptions(
+                        Model.StopperPersonnel,
+                        Model.Input.StoppedByPersonId,
+                        Model.Input.StoppedByName,
+                        null,
+                        showLegacy: Model.Input.StoppedByUserId is null,
+                        canAdd: Model.Input.StoppedByUserId is not null,
+                        addPending: Model.IsAddPending("Input.StoppedByPersonId"));
                 }
             </select>
+            <div class="d-flex gap-2 mt-1 d-none" id="stopped-by-add">
+                <input class="form-control" type="text" name="Input.NewStopperPosition" value="@Model.Input.NewStopperPosition"
+                       placeholder="Должность" maxlength="200" autocomplete="off" />
+                <input class="form-control" type="text" name="Input.NewStopperFullName" value="@Model.Input.NewStopperFullName"
+                       placeholder="ФИО" maxlength="200" autocomplete="off" />
+            </div>
             <div class="form-text"><a href="/personnel">Персонал</a>: если пусто — добавьте сотрудников.</div>
         </div>
-        <div class="mb-2">
-            <label class="form-label" asp-for="Input.StoppedAt">Время остановки <span class="crown-req">*</span></label>
-            <input class="form-control" type="time" asp-for="Input.StoppedAt" required />
+        <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
+            <label class="form-label" for="stopped-at">Время остановки <span class="crown-req">*</span></label>
+            <input class="form-control" type="time" asp-for="Input.StoppedAt" id="stopped-at" required />
         </div>
-        <div class="mb-2">
-            <label class="form-label" asp-for="Input.RestartedAt">Время запуска</label>
-            <input class="form-control" type="time" asp-for="Input.RestartedAt" />
+        <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
+            <label class="form-label" for="restarted-at">Время запуска</label>
+            <input class="form-control" type="time" asp-for="Input.RestartedAt" id="restarted-at" />
         </div>
-        <div class="mb-2" style="grid-column: 1 / -1;">
+        <div class="mb-2 @Hid("stoppage")" data-mode="stoppage" style="grid-column: 1 / -1;">
             <div class="d-flex align-items-end justify-content-between gap-2 mb-1">
                 <label class="form-label mb-0" for="work-select">Выполняемая работа</label>
                 <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/work-items">Справочник</a>
             </div>
-            @{
-                var workManual = Model.Input.IsWorkManual || Model.Input.WorkItemId is null;
-            }
             <input type="hidden" id="work-ismanual" name="Input.IsWorkManual" value="@(workManual ? "true" : "false")" />
             <div class="brigade-work-editor">
                 <select class="form-select" asp-for="Input.WorkItemId" id="work-select">
@@ -153,11 +262,141 @@
                        placeholder="Выполняемая работа вручную" />
             </div>
         </div>
+
+        @* ---------- Проверка ---------- *@
+        <div class="mb-2 @Hid("inspection", "Supervising Pbiot")" data-mode="inspection" data-kind="Supervising Pbiot">
+            <label class="form-label" for="well-input">Скважина</label>
+            <input class="form-control" type="text" asp-for="Input.Well" id="well-input" maxlength="200" />
+        </div>
+
+        <div class="mb-2 @Hid("inspection")" data-mode="inspection">
+            <label class="form-label" for="checker-dept">Подразделение проверяющего <span class="crown-req">*</span></label>
+            <select class="form-select" asp-for="Input.DepartmentUserId" id="checker-dept" required>
+                @{ await DepartmentOptions(Model.Input.DepartmentUserId, "— выберите подразделение —"); }
+            </select>
+        </div>
+        <div class="mb-2 @Hid("inspection")" data-mode="inspection">
+            <label class="form-label" for="checker-person">ФИО / должность проверяющего <span class="crown-req">*</span></label>
+            <input type="hidden" asp-for="Input.CheckerName" id="checker-name" data-reset />
+            <input type="hidden" asp-for="Input.CheckerPosition" id="checker-position" data-reset />
+            <select class="form-select" asp-for="Input.CheckerPersonId" id="checker-person">
+                @{
+                    await PersonOptions(
+                        Model.CheckerPersonnel,
+                        Model.Input.CheckerPersonId,
+                        Model.Input.CheckerName,
+                        Model.Input.CheckerPosition,
+                        showLegacy: true,
+                        canAdd: Model.Input.DepartmentUserId is not null,
+                        addPending: Model.IsAddPending("Input.CheckerPersonId"));
+                }
+            </select>
+            <div class="d-flex gap-2 mt-1 d-none" id="checker-add">
+                <input class="form-control" type="text" name="Input.NewCheckerPosition" value="@Model.Input.NewCheckerPosition"
+                       placeholder="Должность" maxlength="200" autocomplete="off" />
+                <input class="form-control" type="text" name="Input.NewCheckerFullName" value="@Model.Input.NewCheckerFullName"
+                       placeholder="ФИО" maxlength="200" autocomplete="off" />
+            </div>
+        </div>
+
+        <div class="mb-2 @Hid("inspection")" data-mode="inspection">
+            <div class="d-flex align-items-end justify-content-between gap-2">
+                <label class="form-label mb-0" for="fix-date">Дата устранения</label>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="fix-date-manual" name="Input.FixDateIsManual" value="true"
+                           @(Model.Input.FixDateIsManual ? "checked" : null) />
+                    <label class="form-check-label small" for="fix-date-manual">Вручную</label>
+                </div>
+            </div>
+            <input class="form-control mt-1 @(Model.Input.FixDateIsManual ? "d-none" : "")" type="date" asp-for="Input.FixDate" id="fix-date" />
+            <input class="form-control mt-1 @(Model.Input.FixDateIsManual ? "" : "d-none")" type="text" asp-for="Input.FixDateManualText"
+                   id="fix-date-text" maxlength="200" placeholder="например: по факту" />
+        </div>
+
+        @* Супервайзинг: Предписание / Замечание / Остановка + флаги *@
+        <div class="mb-2 @Hid("inspection", "Supervising")" data-mode="inspection" data-kind="Supervising">
+            <label class="form-label d-block">Результат <span class="crown-req">*</span></label>
+            <div class="d-flex flex-wrap gap-3">
+                @foreach (var (outValue, outLabel) in new[] { ("Prescription", "Предписание"), ("Remark", "Замечание"), ("Stoppage", "Остановка") })
+                {
+                    <div class="form-check form-check-inline m-0">
+                        <input class="form-check-input" type="radio" name="Input.Outcome" id="outcome-@outValue" value="@outValue" required
+                               @(Model.Input.Outcome?.ToString() == outValue ? "checked" : null) />
+                        <label class="form-check-label" for="outcome-@outValue">@outLabel</label>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="mb-2 @Hid("inspection", "Supervising")" data-mode="inspection" data-kind="Supervising">
+            <label class="form-label d-block">Признаки</label>
+            <div class="d-flex flex-wrap gap-3">
+                <div class="form-check m-0">
+                    <input class="form-check-input" type="checkbox" asp-for="Input.StopPoint" id="stop-point" />
+                    <label class="form-check-label" for="stop-point">Остановочный пункт</label>
+                </div>
+                <div class="form-check m-0">
+                    <input class="form-check-input" type="checkbox" asp-for="Input.HasExplanation" id="has-explanation" />
+                    <label class="form-check-label" for="has-explanation">Объяснительная</label>
+                </div>
+            </div>
+        </div>
+
+        @* ПДК *@
+        <div class="mb-2 @Hid("inspection", "Pdk")" data-mode="inspection" data-kind="Pdk">
+            <label class="form-label" for="fix-responsible-text">Ответственный за устранение</label>
+            <input class="form-control" type="text" asp-for="Input.FixResponsibleText" id="fix-responsible-text" maxlength="500" />
+        </div>
+
+        @* ПБиОТ *@
+        <div class="mb-2 @Hid("inspection", "Pbiot")" data-mode="inspection" data-kind="Pbiot">
+            <label class="form-label" for="fix-responsible-select">Ответственный за устранение</label>
+            <input type="hidden" asp-for="Input.FixResponsibleName" id="fix-responsible-name" data-reset />
+            <select class="form-select" asp-for="Input.FixResponsiblePersonId" id="fix-responsible-select"
+                    data-loaded-workshop="@(Model.IsInspection && Model.Input.Kind == BrigadeInspectionKind.Pbiot ? Model.CurrentWorkshop : "")">
+                @{
+                    var respId = Model.Input.FixResponsiblePersonId;
+                    var respInList = respId is Guid rid && Model.WorkshopPersonnel.Any(p => p.Id == rid);
+                }
+                @if (respId is null && !string.IsNullOrWhiteSpace(Model.Input.FixResponsibleName))
+                {
+                    <option value="" selected data-name="@Model.Input.FixResponsibleName">@Model.Input.FixResponsibleName (без привязки)</option>
+                }
+                else
+                {
+                    <option value="">— не выбран —</option>
+                }
+                @if (respId is Guid keepId && !respInList)
+                {
+                    @* Ответственный из сохранённой проверки мог стать неактивным — оставляем, чтобы не потерять. *@
+                    <option value="@keepId" selected data-name="@Model.Input.FixResponsibleName">@Model.Input.FixResponsibleName</option>
+                }
+                @foreach (var p in Model.WorkshopPersonnel)
+                {
+                    var label = string.IsNullOrWhiteSpace(p.Position) ? p.FullName : $"{p.FullName} — {p.Position}";
+                    if (respId == p.Id)
+                    {
+                        <option value="@p.Id" selected data-name="@p.FullName">@label (@p.BrigadeName)</option>
+                    }
+                    else
+                    {
+                        <option value="@p.Id" data-name="@p.FullName">@label (@p.BrigadeName)</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="mb-2 @Hid("inspection", "Pbiot")" data-mode="inspection" data-kind="Pbiot" style="grid-column: 1 / -1;">
+            <label class="form-label" for="fix-report-text">Отчёт об устранении</label>
+            <textarea class="form-control" asp-for="Input.FixReportText" id="fix-report-text" rows="2" maxlength="2000"></textarea>
+        </div>
     </div>
 
+    @* ---------- Пункты акта / нарушения (общий редактор) ---------- *@
     <div class="mb-3">
         <div class="d-flex align-items-end justify-content-between gap-2 mb-2">
-            <label class="form-label mb-0">Пункты по акту <span class="crown-req">*</span></label>
+            <label class="form-label mb-0">
+                <span class="@Hid("stoppage")" data-mode="stoppage">Пункты по акту</span><span class="@Hid("inspection")" data-mode="inspection">Нарушения</span>
+                <span class="crown-req">*</span>
+            </label>
             <div class="d-flex gap-2">
                 <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/act-items">Справочник</a>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="add-remark-row">+ пункт</button>
@@ -171,7 +410,8 @@
             @for (var i = 0; i < Model.Input.Remarks.Count; i++)
             {
                 var rem = Model.Input.Remarks[i];
-                var isManual = rem.IsManual || rem.ActItemId is null;
+                // Пункт, которого нет в активном справочнике, показываем как ручной — иначе текст потеряется.
+                var isManual = rem.IsManual || rem.ActItemId is null || !Model.ActItems.Any(a => a.Id == rem.ActItemId);
                 <div class="brigade-remark-editor-row" data-row="@i">
                     <input type="hidden" name="Input.Remarks[@i].Id" value="@rem.Id" />
                     <input type="hidden" class="remark-ismanual" name="Input.Remarks[@i].IsManual" value="@(isManual ? "true" : "false")" />
@@ -193,7 +433,7 @@
                            name="Input.Remarks[@i].Text" value="@rem.Text" placeholder="Текст пункта вручную" />
                     <input class="form-control remark-comment @(isManual ? "d-none" : "")"
                            name="Input.Remarks[@i].Comment" value="@rem.Comment" placeholder="Комментарий (в Excel в скобках)" />
-                    <div class="form-check">
+                    <div class="form-check remark-resolved-wrap @Hid("stoppage")" data-mode="stoppage">
                         <input class="form-check-input" type="checkbox" name="Input.Remarks[@i].IsResolved" value="true"
                                @(rem.IsResolved ? "checked" : null) id="rem-resolved-@i" />
                         <label class="form-check-label" for="rem-resolved-@i">Выполнено</label>
@@ -206,12 +446,13 @@
 
     <div class="crown-form-actions">
         <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
-        <a class="btn btn-outline-secondary btn-lg" href="/brigade-rating">Отмена</a>
+        <button type="button" class="btn btn-outline-secondary btn-lg" id="clear-form">Очистить форму</button>
+        <a class="btn btn-outline-secondary btn-lg" id="cancel-link" href="@Model.CancelUrl">Отмена</a>
         @if (Model.IsEdit)
         {
-            <button type="submit" formaction="?handler=Delete" formmethod="post"
+            <button type="submit" formaction="?handler=Delete" formmethod="post" formnovalidate id="delete-btn"
                     class="btn btn-outline-danger btn-lg"
-                    data-confirm="Удалить эту остановку безвозвратно?">Удалить</button>
+                    data-confirm="Удалить эту запись безвозвратно?">Удалить</button>
         }
     </div>
 </form>
@@ -219,76 +460,221 @@
 @section Scripts {
 <script>
 (() => {
+    const ADD = '__add__'; // value пункта «Добавить» в селектах персонала
+    const form = document.getElementById('entry-form');
     const list = document.getElementById('remarks-list');
     const addBtn = document.getElementById('add-remark-row');
     const actItems = @Html.Raw(actItemsJson);
-    const brigadeSelect = document.getElementById('brigade-select');
-    const masterName = document.getElementById('master-name');
-    const masterSelect = document.getElementById('master-select');
-    const stoppedByDept = document.getElementById('stopped-by-dept');
-    const stoppedByName = document.getElementById('stopped-by-name');
-    const stoppedByPerson = document.getElementById('stopped-by-person');
+    const todayIso = '@Model.TodayIso';
+    const savedUrl = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.SavedUrl));
 
-    function brigadeDisplayName() {
-        return brigadeSelect?.selectedOptions[0]?.getAttribute('data-name') || '';
-    }
-    function deptDisplayName() {
-        return stoppedByDept?.selectedOptions[0]?.getAttribute('data-name') || '';
-    }
-    function syncPersonName(select, hidden, fallback) {
-        if (!select || !hidden) return;
-        const opt = select.selectedOptions[0];
-        hidden.value = select.value ? (opt?.getAttribute('data-name') || '') : (fallback || '');
-    }
-    masterSelect?.addEventListener('change', () => syncPersonName(masterSelect, masterName, brigadeDisplayName()));
-    stoppedByPerson?.addEventListener('change', () => syncPersonName(stoppedByPerson, stoppedByName, deptDisplayName()));
+    const $ = (id) => document.getElementById(id);
+    const brigadeSelect = $('brigade-select');
+    const workshopInput = $('workshop-input');
+    const clientError = $('client-error');
 
-    function fillPersonnelSelect(select, people, emptyLabel) {
-        if (!select) return;
-        select.innerHTML = `<option value="">${emptyLabel}</option>`;
-        people.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p.id;
-            opt.dataset.name = p.fullName;
-            opt.textContent = p.position ? `${p.fullName} — ${p.position}` : p.fullName;
-            select.appendChild(opt);
+    // ---------- Режим / вид ----------
+    const currentMode = () =>
+        (form.querySelector('input[type="radio"][name="Input.Mode"]:checked')?.value || 'Stoppage').toLowerCase();
+    const currentKind = () =>
+        form.querySelector('input[type="radio"][name="Input.Kind"]:checked')?.value || 'Supervising';
+
+    /*
+     * Секции с data-mode (и опционально data-kind) показываются/скрываются целиком, а их поля
+     * отключаются (disabled): отключённые поля не уходят на сервер и не мешают нативной валидации.
+     * Секции плоские (не вложены друг в друга), иначе внутренний disabled перетрёт внешний.
+     * Заблокированные при правке радио (data-locked) остаются disabled всегда.
+     */
+    function applyVisibility() {
+        const mode = currentMode();
+        const kind = currentKind();
+        form.querySelectorAll('[data-mode]').forEach(sec => {
+            const kinds = sec.dataset.kind ? sec.dataset.kind.split(' ') : null;
+            const visible = sec.dataset.mode === mode && (!kinds || kinds.includes(kind));
+            sec.classList.toggle('d-none', !visible);
+            sec.querySelectorAll('input, select, textarea').forEach(el => {
+                el.disabled = !visible || el.dataset.locked === '1';
+            });
         });
+        $('master-req').classList.toggle('d-none', !(mode === 'inspection' && kind === 'Supervising'));
+        $('cancel-link').setAttribute('href', mode === 'inspection' ? '/brigade-rating/inspections' : '/brigade-rating');
     }
 
-    async function loadPersonnel(ownerId, select, emptyLabel) {
-        fillPersonnelSelect(select, [], emptyLabel);
-        if (!ownerId) return;
+    // ---------- Справочники из DOM ----------
+    const brigadeOpt = () => brigadeSelect.selectedOptions[0];
+    const brigadeDisplayName = () => brigadeOpt()?.dataset.name || '';
+    const currentWorkshop = () => brigadeOpt()?.dataset.workshop || '';
+    const deptName = (select) => select.selectedOptions[0]?.dataset.name || '';
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function fetchJson(url) {
         try {
-            const res = await fetch(`/brigade-rating/stoppage?handler=Personnel&ownerUserId=${encodeURIComponent(ownerId)}`);
-            if (!res.ok) return;
-            const people = await res.json();
-            fillPersonnelSelect(select, people, emptyLabel);
-        } catch { /* ignore */ }
+            const res = await fetch(url);
+            return res.ok ? await res.json() : [];
+        } catch { return []; }
     }
 
-    // Смена бригады → персонал мастера.
-    brigadeSelect?.addEventListener('change', async () => {
-        if (masterName) masterName.value = brigadeDisplayName();
-        await loadPersonnel(brigadeSelect.value, masterSelect, '— не выбран —');
+    // ---------- Блок «выбор сотрудника + Добавить (Должность/ФИО)» ----------
+    /*
+     * cfg.owner()    — Id владельца персонала (бригада или подразделение);
+     * cfg.fallback() — что писать в скрытое «имя», если человек не выбран;
+     * cfg.position   — скрытое поле должности (только у проверяющего).
+     * При выборе «Добавить» показываются поля Должность + ФИО; сотрудник создаётся на сервере при сохранении.
+     */
+    function personBlock(cfg) {
+        const { select, nameHidden, posHidden, addBox, owner, fallback } = cfg;
+        let token = 0;
+
+        function sync() {
+            const isAdd = select.value === ADD;
+            addBox.classList.toggle('d-none', !isAdd);
+            const opt = select.selectedOptions[0];
+            // data-name есть и у людей, и у «(без привязки)» — тогда имя сохраняем; иначе — запасное значение.
+            if (nameHidden) nameHidden.value = (!isAdd && opt?.dataset.name) ? opt.dataset.name : fallback();
+            if (posHidden) posHidden.value = (!isAdd && opt?.dataset.position) ? opt.dataset.position : '';
+        }
+
+        function fill(people, canAdd) {
+            select.innerHTML = '<option value="">— не выбран —</option>';
+            people.forEach(p => {
+                const o = document.createElement('option');
+                o.value = p.id;
+                o.dataset.name = p.fullName;
+                o.dataset.position = p.position || '';
+                o.textContent = p.position ? `${p.fullName} — ${p.position}` : p.fullName;
+                select.appendChild(o);
+            });
+            if (canAdd) {
+                const o = document.createElement('option');
+                o.value = ADD;
+                o.textContent = 'Добавить';
+                select.appendChild(o);
+            }
+        }
+
+        async function reload() {
+            const my = ++token; // защита от гонки: учитываем только последний запрос
+            const ownerId = owner();
+            fill([], !!ownerId);
+            sync();
+            if (!ownerId) return;
+            const people = await fetchJson(`/brigade-rating/stoppage?handler=Personnel&ownerUserId=${encodeURIComponent(ownerId)}`);
+            if (my !== token) return;
+            fill(people, true);
+            sync();
+        }
+
+        function reset() {
+            token++;
+            fill([], !!owner());
+            addBox.querySelectorAll('input').forEach(i => { i.value = ''; });
+            sync();
+        }
+
+        select.addEventListener('change', sync);
+        return { sync, reload, reset, select, addBox };
+    }
+
+    const master = personBlock({
+        select: $('master-select'),
+        nameHidden: $('master-name'),
+        addBox: $('master-add'),
+        owner: () => brigadeSelect.value,
+        // Для остановки мастер по умолчанию = название бригады; для проверок пустой мастер значит «не указан».
+        fallback: () => currentMode() === 'stoppage' ? brigadeDisplayName() : ''
+    });
+    const stopper = personBlock({
+        select: $('stopped-by-person'),
+        nameHidden: $('stopped-by-name'),
+        addBox: $('stopped-by-add'),
+        owner: () => $('stopped-by-dept').value,
+        fallback: () => deptName($('stopped-by-dept'))
+    });
+    const checker = personBlock({
+        select: $('checker-person'),
+        nameHidden: $('checker-name'),
+        posHidden: $('checker-position'),
+        addBox: $('checker-add'),
+        owner: () => $('checker-dept').value,
+        fallback: () => ''
     });
 
-    // Смена подразделения «кто остановил» → его персонал в ФИО.
-    stoppedByDept?.addEventListener('change', async () => {
-        if (stoppedByName) stoppedByName.value = deptDisplayName();
-        await loadPersonnel(stoppedByDept.value, stoppedByPerson, '— не выбран —');
+    $('stopped-by-dept').addEventListener('change', () => stopper.reload());
+    $('checker-dept').addEventListener('change', () => checker.reload());
+
+    // ---------- Ответственный за устранение (ПБиОТ): персонал бригад цеха ----------
+    const respSelect = $('fix-responsible-select');
+    const respName = $('fix-responsible-name');
+    let respLoadedFor = respSelect.dataset.loadedWorkshop || '';
+
+    function syncResp() {
+        const opt = respSelect.selectedOptions[0];
+        respName.value = opt?.dataset.name || '';
+    }
+    respSelect.addEventListener('change', syncResp);
+
+    async function loadResponsibles(force) {
+        if (currentMode() !== 'inspection' || currentKind() !== 'Pbiot') return;
+        const ws = currentWorkshop();
+        if (!force && ws === respLoadedFor) return;
+        respLoadedFor = ws;
+        const keep = respSelect.value;
+        const people = ws
+            ? await fetchJson(`/brigade-rating/stoppage?handler=WorkshopPersonnel&workshop=${encodeURIComponent(ws)}`)
+            : [];
+        if (ws !== currentWorkshop()) return; // за время запроса бригаду сменили
+        respSelect.innerHTML = '<option value="">— не выбран —</option>';
+        people.forEach(p => {
+            const o = document.createElement('option');
+            o.value = p.id;
+            o.dataset.name = p.fullName;
+            const base = p.position ? `${p.fullName} — ${p.position}` : p.fullName;
+            o.textContent = p.brigadeName ? `${base} (${p.brigadeName})` : base;
+            respSelect.appendChild(o);
+        });
+        if (keep && [...respSelect.options].some(o => o.value === keep)) respSelect.value = keep;
+        syncResp();
+    }
+
+    // ---------- События верхнего уровня ----------
+    brigadeSelect.addEventListener('change', async () => {
+        workshopInput.value = currentWorkshop();
+        await master.reload();
+        await loadResponsibles(false);
     });
 
-    // Работа: из справочника или вручную (как «Вручную» у пунктов акта).
-    const workSelect = document.getElementById('work-select');
-    const workText = document.getElementById('work-text');
-    const workManualInput = document.getElementById('work-ismanual');
-    workSelect?.addEventListener('change', () => {
+    form.querySelectorAll('input[type="radio"][name="Input.Mode"], input[type="radio"][name="Input.Kind"]').forEach(r =>
+        r.addEventListener('change', async () => {
+            applyVisibility();
+            master.sync(); // запасное имя мастера зависит от режима
+            await loadResponsibles(false);
+        }));
+
+    // ---------- Дата устранения: дата или текст ----------
+    const fixManual = $('fix-date-manual');
+    const fixDate = $('fix-date');
+    const fixText = $('fix-date-text');
+    function syncFixDate() {
+        fixDate.classList.toggle('d-none', fixManual.checked);
+        fixText.classList.toggle('d-none', !fixManual.checked);
+    }
+    fixManual.addEventListener('change', syncFixDate);
+
+    // ---------- Работа (остановка): из справочника или вручную ----------
+    const workSelect = $('work-select');
+    const workText = $('work-text');
+    const workManualInput = $('work-ismanual');
+    workSelect.addEventListener('change', () => {
         const manual = !workSelect.value;
         workManualInput.value = manual ? 'true' : 'false';
         workText.classList.toggle('d-none', !manual);
         if (!manual) workText.value = '';
     });
 
+    // ---------- Пункты акта / нарушения ----------
     function syncRow(row) {
         const sel = row.querySelector('.remark-act');
         const text = row.querySelector('.remark-text');
@@ -332,11 +718,7 @@
         ).join('');
     }
 
-    function escapeHtml(s) {
-        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    }
-
-    addBtn?.addEventListener('click', () => {
+    function addRow() {
         const i = list.querySelectorAll('.brigade-remark-editor-row').length;
         const row = document.createElement('div');
         row.className = 'brigade-remark-editor-row';
@@ -350,7 +732,7 @@
             </select>
             <input class="form-control remark-text d-none" name="Input.Remarks[${i}].Text" value="" placeholder="Текст пункта вручную" />
             <input class="form-control remark-comment" name="Input.Remarks[${i}].Comment" value="" placeholder="Комментарий (в Excel в скобках)" />
-            <div class="form-check">
+            <div class="form-check remark-resolved-wrap" data-mode="stoppage">
                 <input class="form-check-input" type="checkbox" name="Input.Remarks[${i}].IsResolved" value="true" id="rem-resolved-${i}" />
                 <label class="form-check-label" for="rem-resolved-${i}">Выполнено</label>
             </div>
@@ -358,9 +740,125 @@
         list.appendChild(row);
         wireRow(row);
         syncRow(row);
+        applyVisibility(); // «Выполнено» нужно только остановкам
+    }
+
+    addBtn.addEventListener('click', addRow);
+    list.querySelectorAll('.brigade-remark-editor-row').forEach(wireRow);
+
+    // ---------- Клиентская валидация (сервер проверяет то же самое) ----------
+    function masterFilled() {
+        const v = master.select.value;
+        if (v === ADD) return form.querySelector('[name="Input.NewMasterFullName"]').value.trim() !== '';
+        if (v) return true;
+        return $('master-name').value.trim() !== ''; // «(без привязки)» из сохранённой проверки
+    }
+
+    function validate() {
+        const mode = currentMode();
+        const kind = currentKind();
+        const hasRemark = [...list.querySelectorAll('.brigade-remark-editor-row')].some(row =>
+            row.querySelector('.remark-act').value
+            || row.querySelector('.remark-text').value.trim() !== '');
+        if (!hasRemark) {
+            return mode === 'inspection' ? 'Добавьте хотя бы одно нарушение.' : 'Добавьте хотя бы один пункт акта.';
+        }
+        if (mode === 'inspection') {
+            if (kind === 'Supervising' && !masterFilled()) return 'Укажите мастера.';
+            if (checker.select.value === ADD) {
+                if (form.querySelector('[name="Input.NewCheckerFullName"]').value.trim() === '') {
+                    return 'Укажите ФИО проверяющего.';
+                }
+            } else if (!checker.select.value && $('checker-name').value.trim() === '') {
+                return 'Укажите проверяющего.';
+            }
+        }
+        return null;
+    }
+
+    function showClientError(message) {
+        clientError.textContent = message || '';
+        clientError.classList.toggle('d-none', !message);
+        if (message) clientError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    form.addEventListener('submit', (e) => {
+        // «Удалить» — тоже submit, но валидировать форму для удаления не нужно.
+        if (e.submitter?.hasAttribute('formaction')) return;
+        const err = validate();
+        if (err) {
+            e.preventDefault();
+            showClientError(err);
+        } else {
+            showClientError(null);
+        }
     });
 
-    list.querySelectorAll('.brigade-remark-editor-row').forEach(wireRow);
+    // ---------- «Очистить форму» ----------
+    /*
+     * Сбрасывает форму к значениям по умолчанию и превращает её в НОВУЮ запись:
+     * снимает id правки, разблокирует режим/вид, возвращает адрес и заголовок «Добавить».
+     * Режим и вид проверки остаются выбранными.
+     */
+    function clearForm() {
+        const editing = !!($('field-id').value || $('field-inspection-id').value);
+        if (editing && !window.confirm('Очистить форму и начать новую запись? Сохранённая запись не изменится.')) return;
+
+        $('field-id').value = '';
+        $('field-inspection-id').value = '';
+        form.querySelectorAll('[data-locked-field]').forEach(el => el.remove());
+        form.querySelectorAll('[data-locked="1"]').forEach(el => { delete el.dataset.locked; el.disabled = false; });
+        $('delete-btn')?.remove();
+        $('page-title').textContent = 'Добавить';
+        $('success-alert')?.remove();
+        $('server-error')?.remove();
+        showClientError(null);
+        if (editing || savedUrl) history.replaceState(null, '', '/brigade-rating/stoppage');
+
+        form.querySelectorAll('input[name^="Input."], select[name^="Input."], textarea[name^="Input."]').forEach(el => {
+            if (el.closest('.brigade-remark-editor-row')) return; // пункты пересоздаём ниже
+            if (el.name === 'Input.Mode' || el.name === 'Input.Kind') return;
+            if (el.type === 'radio' || el.type === 'checkbox') { el.checked = false; return; }
+            if (el.tagName === 'SELECT') { el.selectedIndex = 0; return; }
+            if (el.type === 'hidden') { if (el.hasAttribute('data-reset')) el.value = ''; return; }
+            el.value = '';
+        });
+
+        $('report-date').value = todayIso;
+        $('stopped-at').value = '08:00';
+        workshopInput.value = '';
+        workManualInput.value = 'true';
+        workText.classList.remove('d-none');
+        syncFixDate();
+        master.reset();
+        stopper.reset();
+        checker.reset();
+        respSelect.innerHTML = '<option value="">— не выбран —</option>';
+        respName.value = '';
+        respLoadedFor = '';
+
+        list.innerHTML = '';
+        for (let n = 0; n < 3; n++) addRow();
+
+        // Единственная бригада выбирается сама (как при открытии пустой формы).
+        const real = [...brigadeSelect.options].filter(o => o.value);
+        if (real.length === 1) {
+            brigadeSelect.value = real[0].value;
+            brigadeSelect.dispatchEvent(new Event('change'));
+        }
+        applyVisibility();
+        master.sync();
+    }
+    $('clear-form').addEventListener('click', clearForm);
+
+    // ---------- Инициализация ----------
+    applyVisibility();
+    [master, stopper, checker].forEach(b => {
+        // Показать блок «Добавить», если после ошибки сервера в селекте остался этот пункт.
+        b.addBox.classList.toggle('d-none', b.select.value !== ADD);
+    });
+    syncFixDate();
+    if (savedUrl) history.replaceState(null, '', savedUrl); // после сохранения адрес = режим правки
 })();
 </script>
 }

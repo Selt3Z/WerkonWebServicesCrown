@@ -42,25 +42,63 @@
 
     <div class="mb-3">
         <label class="form-label" asp-for="Input.Role">Роль</label>
-        @if (!Model.IsNew)
+        @if (Model.IsNew)
         {
-            <div class="form-control-plaintext">@AppRoles.Display(Model.Input.Role)</div>
-            <input type="hidden" asp-for="Input.Role" />
-            <div class="form-text">
-                @(Model.IsProtectedAdmin
-                    ? "Роль системного пользователя admin нельзя изменить."
-                    : "Роль задаётся при создании и не меняется (раздел документации и права завязаны на роль). Нужна другая роль — создайте нового пользователя.")
-            </div>
-        }
-        else
-        {
-            <select class="form-select" asp-for="Input.Role">
+            <select class="form-select" asp-for="Input.Role" id="user-role">
                 @foreach (var r in AppRoles.All)
                 {
                     <option value="@r">@AppRoles.Display(r)</option>
                 }
             </select>
         }
+        else if (Model.CanSwitchRole)
+        {
+            @* Админ свободно переключает Подразделение / Заказчик / Бригада. *@
+            <select class="form-select" asp-for="Input.Role" id="user-role">
+                @foreach (var r in AppRoles.Switchable)
+                {
+                    <option value="@r">@AppRoles.Display(r)</option>
+                }
+            </select>
+            <div class="form-text">
+                Можно менять между «Подразделение», «Заказчик» и «Бригада».
+                При уходе с «Бригады» номер и цех очищаются, при уходе с «Подразделения» — заголовок документации.
+            </div>
+        }
+        else
+        {
+            <div class="form-control-plaintext">@AppRoles.Display(Model.Input.Role)</div>
+            <input type="hidden" asp-for="Input.Role" />
+            <div class="form-text">
+                @(Model.IsProtectedAdmin
+                    ? "Роль системного пользователя admin нельзя изменить."
+                    : "Эту роль менять нельзя. Нужна другая роль — создайте нового пользователя.")
+            </div>
+        }
+    </div>
+
+    @{
+        var effectiveRole = Model.Input.Role ?? AppRoles.Department;
+        var showDocTitle = effectiveRole == AppRoles.Department;
+        var showBrigade = effectiveRole == AppRoles.Brigade;
+    }
+    <div class="mb-3 @(showDocTitle ? null : "d-none")" id="user-doc-title-wrap">
+        <label class="form-label" asp-for="Input.DocumentationTitle">Заголовок в документации</label>
+        <input class="form-control" asp-for="Input.DocumentationTitle" maxlength="200" />
+        <div class="form-text">Только для роли «Подразделение». Если пусто — в документации показывается имя.</div>
+    </div>
+
+    <div class="@(showBrigade ? null : "d-none")" id="user-brigade-wrap">
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.BrigadeNumber">Номер бригады</label>
+            <input class="form-control" asp-for="Input.BrigadeNumber" maxlength="50" id="user-brigade-number" />
+            <div class="form-text">Обязателен для роли «Бригада». В списках имя выводится как «Имя №номер».</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" asp-for="Input.BrigadeWorkshop">Цех</label>
+            <input class="form-control" asp-for="Input.BrigadeWorkshop" maxlength="100" id="user-brigade-workshop" />
+            <div class="form-text">Обязателен для роли «Бригада».</div>
+        </div>
     </div>
 
     @if (!Model.IsNew && !Model.IsSelf && !Model.IsProtectedAdmin)
@@ -108,3 +146,31 @@
         <a class="btn btn-secondary" href="/users">Отмена</a>
     </div>
 </form>
+
+@if (Model.IsNew || Model.CanSwitchRole)
+{
+    @section Scripts {
+    <script>
+    (() => {
+        const role = document.getElementById('user-role');
+        const docWrap = document.getElementById('user-doc-title-wrap');
+        const brigadeWrap = document.getElementById('user-brigade-wrap');
+        const brigadeNumber = document.getElementById('user-brigade-number');
+        const brigadeWorkshop = document.getElementById('user-brigade-workshop');
+        if (!role || !docWrap || !brigadeWrap) return;
+        const departmentRole = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(AppRoles.Department));
+        const brigadeRole = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(AppRoles.Brigade));
+        const sync = () => {
+            const isBrigade = role.value === brigadeRole;
+            docWrap.classList.toggle('d-none', role.value !== departmentRole);
+            brigadeWrap.classList.toggle('d-none', !isBrigade);
+            // required только когда поля видны (иначе браузер блокирует submit скрытых полей).
+            if (brigadeNumber) brigadeNumber.required = isBrigade;
+            if (brigadeWorkshop) brigadeWorkshop.required = isBrigade;
+        };
+        role.addEventListener('change', sync);
+        sync();
+    })();
+    </script>
+    }
+}

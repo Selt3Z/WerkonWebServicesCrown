@@ -41,5 +41,14 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     /// <summary>Раздел документации пользователя виден + write в свой раздел.</summary>
     public bool DocumentationEnabled { get; set; } = true;
 
+    /// <summary>Необязательный заголовок раздела документации; пусто — берём DisplayName.</summary>
+    public string? DocumentationTitle { get; set; }
+
+    /// <summary>Номер бригады (только роль Brigade; при уходе с роли очищается).</summary>
+    public string? BrigadeNumber { get; set; }
+
+    /// <summary>Цех бригады (только роль Brigade; при уходе с роли очищается).</summary>
+    public string? BrigadeWorkshop { get; set; }
+
     public DateTime? LastActivityAtUtc { get; set; }
 }
