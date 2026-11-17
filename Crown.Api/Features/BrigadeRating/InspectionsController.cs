@@ -1,7 +1,9 @@
 using Crown.Contracts.BrigadeRating;
 using Crown.Domain.Entities;
 using Crown.Infrastructure.Identity;
+using Crown.Infrastructure.Import;
 using Crown.Infrastructure.Persistence;
+using CatalogLookup = Crown.Infrastructure.Import.CatalogTextLookup;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -46,7 +48,8 @@ public sealed class InspectionsController(
             .ThenByDescending(x => x.SequenceNo)
             .ToListAsync(cancellationToken);
 
-        return Ok(rows.Select(MapListItem).ToList());
+        var live = await LoadBrigadeSnapshotsAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
+        return Ok(rows.Select(x => MapListItem(x, live)).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -62,7 +65,13 @@ public sealed class InspectionsController(
         var entity = await db.BrigadeInspections.AsNoTracking()
             .Include(x => x.Remarks)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        return entity is null ? NotFound() : Ok(MapDetail(entity));
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        var live = await LoadBrigadeSnapshotsAsync([entity.BrigadeUserId], cancellationToken);
+        return Ok(MapDetail(entity, live));
     }
 
     [HttpPost]
@@ -121,7 +130,8 @@ public sealed class InspectionsController(
             }
         }
 
-        return CreatedAtAction(nameof(Get), new { id = entity.Id }, MapDetail(entity));
+        var createdLive = await LoadBrigadeSnapshotsAsync([entity.BrigadeUserId], cancellationToken);
+        return CreatedAtAction(nameof(Get), new { id = entity.Id }, MapDetail(entity, createdLive));
     }
 
     [HttpPut("{id:guid}")]
@@ -174,7 +184,8 @@ public sealed class InspectionsController(
         var saved = await db.BrigadeInspections.AsNoTracking()
             .Include(x => x.Remarks)
             .FirstAsync(x => x.Id == id, cancellationToken);
-        return Ok(MapDetail(saved));
+        var savedLive = await LoadBrigadeSnapshotsAsync([saved.BrigadeUserId], cancellationToken);
+        return Ok(MapDetail(saved, savedLive));
     }
 
     [HttpDelete("{id:guid}")]
@@ -586,45 +597,79 @@ public sealed class InspectionsController(
             return (null, "Добавьте хотя бы одно нарушение.", "remarks_required");
         }
 
-        var actIds = raw
-            .Where(r => !r.IsManual && r.ActItemId is Guid)
-            .Select(r => r.ActItemId!.Value)
-            .Distinct()
-            .ToList();
-        var actMap = actIds.Count == 0
-            ? new Dictionary<Guid, StoppageActItem>()
-            : await db.StoppageActItems.AsNoTracking()
-                .Where(x => actIds.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var catalog = await db.StoppageActItems.ToListAsync(cancellationToken);
+        var byId = catalog.ToDictionary(x => x.Id);
+        var byKey = new Dictionary<string, StoppageActItem>(StringComparer.Ordinal);
+        foreach (var a in catalog)
+        {
+            var k = CatalogLookup.NormKey(a.Text);
+            if (!string.IsNullOrEmpty(k) && !byKey.ContainsKey(k))
+            {
+                byKey[k] = a;
+            }
+        }
 
+        var maxOrder = catalog.Count == 0 ? 0 : catalog.Max(x => x.SortOrder);
         var result = new List<BrigadeInspectionRemark>();
         var order = 0;
+        var catalogDirty = false;
+
         foreach (var r in raw)
         {
-            var isManual = r.IsManual || r.ActItemId is null || r.ActItemId == Guid.Empty;
             string text;
             string? comment;
-            Guid? actItemId;
+            Guid actItemId;
 
-            if (isManual)
+            if (!r.IsManual && r.ActItemId is Guid aid && aid != Guid.Empty)
             {
-                text = (r.Text ?? string.Empty).Trim();
-                comment = null;
-                actItemId = null;
-                if (text.Length == 0)
-                {
-                    continue; // пустую ручную строку молча пропускаем
-                }
-            }
-            else
-            {
-                if (!actMap.TryGetValue(r.ActItemId!.Value, out var act))
+                if (!byId.TryGetValue(aid, out var act))
                 {
                     return (null, "Выбранный пункт акта не найден в справочнике.", "act_item_invalid");
                 }
 
+                if (!act.IsActive)
+                {
+                    act.IsActive = true;
+                    catalogDirty = true;
+                }
+
                 text = act.Text.Trim();
                 comment = Clean(r.Comment);
+                actItemId = act.Id;
+            }
+            else
+            {
+                text = (r.Text ?? string.Empty).Trim();
+                if (text.Length == 0)
+                {
+                    continue;
+                }
+
+                comment = Clean(r.Comment);
+                var key = CatalogLookup.NormKey(text);
+                if (!byKey.TryGetValue(key, out var act))
+                {
+                    maxOrder++;
+                    act = new StoppageActItem
+                    {
+                        Id = Guid.NewGuid(),
+                        Text = text,
+                        IsActive = true,
+                        SortOrder = maxOrder,
+                        CreatedAt = DateTimeOffset.UtcNow
+                    };
+                    db.StoppageActItems.Add(act);
+                    byId[act.Id] = act;
+                    byKey[key] = act;
+                    catalogDirty = true;
+                }
+                else if (!act.IsActive)
+                {
+                    act.IsActive = true;
+                    catalogDirty = true;
+                }
+
+                text = act.Text.Trim();
                 actItemId = act.Id;
             }
 
@@ -640,7 +685,7 @@ public sealed class InspectionsController(
                 ActItemId = actItemId,
                 Text = text,
                 Comment = comment,
-                IsManual = isManual,
+                IsManual = false,
                 SortOrder = order
             });
         }
@@ -648,6 +693,11 @@ public sealed class InspectionsController(
         if (result.Count == 0)
         {
             return (null, "Добавьте хотя бы одно нарушение.", "remarks_required");
+        }
+
+        if (catalogDirty)
+        {
+            await db.SaveChangesAsync(cancellationToken);
         }
 
         return (result, null, null);
@@ -685,21 +735,47 @@ public sealed class InspectionsController(
 
     // ---------- Маппинг ----------
 
-    private static BrigadeInspectionListItemResponse MapListItem(BrigadeInspection x)
+    private async Task<Dictionary<Guid, (string DisplayName, string Number)>> LoadBrigadeSnapshotsAsync(
+        IEnumerable<Guid> brigadeUserIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = brigadeUserIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, (string, string)>();
+        }
+
+        var rows = await db.Users.AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new { u.Id, u.DisplayName, u.UserName, u.BrigadeNumber })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(
+            x => x.Id,
+            x => (
+                UserDisplay.Format(x.DisplayName, x.UserName, x.BrigadeNumber),
+                (x.BrigadeNumber ?? string.Empty).Trim()));
+    }
+
+    private static BrigadeInspectionListItemResponse MapListItem(
+        BrigadeInspection x,
+        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null)
     {
         var remarks = x.Remarks.OrderBy(r => r.SortOrder).ThenBy(r => r.Text).ToList();
         var item = new BrigadeInspectionListItemResponse();
-        FillCommon(item, x);
+        FillCommon(item, x, live);
         item.RemarkCount = remarks.Count;
         item.RemarkTexts = remarks.Select(FormatRemark).ToList();
         return item;
     }
 
-    private static BrigadeInspectionDetailResponse MapDetail(BrigadeInspection x)
+    private static BrigadeInspectionDetailResponse MapDetail(
+        BrigadeInspection x,
+        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null)
     {
         var remarks = x.Remarks.OrderBy(r => r.SortOrder).ThenBy(r => r.Text).ToList();
         var item = new BrigadeInspectionDetailResponse();
-        FillCommon(item, x);
+        FillCommon(item, x, live);
         item.RemarkCount = remarks.Count;
         item.RemarkTexts = remarks.Select(FormatRemark).ToList();
         item.Remarks = remarks.Select(r => new BrigadeInspectionRemarkResponse
@@ -714,7 +790,10 @@ public sealed class InspectionsController(
         return item;
     }
 
-    private static void FillCommon(BrigadeInspectionListItemResponse t, BrigadeInspection x)
+    private static void FillCommon(
+        BrigadeInspectionListItemResponse t,
+        BrigadeInspection x,
+        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null)
     {
         t.Id = x.Id;
         t.Kind = x.Kind;
@@ -722,7 +801,12 @@ public sealed class InspectionsController(
         t.ReportDate = x.ReportDate;
         t.Workshop = x.Workshop;
         t.BrigadeUserId = x.BrigadeUserId;
-        t.BrigadeNumber = x.BrigadeNumberSnapshot;
+        // Номер: live из пользователя, иначе снимок (старые записи).
+        t.BrigadeNumber = live is not null
+                          && live.TryGetValue(x.BrigadeUserId, out var snap)
+                          && !string.IsNullOrWhiteSpace(snap.Number)
+            ? snap.Number
+            : x.BrigadeNumberSnapshot;
         t.MasterPersonId = x.MasterPersonId;
         t.MasterName = x.MasterName;
         t.Well = x.Well;

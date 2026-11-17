@@ -5,6 +5,8 @@
     ViewData["Title"] = Model.PageTitle;
     var actItemsJson = System.Text.Json.JsonSerializer.Serialize(
         Model.ActItems.Select(a => new { id = a.Id, text = a.Text }));
+    var workItemsJson = System.Text.Json.JsonSerializer.Serialize(
+        Model.WorkItems.Select(w => new { id = w.Id, text = w.Text }));
 
     // Серверное начальное состояние видимости секций (JS потом держит его в актуальном виде).
     var curMode = Model.IsInspection ? "inspection" : "stoppage";
@@ -143,7 +145,7 @@
     <div class="transport-form-grid brigade-add-form-grid">
         @* ---------- Общие поля ---------- *@
         <div class="mb-2">
-            <label class="form-label" for="brigade-select">Бригада <span class="crown-req">*</span></label>
+            <label class="form-label" for="brigade-select"><span class="form-label-line">Бригада <span class="crown-req">*</span></span></label>
             <select class="form-select" asp-for="Input.BrigadeUserId" id="brigade-select" required>
                 <option value="">— выберите —</option>
                 @foreach (var b in Model.Brigades)
@@ -161,14 +163,14 @@
         </div>
 
         <div class="mb-2 @Hid("inspection")" data-mode="inspection">
-            <label class="form-label" for="workshop-input">Цех</label>
+            <label class="form-label" for="workshop-input"><span class="form-label-line">Цех</span></label>
             <input class="form-control form-control-locked" type="text" id="workshop-input"
                    value="@Model.CurrentWorkshop" readonly disabled tabindex="-1" aria-readonly="true" />
         </div>
 
         <div class="mb-2">
             <label class="form-label" for="master-select">
-                ФИО мастера <span class="crown-req @(isSupervising ? "" : "d-none")" id="master-req">*</span>
+                <span class="form-label-line">ФИО мастера <span class="crown-req @(isSupervising ? "" : "d-none")" id="master-req">*</span></span>
             </label>
             <input type="hidden" asp-for="Input.MasterName" id="master-name" data-reset />
             <select class="form-select" asp-for="Input.MasterPersonId" id="master-select">
@@ -193,21 +195,23 @@
 
         <div class="mb-2">
             <label class="form-label" for="report-date">
-                <span data-mode="stoppage" class="@Hid("stoppage")">Дата (отчётные сутки)</span><span data-mode="inspection" class="@Hid("inspection")">Дата</span>
-                <span class="crown-req">*</span>
+                <span class="form-label-line">
+                    <span data-mode="stoppage" class="@Hid("stoppage")">Дата (отчётные сутки)</span><span data-mode="inspection" class="@Hid("inspection")">Дата</span>
+                    <span class="crown-req">*</span>
+                </span>
             </label>
             <input class="form-control" type="date" asp-for="Input.ReportDate" id="report-date" required />
         </div>
 
         @* ---------- Остановка ---------- *@
         <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
-            <label class="form-label" for="stopped-by-dept">Кто остановил <span class="crown-req">*</span></label>
+            <label class="form-label" for="stopped-by-dept"><span class="form-label-line">Кто остановил <span class="crown-req">*</span></span></label>
             <select class="form-select" asp-for="Input.StoppedByUserId" id="stopped-by-dept" required>
                 @{ await DepartmentOptions(Model.Input.StoppedByUserId, "— выберите подразделение —"); }
             </select>
         </div>
         <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
-            <label class="form-label" for="stopped-by-person">ФИО / должность</label>
+            <label class="form-label" for="stopped-by-person"><span class="form-label-line">ФИО / должность</span></label>
             <input type="hidden" asp-for="Input.StoppedByName" id="stopped-by-name" data-reset />
             <select class="form-select" asp-for="Input.StoppedByPersonId" id="stopped-by-person">
                 @{
@@ -230,53 +234,42 @@
             <div class="form-text"><a href="/personnel">Персонал</a>: если пусто — добавьте сотрудников.</div>
         </div>
         <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
-            <label class="form-label" for="stopped-at">Время остановки <span class="crown-req">*</span></label>
+            <label class="form-label" for="stopped-at"><span class="form-label-line">Время остановки <span class="crown-req">*</span></span></label>
             <input class="form-control" type="time" asp-for="Input.StoppedAt" id="stopped-at" required />
         </div>
         <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
-            <label class="form-label" for="restarted-at">Время запуска</label>
+            <label class="form-label" for="restarted-at"><span class="form-label-line">Время запуска</span></label>
             <input class="form-control" type="time" asp-for="Input.RestartedAt" id="restarted-at" />
         </div>
         <div class="mb-2 @Hid("stoppage")" data-mode="stoppage" style="grid-column: 1 / -1;">
-            <div class="d-flex align-items-end justify-content-between gap-2 mb-1">
-                <label class="form-label mb-0" for="work-select">Выполняемая работа</label>
+            <div class="brigade-field-head d-flex align-items-end justify-content-between gap-2">
+                <label class="form-label mb-0" for="work-text">Выполняемая работа</label>
                 <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/work-items">Справочник</a>
             </div>
-            <input type="hidden" id="work-ismanual" name="Input.IsWorkManual" value="@(workManual ? "true" : "false")" />
-            <div class="brigade-work-editor">
-                <select class="form-select" asp-for="Input.WorkItemId" id="work-select">
-                    <option value="">— Вручную —</option>
-                    @foreach (var w in Model.WorkItems)
-                    {
-                        if (!workManual && Model.Input.WorkItemId == w.Id)
-                        {
-                            <option value="@w.Id" selected>@w.Text</option>
-                        }
-                        else
-                        {
-                            <option value="@w.Id">@w.Text</option>
-                        }
-                    }
-                </select>
-                <input class="form-control mt-1 @(workManual ? "" : "d-none")" asp-for="Input.WorkDescription" id="work-text"
-                       placeholder="Выполняемая работа вручную" />
+            <div class="catalog-picker" id="work-picker" data-catalog="work">
+                <input type="hidden" class="catalog-picker-id" id="work-select" name="Input.WorkItemId"
+                       value="@(!workManual && Model.Input.WorkItemId is Guid wid ? wid.ToString() : "")" />
+                <input type="hidden" class="catalog-picker-manual" id="work-ismanual" name="Input.IsWorkManual"
+                       value="@(workManual ? "true" : "false")" />
+                <input class="form-control catalog-picker-input" asp-for="Input.WorkDescription" id="work-text"
+                       autocomplete="off" placeholder="Поиск или новая работа…" />
             </div>
         </div>
 
         @* ---------- Проверка ---------- *@
         <div class="mb-2 @Hid("inspection", "Supervising Pbiot")" data-mode="inspection" data-kind="Supervising Pbiot">
-            <label class="form-label" for="well-input">Скважина</label>
+            <label class="form-label" for="well-input"><span class="form-label-line">Скважина</span></label>
             <input class="form-control" type="text" asp-for="Input.Well" id="well-input" maxlength="200" />
         </div>
 
         <div class="mb-2 @Hid("inspection")" data-mode="inspection">
-            <label class="form-label" for="checker-dept">Подразделение проверяющего <span class="crown-req">*</span></label>
+            <label class="form-label" for="checker-dept"><span class="form-label-line">Подразделение проверяющего <span class="crown-req">*</span></span></label>
             <select class="form-select" asp-for="Input.DepartmentUserId" id="checker-dept" required>
                 @{ await DepartmentOptions(Model.Input.DepartmentUserId, "— выберите подразделение —"); }
             </select>
         </div>
         <div class="mb-2 @Hid("inspection")" data-mode="inspection">
-            <label class="form-label" for="checker-person">ФИО / должность проверяющего <span class="crown-req">*</span></label>
+            <label class="form-label" for="checker-person"><span class="form-label-line">ФИО / должность проверяющего <span class="crown-req">*</span></span></label>
             <input type="hidden" asp-for="Input.CheckerName" id="checker-name" data-reset />
             <input type="hidden" asp-for="Input.CheckerPosition" id="checker-position" data-reset />
             <select class="form-select" asp-for="Input.CheckerPersonId" id="checker-person">
@@ -300,7 +293,7 @@
         </div>
 
         <div class="mb-2 @Hid("inspection")" data-mode="inspection">
-            <div class="d-flex align-items-end justify-content-between gap-2">
+            <div class="brigade-field-head d-flex align-items-end justify-content-between gap-2">
                 <label class="form-label mb-0" for="fix-date">Дата устранения</label>
                 <div class="form-check mb-0">
                     <input class="form-check-input" type="checkbox" id="fix-date-manual" name="Input.FixDateIsManual" value="true"
@@ -308,14 +301,14 @@
                     <label class="form-check-label small" for="fix-date-manual">Вручную</label>
                 </div>
             </div>
-            <input class="form-control mt-1 @(Model.Input.FixDateIsManual ? "d-none" : "")" type="date" asp-for="Input.FixDate" id="fix-date" />
-            <input class="form-control mt-1 @(Model.Input.FixDateIsManual ? "" : "d-none")" type="text" asp-for="Input.FixDateManualText"
+            <input class="form-control @(Model.Input.FixDateIsManual ? "d-none" : "")" type="date" asp-for="Input.FixDate" id="fix-date" />
+            <input class="form-control @(Model.Input.FixDateIsManual ? "" : "d-none")" type="text" asp-for="Input.FixDateManualText"
                    id="fix-date-text" maxlength="200" placeholder="например: по факту" />
         </div>
 
         @* Супервайзинг: Предписание / Замечание / Остановка + флаги *@
         <div class="mb-2 @Hid("inspection", "Supervising")" data-mode="inspection" data-kind="Supervising">
-            <label class="form-label d-block">Результат <span class="crown-req">*</span></label>
+            <label class="form-label d-block"><span class="form-label-line">Результат <span class="crown-req">*</span></span></label>
             <div class="d-flex flex-wrap gap-3">
                 @foreach (var (outValue, outLabel) in new[] { ("Prescription", "Предписание"), ("Remark", "Замечание"), ("Stoppage", "Остановка") })
                 {
@@ -328,7 +321,7 @@
             </div>
         </div>
         <div class="mb-2 @Hid("inspection", "Supervising")" data-mode="inspection" data-kind="Supervising">
-            <label class="form-label d-block">Признаки</label>
+            <label class="form-label d-block"><span class="form-label-line">Признаки</span></label>
             <div class="d-flex flex-wrap gap-3">
                 <div class="form-check m-0">
                     <input class="form-check-input" type="checkbox" asp-for="Input.StopPoint" id="stop-point" />
@@ -343,13 +336,13 @@
 
         @* ПДК *@
         <div class="mb-2 @Hid("inspection", "Pdk")" data-mode="inspection" data-kind="Pdk">
-            <label class="form-label" for="fix-responsible-text">Ответственный за устранение</label>
+            <label class="form-label" for="fix-responsible-text"><span class="form-label-line">Ответственный за устранение</span></label>
             <input class="form-control" type="text" asp-for="Input.FixResponsibleText" id="fix-responsible-text" maxlength="500" />
         </div>
 
         @* ПБиОТ *@
         <div class="mb-2 @Hid("inspection", "Pbiot")" data-mode="inspection" data-kind="Pbiot">
-            <label class="form-label" for="fix-responsible-select">Ответственный за устранение</label>
+            <label class="form-label" for="fix-responsible-select"><span class="form-label-line">Ответственный за устранение</span></label>
             <input type="hidden" asp-for="Input.FixResponsibleName" id="fix-responsible-name" data-reset />
             <select class="form-select" asp-for="Input.FixResponsiblePersonId" id="fix-responsible-select"
                     data-loaded-workshop="@(Model.IsInspection && Model.Input.Kind == BrigadeInspectionKind.Pbiot ? Model.CurrentWorkshop : "")">
@@ -385,7 +378,7 @@
             </select>
         </div>
         <div class="mb-2 @Hid("inspection", "Pbiot")" data-mode="inspection" data-kind="Pbiot" style="grid-column: 1 / -1;">
-            <label class="form-label" for="fix-report-text">Отчёт об устранении</label>
+            <label class="form-label" for="fix-report-text"><span class="form-label-line">Отчёт об устранении</span></label>
             <textarea class="form-control" asp-for="Input.FixReportText" id="fix-report-text" rows="2" maxlength="2000"></textarea>
         </div>
     </div>
@@ -394,44 +387,37 @@
     <div class="mb-3">
         <div class="d-flex align-items-end justify-content-between gap-2 mb-2">
             <label class="form-label mb-0">
-                <span class="@Hid("stoppage")" data-mode="stoppage">Пункты по акту</span><span class="@Hid("inspection")" data-mode="inspection">Нарушения</span>
-                <span class="crown-req">*</span>
+                <span class="form-label-line">
+                    <span class="@Hid("stoppage")" data-mode="stoppage">Пункты по акту</span><span class="@Hid("inspection")" data-mode="inspection">Нарушения</span>
+                    <span class="crown-req">*</span>
+                </span>
             </label>
             <div class="d-flex gap-2">
                 <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/act-items">Справочник</a>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="add-remark-row">+ пункт</button>
             </div>
         </div>
-        @if (Model.ActItems.Count == 0)
-        {
-            <p class="text-muted small mb-2">Справочник пуст — заполните пункты или выбирайте «Вручную».</p>
-        }
         <div id="remarks-list" class="brigade-remark-editor">
             @for (var i = 0; i < Model.Input.Remarks.Count; i++)
             {
                 var rem = Model.Input.Remarks[i];
-                // Пункт, которого нет в активном справочнике, показываем как ручной — иначе текст потеряется.
-                var isManual = rem.IsManual || rem.ActItemId is null || !Model.ActItems.Any(a => a.Id == rem.ActItemId);
+                // Нет в активном справочнике — свободный текст (при сохранении уйдёт в справочник).
+                var inCatalog = rem.ActItemId is Guid rid && Model.ActItems.Any(a => a.Id == rid);
+                var isManual = rem.IsManual || !inCatalog;
+                var displayText = inCatalog
+                    ? (Model.ActItems.First(a => a.Id == rem.ActItemId).Text)
+                    : rem.Text;
                 <div class="brigade-remark-editor-row" data-row="@i">
                     <input type="hidden" name="Input.Remarks[@i].Id" value="@rem.Id" />
-                    <input type="hidden" class="remark-ismanual" name="Input.Remarks[@i].IsManual" value="@(isManual ? "true" : "false")" />
-                    <select class="form-select remark-act" name="Input.Remarks[@i].ActItemId">
-                        <option value="">— Вручную —</option>
-                        @foreach (var a in Model.ActItems)
-                        {
-                            if (!isManual && rem.ActItemId == a.Id)
-                            {
-                                <option value="@a.Id" selected>@a.Text</option>
-                            }
-                            else
-                            {
-                                <option value="@a.Id">@a.Text</option>
-                            }
-                        }
-                    </select>
-                    <input class="form-control remark-text @(isManual ? "" : "d-none")"
-                           name="Input.Remarks[@i].Text" value="@rem.Text" placeholder="Текст пункта вручную" />
-                    <input class="form-control remark-comment @(isManual ? "d-none" : "")"
+                    <div class="catalog-picker remark-picker" data-catalog="act">
+                        <input type="hidden" class="catalog-picker-id remark-act" name="Input.Remarks[@i].ActItemId"
+                               value="@(isManual ? "" : rem.ActItemId.ToString())" />
+                        <input type="hidden" class="catalog-picker-manual remark-ismanual" name="Input.Remarks[@i].IsManual"
+                               value="@(isManual ? "true" : "false")" />
+                        <input class="form-control catalog-picker-input remark-text" name="Input.Remarks[@i].Text"
+                               value="@displayText" autocomplete="off" placeholder="Поиск или новый пункт…" />
+                    </div>
+                    <input class="form-control remark-comment"
                            name="Input.Remarks[@i].Comment" value="@rem.Comment" placeholder="Комментарий (в Excel в скобках)" />
                     <div class="form-check remark-resolved-wrap @Hid("stoppage")" data-mode="stoppage">
                         <input class="form-check-input" type="checkbox" name="Input.Remarks[@i].IsResolved" value="true"
@@ -458,6 +444,7 @@
 </form>
 
 @section Scripts {
+<script src="~/js/catalog-picker.js" asp-append-version="true"></script>
 <script>
 (() => {
     const ADD = '__add__'; // value пункта «Добавить» в селектах персонала
@@ -465,6 +452,7 @@
     const list = document.getElementById('remarks-list');
     const addBtn = document.getElementById('add-remark-row');
     const actItems = @Html.Raw(actItemsJson);
+    const workItems = @Html.Raw(workItemsJson);
     const todayIso = '@Model.TodayIso';
     const savedUrl = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.SavedUrl));
 
@@ -663,33 +651,16 @@
     }
     fixManual.addEventListener('change', syncFixDate);
 
-    // ---------- Работа (остановка): из справочника или вручную ----------
-    const workSelect = $('work-select');
+    // ---------- Работа (остановка): поиск по справочнику ----------
+    const workPicker = $('work-picker');
     const workText = $('work-text');
     const workManualInput = $('work-ismanual');
-    workSelect.addEventListener('change', () => {
-        const manual = !workSelect.value;
-        workManualInput.value = manual ? 'true' : 'false';
-        workText.classList.toggle('d-none', !manual);
-        if (!manual) workText.value = '';
-    });
+    window.CrownCatalogPicker.mount(workPicker, { items: workItems });
 
     // ---------- Пункты акта / нарушения ----------
-    function syncRow(row) {
-        const sel = row.querySelector('.remark-act');
-        const text = row.querySelector('.remark-text');
-        const comment = row.querySelector('.remark-comment');
-        const isManualInput = row.querySelector('.remark-ismanual');
-        const manual = !sel.value;
-        isManualInput.value = manual ? 'true' : 'false';
-        text.classList.toggle('d-none', !manual);
-        comment.classList.toggle('d-none', manual);
-        if (!manual) text.value = '';
-        else comment.value = '';
-    }
-
     function wireRow(row) {
-        row.querySelector('.remark-act')?.addEventListener('change', () => syncRow(row));
+        const picker = row.querySelector('.remark-picker');
+        if (picker) window.CrownCatalogPicker.mount(picker, { items: actItems });
         row.querySelector('.remark-remove')?.addEventListener('click', () => {
             if (list.querySelectorAll('.brigade-remark-editor-row').length <= 1) return;
             row.remove();
@@ -712,12 +683,6 @@
         });
     }
 
-    function actOptionsHtml(selected) {
-        return actItems.map(a =>
-            `<option value="${a.id}" ${selected === a.id ? 'selected' : ''}>${escapeHtml(a.text)}</option>`
-        ).join('');
-    }
-
     function addRow() {
         const i = list.querySelectorAll('.brigade-remark-editor-row').length;
         const row = document.createElement('div');
@@ -725,12 +690,11 @@
         row.dataset.row = String(i);
         row.innerHTML = `
             <input type="hidden" name="Input.Remarks[${i}].Id" value="" />
-            <input type="hidden" class="remark-ismanual" name="Input.Remarks[${i}].IsManual" value="false" />
-            <select class="form-select remark-act" name="Input.Remarks[${i}].ActItemId">
-                <option value="">— Вручную —</option>
-                ${actOptionsHtml(null)}
-            </select>
-            <input class="form-control remark-text d-none" name="Input.Remarks[${i}].Text" value="" placeholder="Текст пункта вручную" />
+            <div class="catalog-picker remark-picker" data-catalog="act">
+                <input type="hidden" class="catalog-picker-id remark-act" name="Input.Remarks[${i}].ActItemId" value="" />
+                <input type="hidden" class="catalog-picker-manual remark-ismanual" name="Input.Remarks[${i}].IsManual" value="true" />
+                <input class="form-control catalog-picker-input remark-text" name="Input.Remarks[${i}].Text" value="" autocomplete="off" placeholder="Поиск или новый пункт…" />
+            </div>
             <input class="form-control remark-comment" name="Input.Remarks[${i}].Comment" value="" placeholder="Комментарий (в Excel в скобках)" />
             <div class="form-check remark-resolved-wrap" data-mode="stoppage">
                 <input class="form-check-input" type="checkbox" name="Input.Remarks[${i}].IsResolved" value="true" id="rem-resolved-${i}" />
@@ -739,7 +703,6 @@
             <button type="button" class="btn btn-outline-secondary btn-sm remark-remove" title="Убрать строку">×</button>`;
         list.appendChild(row);
         wireRow(row);
-        syncRow(row);
         applyVisibility(); // «Выполнено» нужно только остановкам
     }
 
@@ -757,9 +720,11 @@
     function validate() {
         const mode = currentMode();
         const kind = currentKind();
-        const hasRemark = [...list.querySelectorAll('.brigade-remark-editor-row')].some(row =>
-            row.querySelector('.remark-act').value
-            || row.querySelector('.remark-text').value.trim() !== '');
+        const hasRemark = [...list.querySelectorAll('.brigade-remark-editor-row')].some(row => {
+            const id = row.querySelector('.remark-act')?.value;
+            const text = row.querySelector('.remark-text')?.value.trim() || '';
+            return !!id || text !== '';
+        });
         if (!hasRemark) {
             return mode === 'inspection' ? 'Добавьте хотя бы одно нарушение.' : 'Добавьте хотя бы один пункт акта.';
         }
@@ -828,7 +793,8 @@
         $('stopped-at').value = '08:00';
         workshopInput.value = '';
         workManualInput.value = 'true';
-        workText.classList.remove('d-none');
+        $('work-select').value = '';
+        workText.value = '';
         syncFixDate();
         master.reset();
         stopper.reset();

@@ -96,6 +96,31 @@ public sealed class PersonnelController : ControllerBase
         return Ok(page);
     }
 
+    /// <summary>Владельцы персонала для staff: подразделения + бригады (имя с номером).</summary>
+    [HttpGet("owners")]
+    [Authorize(Roles = AppRoles.Administrator + "," + AppRoles.Dispatcher)]
+    public async Task<ActionResult<List<PersonnelOwnerOptionResponse>>> ListOwners()
+    {
+        var departments = await _users.GetUsersInRoleAsync(AppRoles.Department);
+        var brigades = await _users.GetUsersInRoleAsync(AppRoles.Brigade);
+        var items = departments
+            .Concat(brigades)
+            .Where(x => x.IsActive)
+            .GroupBy(x => x.Id)
+            .Select(g => g.First())
+            .Select(x => new PersonnelOwnerOptionResponse
+            {
+                Id = x.Id,
+                UserName = x.UserName ?? string.Empty,
+                DisplayName = UserDisplay.Format(x)
+            })
+            .OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(x => x.UserName)
+            .ToList();
+
+        return Ok(items);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<PersonnelPersonResponse>> GetById(
         Guid id,
@@ -322,16 +347,15 @@ public sealed class PersonnelController : ControllerBase
     {
         var user = await _db.Users.AsNoTracking()
             .Where(x => x.Id == ownerUserId)
-            .Select(x => new { x.DisplayName, x.UserName })
+            .Select(x => new { x.DisplayName, x.UserName, x.BrigadeNumber })
             .FirstOrDefaultAsync(cancellationToken);
         if (user is null)
         {
             return ownerUserId.ToString();
         }
 
-        return string.IsNullOrWhiteSpace(user.DisplayName)
-            ? (user.UserName ?? ownerUserId.ToString())
-            : user.DisplayName!;
+        var name = UserDisplay.Format(user.DisplayName, user.UserName, user.BrigadeNumber);
+        return string.IsNullOrEmpty(name) ? ownerUserId.ToString() : name;
     }
 
     private async Task<PersonnelPersonResponse> MapResponseAsync(PersonnelPerson entity, CancellationToken cancellationToken) =>

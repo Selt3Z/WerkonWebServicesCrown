@@ -644,6 +644,13 @@ public sealed class SaveStoppageWorkItemRequest
     public int SortOrder { get; set; }
 }
 
+public sealed class CatalogLinesImportResult
+{
+    public int Parsed { get; set; }
+    public int Imported { get; set; }
+    public int SkippedDuplicates { get; set; }
+}
+
 public sealed class PersonnelPerson
 {
     public Guid Id { get; set; }

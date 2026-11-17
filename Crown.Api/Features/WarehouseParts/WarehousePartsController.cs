@@ -434,10 +434,14 @@ public sealed class WarehousePartsController : ControllerBase
             return (null, User.Identity?.Name);
         }
 
-        var displayName = await _dbContext.Users
+        var user = await _dbContext.Users.AsNoTracking()
             .Where(x => x.Id == userId)
-            .Select(x => string.IsNullOrWhiteSpace(x.DisplayName) ? x.UserName : x.DisplayName)
+            .Select(x => new { x.DisplayName, x.UserName, x.BrigadeNumber })
             .FirstOrDefaultAsync(cancellationToken);
+
+        var displayName = user is null
+            ? null
+            : UserDisplay.Format(user.DisplayName, user.UserName, user.BrigadeNumber);
 
         return (userId, displayName ?? User.Identity?.Name);
     }

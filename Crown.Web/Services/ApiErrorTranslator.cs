@@ -57,6 +57,7 @@ public static class ApiErrorTranslator
         ["warehouse_disabled"] = "Учёт оборудования отключён в настройках.",
         ["invalid_folder_name"] = "Некорректное имя папки.",
         ["folder_exists"] = "Папка с таким именем уже есть.",
+        ["invalid_folder_move"] = "Нельзя переместить папку в саму себя или в её подпапку.",
         ["trash_clear_confirm_required"] = "Для очистки корзины введите подтверждение TRASH.",
         ["backup_already_running"] = "Резервное копирование уже выполняется.",
         ["backup_failed"] = "Не удалось создать резервную копию.",

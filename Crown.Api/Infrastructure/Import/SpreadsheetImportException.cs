@@ -9,5 +9,11 @@ public sealed class SpreadsheetImportException : Exception
         Code = code;
     }
 
+    public SpreadsheetImportException(string code, string message)
+        : base(message)
+    {
+        Code = code;
+    }
+
     public string Code { get; }
 }

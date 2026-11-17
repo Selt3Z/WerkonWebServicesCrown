@@ -392,8 +392,8 @@ a.history-user-link:hover {
 }
 
 /*
- * Форма «Добавить»: лейблы в 2 строки (min-height) + прижаты вниз —
- * инпуты/селекты в одной строке сетки на одном уровне, без «скачков».
+ * Форма «Добавить»: фиксированная высота шапки поля → инпуты в строке на одном уровне.
+ * Доп. блоки (добавить ФИО, подсказки) идут ниже и не сдвигают соседей.
  */
 .brigade-add-form-grid {
     align-items: start;
@@ -405,22 +405,115 @@ a.history-user-link:hover {
     min-width: 0;
 }
 
+/*
+ * Лейбл: фиксированная высота + прижатие вниз.
+ * Текст и * внутри .form-label-line — один inline-поток, * не уезжает отдельно.
+ */
 .brigade-add-form-grid > .mb-2 > .form-label,
 .brigade-add-form-grid > .mb-2 > .form-label.d-block,
+.brigade-add-form-grid > .mb-2 > .brigade-field-head,
 .brigade-add-form-grid > .mb-2 > .d-flex.align-items-end:first-child {
     box-sizing: border-box;
-    min-height: 2.4rem;
-    margin-bottom: 0.2rem;
+    flex: 0 0 auto;
+    min-height: 2.85rem;
+    height: 2.85rem;
+    margin-bottom: 0.25rem !important;
     display: flex;
     align-items: flex-end;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.15rem 0.35rem;
+    overflow: hidden;
+}
+
+.brigade-add-form-grid > .mb-2 > .form-label > .form-label-line {
+    min-width: 0;
+    line-height: 1.2;
+}
+
+.brigade-add-form-grid .crown-req {
+    white-space: nowrap;
 }
 
 .brigade-add-form-grid > .mb-2 > .form-control,
 .brigade-add-form-grid > .mb-2 > .form-select,
+.brigade-add-form-grid > .mb-2 > input[type="hidden"] + .form-select,
+.brigade-add-form-grid > .mb-2 > input[type="hidden"] + .form-control,
 .brigade-add-form-grid > .mb-2 > .d-flex.flex-wrap {
-    margin-top: 0;
+    margin-top: 0 !important;
+}
+
+.documentation-toolbar {
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    overflow-x: auto;
+}
+
+.documentation-toolbar .filter-field-inline {
+    flex: 0 0 auto;
+}
+
+/* Документация: дата/размер узкие; действия — одна горизонтальная полоса. */
+.crown-table th.col-date,
+.crown-table td.col-date {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.crown-table th.col-actions,
+.crown-table td.doc-row-actions {
+    width: 1%;
+    min-width: 0;
+    max-width: none;
+    /* справа запас под «» hover у table-row-action */
+    padding: 0.3rem 1.85rem 0.3rem 0.45rem !important;
+    text-align: left;
+    vertical-align: middle;
+    line-height: normal;
+    cursor: default;
+    white-space: nowrap;
+}
+
+.doc-row-actions-inner {
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.doc-row-actions .btn-icon-delete {
+    cursor: pointer;
+}
+
+.documentation-move-form {
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    max-width: none;
+    width: auto;
+}
+
+.documentation-move-form .form-label {
+    margin: 0;
+    white-space: nowrap;
+}
+
+.documentation-move-form .form-select {
+    width: auto;
+    min-width: 9rem;
+    max-width: 14rem;
+}
+
+.documentation-row-form {
+    display: inline;
+    margin: 0;
 }
 
 .file-preview-image-wrap {
@@ -1062,15 +1155,67 @@ a.history-user-link:hover {
 
 .brigade-remark-editor-row {
     display: grid;
-    grid-template-columns: minmax(12rem, 1.4fr) minmax(10rem, 1fr) auto auto;
+    grid-template-columns: minmax(14rem, 1.6fr) minmax(10rem, 1fr) auto auto;
     gap: 0.5rem;
-    align-items: center;
+    align-items: start;
 }
 
 @media (max-width: 900px) {
     .brigade-remark-editor-row {
         grid-template-columns: 1fr;
     }
+}
+
+/* Поиск по справочнику (остановки / проверки / work). */
+.catalog-picker {
+    position: relative;
+    min-width: 0;
+}
+
+.catalog-picker-menu {
+    position: absolute;
+    z-index: 30;
+    left: 0;
+    right: 0;
+    top: calc(100% + 2px);
+    max-height: 14rem;
+    overflow: auto;
+    background: var(--r-surface, #fff);
+    border: 1px solid var(--r-border, #dee2e6);
+    border-radius: 6px;
+    box-shadow: var(--r-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.08));
+    padding: 0.2rem;
+}
+
+.catalog-picker-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 0.32rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    color: inherit;
+    cursor: pointer;
+    white-space: normal;
+}
+
+.catalog-picker-option:hover,
+.catalog-picker-option:focus {
+    background: var(--r-surface-muted, #f1f3f5);
+    outline: none;
+}
+
+.catalog-picker-hint {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--r-text-muted, #6c757d);
+}
+
+.catalog-list-filter {
+    max-width: 28rem;
 }
 
 .crown-row-link {

@@ -88,7 +88,8 @@ public sealed class UsersController : ControllerBase
             return Forbid();
         }
 
-        return Ok(await MapListItemAsync(user));
+        // Настройки пользователя — сырое имя без « №…» (номер правится отдельным полем).
+        return Ok(await MapListItemAsync(user, forDisplay: false));
     }
 
     [HttpPost]
@@ -299,10 +300,8 @@ public sealed class UsersController : ControllerBase
             return BadRequest(ApiErrors.FromCode(ApiErrorCodes.ProtectedAdminCannotDelete));
         }
 
-        // Снимок ФИО в заявках до SetNull по FK (имя остаётся текстом).
-        var snapshotName = string.IsNullOrWhiteSpace(user.DisplayName)
-            ? (user.UserName ?? string.Empty)
-            : user.DisplayName;
+        // Снимок ФИО в заявках до SetNull по FK (имя остаётся текстом, у бригады — с номером).
+        var snapshotName = UserDisplay.Format(user);
         await _db.ServiceRequests
             .IgnoreQueryFilters()
             .Where(x => x.InitiatorUserId == user.Id)
@@ -494,19 +493,26 @@ public sealed class UsersController : ControllerBase
         return null;
     }
 
-    private async Task<UserListItemResponse> MapListItemAsync(ApplicationUser user)
+    /// <param name="forDisplay">
+    /// true — в списках: у бригады имя + « №…»; false — форма редактирования (сырое DisplayName).
+    /// </param>
+    private async Task<UserListItemResponse> MapListItemAsync(ApplicationUser user, bool forDisplay = true)
     {
         var roles = await _userManager.GetRolesAsync(user);
+        var role = roles.OrderBy(x => x).FirstOrDefault() ?? string.Empty;
+        var isBrigade = IsBrigadeRole(role);
 
         return new UserListItemResponse
         {
             Id = user.Id,
             UserName = user.UserName ?? string.Empty,
-            DisplayName = user.DisplayName,
+            DisplayName = forDisplay
+                ? UserDisplay.FormatUserDisplay(user, isBrigade)
+                : (user.DisplayName ?? string.Empty),
             DocumentationTitle = user.DocumentationTitle,
             BrigadeNumber = user.BrigadeNumber,
             BrigadeWorkshop = user.BrigadeWorkshop,
-            Role = roles.OrderBy(x => x).FirstOrDefault() ?? string.Empty,
+            Role = role,
             IsActive = user.IsActive,
             LastActivityAtUtc = user.LastActivityAtUtc
         };

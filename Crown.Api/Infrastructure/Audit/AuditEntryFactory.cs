@@ -337,10 +337,11 @@ public sealed class AuditEntryFactory
                 entityType = AuditEntityTypes.User;
                 entityId = GetEntityId(entry, appUser.Id);
                 var display = entry.State == EntityState.Deleted
-                    ? (entry.OriginalValues.GetValue<string>(nameof(ApplicationUser.DisplayName))
-                       ?? entry.OriginalValues.GetValue<string>(nameof(ApplicationUser.UserName))
-                       ?? string.Empty)
-                    : (string.IsNullOrWhiteSpace(appUser.DisplayName) ? appUser.UserName ?? string.Empty : appUser.DisplayName);
+                    ? UserDisplay.Format(
+                        entry.OriginalValues.GetValue<string>(nameof(ApplicationUser.DisplayName)),
+                        entry.OriginalValues.GetValue<string>(nameof(ApplicationUser.UserName)),
+                        entry.OriginalValues.GetValue<string>(nameof(ApplicationUser.BrigadeNumber)))
+                    : UserDisplay.Format(appUser);
                 summary = display;
                 entityUrl = action == AuditActions.Deleted ? null : $"/users/edit/{entityId}";
                 return true;

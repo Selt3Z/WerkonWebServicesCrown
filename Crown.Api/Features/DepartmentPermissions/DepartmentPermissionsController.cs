@@ -106,7 +106,7 @@ public sealed class DepartmentPermissionsController : ControllerBase
     {
         UserId = x.Id,
         // Бригада — «Имя №номер», остальные — просто имя (общий helper).
-        DisplayName = UserDisplay.FormatUserDisplay(x, isBrigade: role == AppRoles.Brigade),
+        DisplayName = UserDisplay.Format(x),
         UserName = x.UserName ?? string.Empty,
         Role = role,
         BrigadeNumber = role == AppRoles.Brigade ? x.BrigadeNumber : null,

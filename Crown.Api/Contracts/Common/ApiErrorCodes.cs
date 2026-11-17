@@ -48,6 +48,7 @@ public static class ApiErrorCodes
     public const string BackupFileTooLarge = "backup_file_too_large";
     public const string SessionsConfirmRequired = "sessions_confirm_required";
     public const string TrashClearConfirmRequired = "trash_clear_confirm_required";
+    public const string InvalidFolderMove = "invalid_folder_move";
 
     public const string UnsupportedCurrency = "unsupported_currency";
 

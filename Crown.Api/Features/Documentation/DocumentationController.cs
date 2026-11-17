@@ -652,6 +652,179 @@ public sealed class DocumentationController : ControllerBase
         });
     }
 
+    /// <summary>Плоский список живых папок раздела (для выбора цели перемещения).</summary>
+    [HttpGet("sections/{ownerUserId:guid}/folders")]
+    public async Task<ActionResult<List<DocumentationFolderItemResponse>>> ListAllFolders(
+        Guid ownerUserId,
+        CancellationToken cancellationToken)
+    {
+        var sectionError = await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
+        if (sectionError is not null)
+        {
+            return sectionError;
+        }
+
+        var folders = await _db.DocumentationFolders.AsNoTracking()
+            .Where(x => x.OwnerUserId == ownerUserId && x.DeletedAt == null)
+            .Select(x => new { x.Id, x.Name, x.ParentFolderId, x.CreatedAt })
+            .ToListAsync(cancellationToken);
+
+        var byId = folders.ToDictionary(x => x.Id);
+        string PathOf(Guid? parentId)
+        {
+            if (parentId is null)
+            {
+                return "Корень";
+            }
+
+            var parts = new List<string>();
+            var guard = 0;
+            var cur = parentId;
+            while (cur is Guid id && byId.TryGetValue(id, out var node) && guard++ < 64)
+            {
+                parts.Add(node.Name);
+                cur = node.ParentFolderId;
+            }
+
+            parts.Reverse();
+            return parts.Count == 0 ? "Корень" : string.Join(" / ", parts);
+        }
+
+        return Ok(folders
+            .Select(x =>
+            {
+                var parentPath = PathOf(x.ParentFolderId);
+                return new DocumentationFolderItemResponse
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    ParentFolderId = x.ParentFolderId,
+                    CreatedAt = x.CreatedAt,
+                    PathLabel = parentPath == "Корень" ? x.Name : $"{parentPath} / {x.Name}"
+                };
+            })
+            .OrderBy(x => x.PathLabel, StringComparer.CurrentCultureIgnoreCase)
+            .ToList());
+    }
+
+    [HttpPost("folders/{folderId:guid}/move")]
+    public async Task<ActionResult<DocumentationFolderItemResponse>> MoveFolder(
+        Guid folderId,
+        [FromBody] MoveDocumentationFolderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var folder = await _db.DocumentationFolders
+            .SingleOrDefaultAsync(x => x.Id == folderId && x.DeletedAt == null, cancellationToken);
+        if (folder is null)
+        {
+            return NotFound();
+        }
+
+        var writeError = await EnsureCanWriteAsync(folder.OwnerUserId, cancellationToken);
+        if (writeError is not null)
+        {
+            return writeError;
+        }
+
+        var targetParentId = request.TargetParentFolderId;
+        if (targetParentId == folder.Id)
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.InvalidFolderMove));
+        }
+
+        if (targetParentId is Guid tid)
+        {
+            var target = await _db.DocumentationFolders.AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.Id == tid && x.OwnerUserId == folder.OwnerUserId && x.DeletedAt == null,
+                    cancellationToken);
+            if (target is null)
+            {
+                return NotFound();
+            }
+
+            // Нельзя перенести папку в саму себя или в потомка.
+            var descendants = await CollectFolderTreeIdsAsync(folder.Id, includeDeleted: false, cancellationToken);
+            if (descendants.Contains(tid))
+            {
+                return BadRequest(ApiErrors.FromCode(ApiErrorCodes.InvalidFolderMove));
+            }
+        }
+
+        if (folder.ParentFolderId == targetParentId)
+        {
+            return Ok(new DocumentationFolderItemResponse
+            {
+                Id = folder.Id,
+                Name = folder.Name,
+                ParentFolderId = folder.ParentFolderId,
+                CreatedAt = folder.CreatedAt
+            });
+        }
+
+        folder.Name = await EnsureUniqueFolderNameAsync(
+            folder.OwnerUserId,
+            targetParentId,
+            folder.Name,
+            folder.Id,
+            cancellationToken);
+        folder.ParentFolderId = targetParentId;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new DocumentationFolderItemResponse
+        {
+            Id = folder.Id,
+            Name = folder.Name,
+            ParentFolderId = folder.ParentFolderId,
+            CreatedAt = folder.CreatedAt
+        });
+    }
+
+    [HttpPost("files/{fileId:guid}/move")]
+    public async Task<ActionResult<DocumentationFileItemResponse>> MoveFile(
+        Guid fileId,
+        [FromBody] MoveDocumentationFileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var file = await _db.DocumentationFiles
+            .SingleOrDefaultAsync(x => x.Id == fileId && x.DeletedAt == null, cancellationToken);
+        if (file is null)
+        {
+            return NotFound();
+        }
+
+        var writeError = await EnsureCanWriteAsync(file.OwnerUserId, cancellationToken);
+        if (writeError is not null)
+        {
+            return writeError;
+        }
+
+        var targetFolderId = request.TargetFolderId;
+        if (targetFolderId is Guid fid)
+        {
+            var folderOk = await _db.DocumentationFolders.AnyAsync(
+                x => x.Id == fid && x.OwnerUserId == file.OwnerUserId && x.DeletedAt == null,
+                cancellationToken);
+            if (!folderOk)
+            {
+                return NotFound();
+            }
+        }
+
+        file.FolderId = targetFolderId;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new DocumentationFileItemResponse
+        {
+            Id = file.Id,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            SizeBytes = file.SizeBytes,
+            FolderId = file.FolderId,
+            UploadedAt = file.UploadedAt
+        });
+    }
+
     [HttpDelete("folders/{folderId:guid}")]
     public async Task<IActionResult> DeleteFolder(Guid folderId, CancellationToken cancellationToken)
     {
@@ -712,16 +885,17 @@ public sealed class DocumentationController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Путь share-inbox и число файлов, ждущих импорта.</summary>
+    /// <summary>Путь inbox на диске — только админ.</summary>
     [HttpGet("sections/{ownerUserId:guid}/inbox")]
+    [Authorize(Roles = AppRoles.Administrator)]
     public async Task<ActionResult<DocumentationInboxInfoResponse>> GetInboxInfo(
         Guid ownerUserId,
         CancellationToken cancellationToken)
     {
-        var writeError = await EnsureCanWriteAsync(ownerUserId, cancellationToken);
-        if (writeError is not null)
+        var sectionError = await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
+        if (sectionError is not null)
         {
-            return writeError;
+            return sectionError;
         }
 
         var owner = await _users.Users.AsNoTracking()
@@ -743,16 +917,17 @@ public sealed class DocumentationController : ControllerBase
         });
     }
 
-    /// <summary>Ручной импорт из docs-inbox/{логин}/ в раздел (CanWrite).</summary>
+    /// <summary>Ручной импорт из docs-inbox/{логин}/ — только админ.</summary>
     [HttpPost("sections/{ownerUserId:guid}/sync-inbox")]
+    [Authorize(Roles = AppRoles.Administrator)]
     public async Task<ActionResult<DocumentationInboxSyncResponse>> SyncInbox(
         Guid ownerUserId,
         CancellationToken cancellationToken)
     {
-        var writeError = await EnsureCanWriteAsync(ownerUserId, cancellationToken);
-        if (writeError is not null)
+        var sectionError = await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
+        if (sectionError is not null)
         {
-            return writeError;
+            return sectionError;
         }
 
         var result = await _inboxSync.SyncOwnerAsync(ownerUserId, GetUserId(), cancellationToken);
@@ -940,25 +1115,28 @@ public sealed class DocumentationController : ControllerBase
     public async Task<ActionResult<List<DocumentationAdminUserResponse>>> AdminListUsers(
         CancellationToken cancellationToken)
     {
-        var users = await _users.Users.AsNoTracking()
+        var rows = await _users.Users.AsNoTracking()
             .OrderBy(x => x.DisplayName)
             .ThenBy(x => x.UserName)
-            .Select(x => new DocumentationAdminUserResponse
+            .Select(x => new
             {
-                UserId = x.Id,
-                DisplayName = x.DisplayName,
-                UserName = x.UserName ?? string.Empty,
-                DocumentationEnabled = x.DocumentationEnabled
+                x.Id,
+                x.DisplayName,
+                x.UserName,
+                x.BrigadeNumber,
+                x.DocumentationEnabled
             })
             .ToListAsync(cancellationToken);
 
-        foreach (var u in users)
-        {
-            if (string.IsNullOrWhiteSpace(u.DisplayName))
+        var users = rows
+            .Select(x => new DocumentationAdminUserResponse
             {
-                u.DisplayName = u.UserName;
-            }
-        }
+                UserId = x.Id,
+                DisplayName = UserDisplay.Format(x.DisplayName, x.UserName, x.BrigadeNumber),
+                UserName = x.UserName ?? string.Empty,
+                DocumentationEnabled = x.DocumentationEnabled
+            })
+            .ToList();
 
         return Ok(users);
     }

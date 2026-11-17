@@ -28,6 +28,11 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
 
     public DocumentationInboxInfo? Inbox { get; private set; }
 
+    /// <summary>Папки раздела для select «Переместить» (PathLabel).</summary>
+    public List<DocumentationFolderItem> MoveTargets { get; private set; } = [];
+
+    public bool IsAdmin => User.IsInRole(AppRoles.Administrator);
+
     public string? Error { get; private set; }
 
     public string? Info { get; private set; }
@@ -39,6 +44,11 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnPostSyncInboxAsync()
     {
+        if (!IsAdmin)
+        {
+            return Forbid();
+        }
+
         var result = await api.PostAsync<DocumentationInboxSyncResult>(
             $"api/documentation/sections/{OwnerUserId}/sync-inbox",
             body: null,
@@ -50,14 +60,14 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
 
         if (!result.Ok || result.Data is null)
         {
-            Error = result.Error ?? "Импорт из inbox не выполнен.";
+            Error = result.Error ?? "Импорт с диска не выполнен.";
             await LoadAsync();
             return Page();
         }
 
         var r = result.Data;
         Info =
-            $"Inbox: импортировано {r.Imported}, обновлено {r.Updated}, пропущено {r.Skipped}, ошибок {r.Failed}"
+            $"С диска: импортировано {r.Imported}, обновлено {r.Updated}, пропущено {r.Skipped}, ошибок {r.Failed}"
             + (r.FoldersCreated > 0 ? $", папок создано {r.FoldersCreated}" : "")
             + ".";
         if (r.Messages.Count > 0)
@@ -163,6 +173,48 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
         return RedirectToPage(new { OwnerUserId, FolderId, Q });
     }
 
+    public async Task<IActionResult> OnPostMoveFolderAsync(Guid targetFolderId, Guid? moveToParentId)
+    {
+        var result = await api.PostAsync<DocumentationFolderItem>(
+            $"api/documentation/folders/{targetFolderId}/move",
+            new { TargetParentFolderId = moveToParentId },
+            HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok)
+        {
+            Error = result.Error;
+            await LoadAsync();
+            return Page();
+        }
+
+        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+    }
+
+    public async Task<IActionResult> OnPostMoveFileAsync(Guid targetFileId, Guid? moveToFolderId)
+    {
+        var result = await api.PostAsync<DocumentationFileItem>(
+            $"api/documentation/files/{targetFileId}/move",
+            new { TargetFolderId = moveToFolderId },
+            HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok)
+        {
+            Error = result.Error;
+            await LoadAsync();
+            return Page();
+        }
+
+        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+    }
+
     public async Task<IActionResult> OnGetDownloadAsync(Guid fileId, bool inline = false)
     {
         var url = UiHelpers.BuildUrl(
@@ -212,7 +264,19 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
         }
 
         Browse = result.Data;
+
         if (Browse.CanWrite)
+        {
+            var folders = await api.GetAsync<List<DocumentationFolderItem>>(
+                $"api/documentation/sections/{OwnerUserId}/folders",
+                HttpContext.RequestAborted);
+            if (folders.Ok && folders.Data is not null)
+            {
+                MoveTargets = folders.Data;
+            }
+        }
+
+        if (IsAdmin)
         {
             var inbox = await api.GetAsync<DocumentationInboxInfo>(
                 $"api/documentation/sections/{OwnerUserId}/inbox",

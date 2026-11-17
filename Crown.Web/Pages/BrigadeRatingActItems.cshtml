@@ -6,7 +6,15 @@
 
 <div class="crown-page-head">
     <h1 class="section-title">Пункты по акту предписания</h1>
-    <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+    <div class="crown-page-head-actions">
+        <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="crown-op-form d-inline">
+            <input type="file" id="act-import-file" name="ImportFile" class="d-none"
+                   accept=".xlsx,.xls,.csv,.txt,.doc,.docx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv"
+                   onchange="this.form.submit()" />
+            <label for="act-import-file" class="btn btn-outline-primary mb-0" title="xlsx, xls, csv, txt, doc, docx">Импорт</label>
+        </form>
+        <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+    </div>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
@@ -22,6 +30,13 @@
     <button type="submit" class="btn btn-success">Добавить</button>
 </form>
 
+<div class="list-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-grow catalog-list-filter">
+        <label class="form-label" for="act-items-search">Поиск</label>
+        <input id="act-items-search" class="form-control" type="search" placeholder="Фильтр по тексту…" autocomplete="off" />
+    </div>
+</div>
+
 <section class="entity-panel">
     @* Десктоп: таблица без «Статус». Мобилка: карточки — иначе Текст схлопывается. *@
     <div class="crown-table-wrap schedule-desktop-table">
@@ -36,7 +51,7 @@
             <tbody>
             @foreach (var item in Model.Items)
             {
-                <tr class="@(!item.IsActive ? "text-muted" : null)">
+                <tr class="catalog-list-row @(!item.IsActive ? "text-muted" : null)" data-catalog-text="@item.Text">
                     <td>@item.SortOrder</td>
                     <td>
                         <form method="post" asp-page-handler="Save" id="act-save-@item.Id" class="crown-op-form">
@@ -74,7 +89,7 @@
         {
             @foreach (var item in Model.Items)
             {
-                <div class="schedule-card act-item-card @(!item.IsActive ? "text-muted" : null)">
+                <div class="schedule-card act-item-card catalog-list-row @(!item.IsActive ? "text-muted" : null)" data-catalog-text="@item.Text">
                     <div class="schedule-card-header">
                         <span class="schedule-card-time">№ @item.SortOrder</span>
                     </div>
@@ -98,3 +113,20 @@
         }
     </div>
 </section>
+
+@section Scripts {
+<script>
+(() => {
+    const input = document.getElementById('act-items-search');
+    if (!input) return;
+    const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+    input.addEventListener('input', () => {
+        const q = norm(input.value);
+        document.querySelectorAll('.catalog-list-row').forEach(row => {
+            const hay = norm(row.getAttribute('data-catalog-text'));
+            row.classList.toggle('d-none', q !== '' && !hay.includes(q));
+        });
+    });
+})();
+</script>
+}

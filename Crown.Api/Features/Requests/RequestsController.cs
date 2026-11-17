@@ -62,9 +62,7 @@ public sealed class RequestsController : ControllerBase
             {
                 Id = x.Id,
                 UserName = x.UserName ?? string.Empty,
-                DisplayName = string.IsNullOrWhiteSpace(x.DisplayName)
-                    ? (x.UserName ?? string.Empty)
-                    : x.DisplayName
+                DisplayName = UserDisplay.Format(x)
             })
             .ToList();
 
@@ -165,13 +163,16 @@ public sealed class RequestsController : ControllerBase
                 Acknowledged = x.Acknowledged,
                 AcknowledgedAt = x.AcknowledgedAt,
                 InitiatorUserId = x.InitiatorUserId,
-                InitiatorName = iu != null
-                    ? (iu.DisplayName != "" ? iu.DisplayName : iu.UserName ?? x.InitiatorName)
-                    : x.InitiatorName,
+                // Номер бригады клеим в SQL (кастомный C#-метод EF не переведёт).
+                InitiatorName = iu == null
+                    ? x.InitiatorName
+                    : ((iu.DisplayName != null && iu.DisplayName != "" ? iu.DisplayName : iu.UserName ?? x.InitiatorName)
+                       + (iu.BrigadeNumber != null && iu.BrigadeNumber != "" ? " №" + iu.BrigadeNumber : "")),
                 ExecutorUserId = x.ExecutorUserId,
-                ExecutorName = eu != null
-                    ? (eu.DisplayName != "" ? eu.DisplayName : eu.UserName ?? x.ExecutorName)
-                    : x.ExecutorName,
+                ExecutorName = eu == null
+                    ? x.ExecutorName
+                    : ((eu.DisplayName != null && eu.DisplayName != "" ? eu.DisplayName : eu.UserName ?? x.ExecutorName)
+                       + (eu.BrigadeNumber != null && eu.BrigadeNumber != "" ? " №" + eu.BrigadeNumber : "")),
                 SubmittedAt = x.SubmittedAt,
                 ReactionAt = x.ReactionAt,
                 CompletedAt = x.CompletedAt,
@@ -261,13 +262,15 @@ public sealed class RequestsController : ControllerBase
             Acknowledged = x.Acknowledged,
             AcknowledgedAt = x.AcknowledgedAt,
             InitiatorUserId = x.InitiatorUserId,
-            InitiatorName = iu != null
-                ? (iu.DisplayName != "" ? iu.DisplayName : iu.UserName ?? x.InitiatorName)
-                : x.InitiatorName,
+            InitiatorName = iu == null
+                ? x.InitiatorName
+                : ((iu.DisplayName != null && iu.DisplayName != "" ? iu.DisplayName : iu.UserName ?? x.InitiatorName)
+                   + (iu.BrigadeNumber != null && iu.BrigadeNumber != "" ? " №" + iu.BrigadeNumber : "")),
             ExecutorUserId = x.ExecutorUserId,
-            ExecutorName = eu != null
-                ? (eu.DisplayName != "" ? eu.DisplayName : eu.UserName ?? x.ExecutorName)
-                : x.ExecutorName,
+            ExecutorName = eu == null
+                ? x.ExecutorName
+                : ((eu.DisplayName != null && eu.DisplayName != "" ? eu.DisplayName : eu.UserName ?? x.ExecutorName)
+                   + (eu.BrigadeNumber != null && eu.BrigadeNumber != "" ? " №" + eu.BrigadeNumber : "")),
             SubmittedAt = x.SubmittedAt,
             ReactionAt = x.ReactionAt,
             CompletedAt = x.CompletedAt,
@@ -1142,10 +1145,7 @@ public sealed class RequestsController : ControllerBase
         return Guid.TryParse(raw, out var id) ? id : null;
     }
 
-    private static string DisplayOf(ApplicationUser user) =>
-        string.IsNullOrWhiteSpace(user.DisplayName)
-            ? (user.UserName ?? string.Empty)
-            : user.DisplayName;
+    private static string DisplayOf(ApplicationUser user) => UserDisplay.Format(user);
 
     internal static bool TryEnsureStatus(
         ServiceRequest entity,
@@ -1171,11 +1171,11 @@ public sealed class RequestsController : ControllerBase
         {
             var u = await _userManager.Users.AsNoTracking()
                 .Where(user => user.Id == iid)
-                .Select(user => new { user.DisplayName, user.UserName })
+                .Select(user => new { user.DisplayName, user.UserName, user.BrigadeNumber })
                 .FirstOrDefaultAsync(cancellationToken);
             if (u is not null)
             {
-                initiatorName = string.IsNullOrWhiteSpace(u.DisplayName) ? (u.UserName ?? initiatorName) : u.DisplayName;
+                initiatorName = UserDisplay.Format(u.DisplayName, u.UserName, u.BrigadeNumber);
             }
         }
 
@@ -1184,11 +1184,11 @@ public sealed class RequestsController : ControllerBase
         {
             var u = await _userManager.Users.AsNoTracking()
                 .Where(user => user.Id == eid)
-                .Select(user => new { user.DisplayName, user.UserName })
+                .Select(user => new { user.DisplayName, user.UserName, user.BrigadeNumber })
                 .FirstOrDefaultAsync(cancellationToken);
             if (u is not null)
             {
-                executorName = string.IsNullOrWhiteSpace(u.DisplayName) ? (u.UserName ?? executorName) : u.DisplayName;
+                executorName = UserDisplay.Format(u.DisplayName, u.UserName, u.BrigadeNumber);
             }
         }
 

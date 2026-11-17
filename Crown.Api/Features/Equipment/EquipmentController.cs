@@ -118,9 +118,7 @@ public sealed class EquipmentController : ControllerBase
             .Select(x => new EquipmentLocationOptionResponse
             {
                 Id = x.Id,
-                DisplayName = string.IsNullOrWhiteSpace(x.DisplayName)
-                    ? (x.UserName ?? string.Empty)
-                    : x.DisplayName
+                DisplayName = UserDisplay.Format(x)
             })
             .ToList();
         return Ok(items);
@@ -429,10 +427,7 @@ public sealed class EquipmentController : ControllerBase
             return (Guid.Empty, string.Empty, $"«{fieldTitle}» — только пользователь с ролью «Подразделение».");
         }
 
-        var label = string.IsNullOrWhiteSpace(user.DisplayName)
-            ? (user.UserName ?? string.Empty)
-            : user.DisplayName.Trim();
-        return (user.Id, label, null);
+        return (user.Id, UserDisplay.Format(user), null);
     }
 
     private static EquipmentAssetResponse Map(EquipmentAsset x) => new()

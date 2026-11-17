@@ -79,12 +79,12 @@
 
     @if (b.CanWrite && !isSearch)
     {
-        <div class="list-filters mb-3">
+        <div class="list-filters documentation-toolbar mb-3">
             <form method="post" asp-page-handler="CreateFolder" class="filter-field filter-field-inline">
                 <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
                 <input type="hidden" name="FolderId" value="@Model.FolderId" />
                 <label class="form-label" for="new-folder">Новая папка</label>
-                <div class="d-flex gap-2 flex-wrap">
+                <div class="d-flex gap-2 flex-nowrap align-items-center">
                     <input id="new-folder" class="form-control" name="NewFolderName" maxlength="200" required placeholder="Имя папки" />
                     <button type="submit" class="btn btn-success">Создать</button>
                 </div>
@@ -93,28 +93,31 @@
                 <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
                 <input type="hidden" name="FolderId" value="@Model.FolderId" />
                 <label class="form-label" for="doc-file">Загрузить файл</label>
-                <div class="d-flex gap-2 flex-wrap align-items-center">
+                <div class="d-flex gap-2 flex-nowrap align-items-center">
                     <input id="doc-file" class="form-control" type="file" name="UploadFile" required />
                     <button type="submit" class="btn btn-primary">Загрузить</button>
                 </div>
             </form>
-            <form method="post" asp-page-handler="SyncInbox" class="filter-field filter-field-inline">
-                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
-                <input type="hidden" name="FolderId" value="@Model.FolderId" />
-                <label class="form-label" for="sync-inbox-btn">Share inbox</label>
-                <div class="d-flex gap-2 flex-wrap align-items-center">
-                    <button id="sync-inbox-btn" type="submit" class="btn btn-outline-primary">
-                        Импорт из inbox@(Model.Inbox is { PendingFileCount: > 0 } ? $" ({Model.Inbox.PendingFileCount})" : "")
-                    </button>
-                </div>
-            </form>
+            @if (Model.IsAdmin)
+            {
+                <form method="post" asp-page-handler="SyncInbox" class="filter-field filter-field-inline">
+                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                    <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                    <label class="form-label" for="sync-inbox-btn">С диска</label>
+                    <div class="d-flex gap-2 flex-nowrap align-items-center">
+                        <button id="sync-inbox-btn" type="submit" class="btn btn-outline-primary">
+                            Импорт@(Model.Inbox is { PendingFileCount: > 0 } ? $" ({Model.Inbox.PendingFileCount})" : "")
+                        </button>
+                    </div>
+                </form>
+            }
         </div>
-        @if (Model.Inbox is not null)
+        @if (Model.IsAdmin && Model.Inbox is not null)
         {
             <p class="form-text mb-3">
-                Большие деревья кладите на диск:
+                Большие файлы копируйте в папку на сервере:
                 <code>@Model.Inbox.HostInboxPath</code>
-                (лимит файла @(Model.Inbox.MaxInboxFileBytes / (1024 * 1024)) МБ; автокаждые ~5 мин).
+                (до @(Model.Inbox.MaxInboxFileBytes / (1024 * 1024)) МБ; подхват ~5 мин или кнопка «Импорт»).
             </p>
         }
     }
@@ -132,7 +135,7 @@
                 <th class="col-date">Дата</th>
                 @if (b.CanWrite && !isSearch)
                 {
-                    <th class="col-actions"></th>
+                    <th class="col-actions">Действия</th>
                 }
             </tr>
             </thead>
@@ -162,16 +165,37 @@
                     <td class="col-date">@Time.Format(folder.CreatedAt)</td>
                     @if (b.CanWrite && !isSearch)
                     {
-                        <td class="col-actions table-row-actions">
-                            <form method="post" asp-page-handler="DeleteFolder" class="d-inline">
-                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
-                                <input type="hidden" name="FolderId" value="@Model.FolderId" />
-                                <input type="hidden" name="targetFolderId" value="@folder.Id" />
-                                <button type="submit" class="btn btn-outline-danger btn-sm"
-                                        data-confirm="@(b.DeletesPermanently
-                                            ? $"Удалить папку «{folder.Name}» безвозвратно со всем содержимым?"
-                                            : $"Переместить папку «{folder.Name}» со всем содержимым в корзину?")">Удалить</button>
-                            </form>
+                        <td class="col-actions doc-row-actions" onclick="event.stopPropagation()">
+                            <div class="doc-row-actions-inner">
+                                <form method="post" asp-page-handler="MoveFolder" class="documentation-move-form">
+                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                                    <input type="hidden" name="targetFolderId" value="@folder.Id" />
+                                    <label class="form-label" for="move-folder-@folder.Id">Переместить в</label>
+                                    <select id="move-folder-@folder.Id" class="form-select" name="moveToParentId">
+                                        <option value="">Корень раздела</option>
+                                        @foreach (var dest in Model.MoveTargets.Where(x => x.Id != folder.Id))
+                                        {
+                                            <option value="@dest.Id">@(dest.PathLabel ?? dest.Name)</option>
+                                        }
+                                    </select>
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">OK</button>
+                                </form>
+                                <form method="post" asp-page-handler="DeleteFolder" class="documentation-row-form">
+                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                                    <input type="hidden" name="targetFolderId" value="@folder.Id" />
+                                    <button type="submit" class="btn-icon-delete" title="Удалить"
+                                            aria-label="Удалить папку @folder.Name"
+                                            data-confirm="@(b.DeletesPermanently
+                                                ? $"Удалить папку «{folder.Name}» безвозвратно со всем содержимым?"
+                                                : $"Переместить папку «{folder.Name}» со всем содержимым в корзину?")">
+                                        <svg class="btn-icon-delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18" />
+                                        </svg>
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     }
                 </tr>
@@ -207,16 +231,37 @@
                     <td class="col-date">@Time.Format(file.UploadedAt)</td>
                     @if (b.CanWrite && !isSearch)
                     {
-                        <td class="col-actions table-row-actions">
-                            <form method="post" asp-page-handler="DeleteFile" class="d-inline">
-                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
-                                <input type="hidden" name="FolderId" value="@Model.FolderId" />
-                                <input type="hidden" name="targetFileId" value="@file.Id" />
-                                <button type="submit" class="btn btn-outline-danger btn-sm"
-                                        data-confirm="@(b.DeletesPermanently
-                                            ? $"Удалить файл «{file.FileName}» безвозвратно?"
-                                            : $"Переместить файл «{file.FileName}» в корзину?")">Удалить</button>
-                            </form>
+                        <td class="col-actions doc-row-actions" onclick="event.stopPropagation()">
+                            <div class="doc-row-actions-inner">
+                                <form method="post" asp-page-handler="MoveFile" class="documentation-move-form">
+                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                                    <input type="hidden" name="targetFileId" value="@file.Id" />
+                                    <label class="form-label" for="move-file-@file.Id">Переместить в</label>
+                                    <select id="move-file-@file.Id" class="form-select" name="moveToFolderId">
+                                        <option value="">Корень раздела</option>
+                                        @foreach (var dest in Model.MoveTargets)
+                                        {
+                                            <option value="@dest.Id">@(dest.PathLabel ?? dest.Name)</option>
+                                        }
+                                    </select>
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">OK</button>
+                                </form>
+                                <form method="post" asp-page-handler="DeleteFile" class="documentation-row-form">
+                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="FolderId" value="@Model.FolderId" />
+                                    <input type="hidden" name="targetFileId" value="@file.Id" />
+                                    <button type="submit" class="btn-icon-delete" title="Удалить"
+                                            aria-label="Удалить файл @file.FileName"
+                                            data-confirm="@(b.DeletesPermanently
+                                                ? $"Удалить файл «{file.FileName}» безвозвратно?"
+                                                : $"Переместить файл «{file.FileName}» в корзину?")">
+                                        <svg class="btn-icon-delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18" />
+                                        </svg>
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     }
                 </tr>

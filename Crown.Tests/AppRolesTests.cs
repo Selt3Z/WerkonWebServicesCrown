@@ -58,6 +58,7 @@ public sealed class AppRolesTests
 
         Assert.Equal("Бригада Иванова №5", UserDisplay.FormatUserDisplay(user, isBrigade: true));
         Assert.Equal("Бригада Иванова", UserDisplay.FormatUserDisplay(user, isBrigade: false));
+        Assert.Equal("Бригада Иванова №5", UserDisplay.Format(user));
     }
 
     [Fact]
@@ -66,5 +67,6 @@ public sealed class AppRolesTests
         var user = new ApplicationUser { UserName = "b7", DisplayName = " ", BrigadeNumber = null };
 
         Assert.Equal("b7", UserDisplay.FormatBrigadeDisplay(user));
+        Assert.Equal("b7", UserDisplay.Format(user));
     }
 }

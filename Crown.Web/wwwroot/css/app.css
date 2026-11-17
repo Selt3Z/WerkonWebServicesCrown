@@ -2798,6 +2798,21 @@ body:has(#nav-menu-toggle:checked) .navbar-toggler-btn {
     margin: 0;
 }
 
+/* Строка документации: move/delete — без карточной рамки .page-content form. */
+.page-content form.documentation-move-form,
+.page-content form.documentation-row-form,
+.content form.documentation-move-form,
+.content form.documentation-row-form {
+    background: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    max-width: none;
+    width: auto;
+    margin: 0;
+}
+
 /* Форма карточки заявки — на всю ширину панели, без chrome. */
 .page-content form.crown-entity-form,
 .content form.crown-entity-form {

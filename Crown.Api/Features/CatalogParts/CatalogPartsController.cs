@@ -361,16 +361,15 @@ public sealed class CatalogPartsController : ControllerBase
     {
         var user = await _db.Users.AsNoTracking()
             .Where(x => x.Id == ownerUserId)
-            .Select(x => new { x.DisplayName, x.UserName })
+            .Select(x => new { x.DisplayName, x.UserName, x.BrigadeNumber })
             .FirstOrDefaultAsync(cancellationToken);
         if (user is null)
         {
             return ownerUserId.ToString();
         }
 
-        return string.IsNullOrWhiteSpace(user.DisplayName)
-            ? (user.UserName ?? ownerUserId.ToString())
-            : user.DisplayName!;
+        var name = UserDisplay.Format(user.DisplayName, user.UserName, user.BrigadeNumber);
+        return string.IsNullOrEmpty(name) ? ownerUserId.ToString() : name;
     }
 
     private async Task<CatalogPartResponse> MapResponseAsync(CatalogPart entity, CancellationToken cancellationToken) =>

@@ -44,6 +44,14 @@ public sealed class SaveStoppageWorkItemRequest
     public int SortOrder { get; set; }
 }
 
+/// <summary>Результат импорта справочника пунктов акта / выполняемых работ.</summary>
+public sealed class CatalogLinesImportResponse
+{
+    public int Parsed { get; set; }
+    public int Imported { get; set; }
+    public int SkippedDuplicates { get; set; }
+}
+
 public sealed class StoppageRemarkResponse
 {
     public Guid Id { get; set; }

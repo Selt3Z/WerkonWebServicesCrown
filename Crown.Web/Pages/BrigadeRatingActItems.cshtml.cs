@@ -30,6 +30,9 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
     [BindProperty]
     public bool EditIsActive { get; set; } = true;
 
+    [BindProperty]
+    public IFormFile? ImportFile { get; set; }
+
     public async Task<IActionResult> OnGetAsync()
     {
         if (!CanOperate)
@@ -138,6 +141,43 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
             TempData["Ok"] = "Пункт удалён.";
         }
 
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostImportAsync()
+    {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
+        if (ImportFile is null || ImportFile.Length == 0)
+        {
+            Error = "Выберите файл (xlsx, xls, csv, txt, doc, docx).";
+            await LoadAsync();
+            return Page();
+        }
+
+        var result = await api.UploadFileAsync<CatalogLinesImportResult>(
+            "api/brigade-rating/act-items/import",
+            ImportFile,
+            "file",
+            HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            Error = result.Error ?? "Не удалось импортировать.";
+            await LoadAsync();
+            return Page();
+        }
+
+        var r = result.Data;
+        TempData["Ok"] =
+            $"Импорт: добавлено {r.Imported}, пропущено дублей {r.SkippedDuplicates} (распознано строк {r.Parsed}).";
         return RedirectToPage();
     }
 

@@ -103,6 +103,18 @@ public sealed class CreateDocumentationFolderRequest
     public Guid? ParentFolderId { get; set; }
 }
 
+public sealed class MoveDocumentationFolderRequest
+{
+    /// <summary>null — корень раздела.</summary>
+    public Guid? TargetParentFolderId { get; set; }
+}
+
+public sealed class MoveDocumentationFileRequest
+{
+    /// <summary>null — корень раздела.</summary>
+    public Guid? TargetFolderId { get; set; }
+}
+
 public sealed class DocumentationAdminUserResponse
 {
     public Guid UserId { get; set; }

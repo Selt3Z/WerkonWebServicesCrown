@@ -899,10 +899,7 @@ public sealed class TransportController : ControllerBase
         return Guid.TryParse(raw, out var id) ? id : null;
     }
 
-    private static string DisplayOf(ApplicationUser user) =>
-        string.IsNullOrWhiteSpace(user.DisplayName)
-            ? (user.UserName ?? string.Empty)
-            : user.DisplayName;
+    private static string DisplayOf(ApplicationUser user) => UserDisplay.Format(user);
 
     private static string NormalizePlate(string? plate) =>
         (plate ?? string.Empty).Trim().ToUpperInvariant();

@@ -1,5 +1,13 @@
 namespace Crown.Contracts.Personnel;
 
+/// <summary>Подразделение или бригада — владелец списка персонала.</summary>
+public sealed class PersonnelOwnerOptionResponse
+{
+    public Guid Id { get; set; }
+    public string UserName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+}
+
 public sealed class PersonnelPersonResponse
 {
     public Guid Id { get; set; }

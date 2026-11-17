@@ -100,9 +100,7 @@ public sealed class SummaryReportService
                 {
                     Id = x.Id,
                     UserName = x.UserName ?? string.Empty,
-                    DisplayName = string.IsNullOrWhiteSpace(x.DisplayName)
-                        ? (x.UserName ?? string.Empty)
-                        : x.DisplayName!
+                    DisplayName = UserDisplay.Format(x)
                 })
                 .ToList();
         }
@@ -113,9 +111,7 @@ public sealed class SummaryReportService
             PeriodStart = startLocal,
             PeriodEnd = endLocal,
             UserId = user.Id,
-            UserDisplayName = string.IsNullOrWhiteSpace(user.DisplayName)
-                ? (user.UserName ?? string.Empty)
-                : user.DisplayName,
+            UserDisplayName = UserDisplay.Format(user),
             AvailableUsers = availableUsers,
             OutgoingCount = outgoing.Count,
             IncomingCount = incoming.Count,

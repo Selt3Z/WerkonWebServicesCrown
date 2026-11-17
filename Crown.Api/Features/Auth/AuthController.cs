@@ -120,14 +120,13 @@ public sealed class AuthController : ControllerBase
     {
         var roles = await _userManager.GetRolesAsync(user);
 
+        var roleList = roles.OrderBy(x => x).ToList();
         return new CurrentUserResponse
         {
             Id = user.Id,
             UserName = user.UserName ?? string.Empty,
-            DisplayName = string.IsNullOrWhiteSpace(user.DisplayName)
-                ? user.UserName ?? string.Empty
-                : user.DisplayName,
-            Roles = roles.OrderBy(x => x).ToList(),
+            DisplayName = UserDisplay.Format(user),
+            Roles = roleList,
             CanBeExecutor = user.CanBeExecutor,
             CanCreateTransportRequests = user.CanCreateTransportRequests,
             CanManageEquipment = user.CanManageEquipment,

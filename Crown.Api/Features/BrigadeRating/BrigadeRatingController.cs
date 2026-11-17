@@ -3,7 +3,9 @@ using ClosedXML.Excel;
 using Crown.Contracts.BrigadeRating;
 using Crown.Domain.Entities;
 using Crown.Infrastructure.Identity;
+using Crown.Infrastructure.Import;
 using Crown.Infrastructure.Persistence;
+using CatalogLookup = Crown.Infrastructure.Import.CatalogTextLookup;
 using Crown.Infrastructure.Time;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -194,6 +196,83 @@ public sealed class BrigadeRatingController(
         return NoContent();
     }
 
+    [HttpPost("act-items/import")]
+    [RequestSizeLimit(CatalogLinesImportHelper.MaxFileBytes + 1024 * 1024)]
+    public async Task<ActionResult<CatalogLinesImportResponse>> ImportActItems(
+        IFormFile? file,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest(new { error = "catalog_import_empty", message = "Выберите файл." });
+        }
+
+        List<string> lines;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            lines = CatalogLinesImportHelper.Parse(stream, file.FileName);
+        }
+        catch (SpreadsheetImportException ex)
+        {
+            return BadRequest(new { error = ex.Code, message = ex.Message });
+        }
+
+        if (lines.Count == 0)
+        {
+            return BadRequest(new { error = "catalog_import_no_data", message = "В файле нет строк для импорта." });
+        }
+
+        var existing = await db.StoppageActItems.AsNoTracking()
+            .Select(x => x.Text)
+            .ToListAsync(cancellationToken);
+        var known = existing
+            .Select(CatalogLinesImportHelper.NormKey)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var maxOrder = await db.StoppageActItems.MaxAsync(x => (int?)x.SortOrder, cancellationToken) ?? 0;
+        var now = DateTimeOffset.UtcNow;
+        var imported = 0;
+        var skipped = 0;
+        foreach (var text in lines)
+        {
+            var key = CatalogLinesImportHelper.NormKey(text);
+            if (!known.Add(key))
+            {
+                skipped++;
+                continue;
+            }
+
+            maxOrder++;
+            db.StoppageActItems.Add(new StoppageActItem
+            {
+                Id = Guid.NewGuid(),
+                Text = text,
+                IsActive = true,
+                SortOrder = maxOrder,
+                CreatedAt = now
+            });
+            imported++;
+        }
+
+        if (imported > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return Ok(new CatalogLinesImportResponse
+        {
+            Parsed = lines.Count,
+            Imported = imported,
+            SkippedDuplicates = skipped
+        });
+    }
+
     // ---------- Справочник выполняемых работ ----------
 
     [HttpGet("work-items")]
@@ -321,6 +400,83 @@ public sealed class BrigadeRatingController(
         return NoContent();
     }
 
+    [HttpPost("work-items/import")]
+    [RequestSizeLimit(CatalogLinesImportHelper.MaxFileBytes + 1024 * 1024)]
+    public async Task<ActionResult<CatalogLinesImportResponse>> ImportWorkItems(
+        IFormFile? file,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest(new { error = "catalog_import_empty", message = "Выберите файл." });
+        }
+
+        List<string> lines;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            lines = CatalogLinesImportHelper.Parse(stream, file.FileName);
+        }
+        catch (SpreadsheetImportException ex)
+        {
+            return BadRequest(new { error = ex.Code, message = ex.Message });
+        }
+
+        if (lines.Count == 0)
+        {
+            return BadRequest(new { error = "catalog_import_no_data", message = "В файле нет строк для импорта." });
+        }
+
+        var existing = await db.StoppageWorkItems.AsNoTracking()
+            .Select(x => x.Text)
+            .ToListAsync(cancellationToken);
+        var known = existing
+            .Select(CatalogLinesImportHelper.NormKey)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var maxOrder = await db.StoppageWorkItems.MaxAsync(x => (int?)x.SortOrder, cancellationToken) ?? 0;
+        var now = DateTimeOffset.UtcNow;
+        var imported = 0;
+        var skipped = 0;
+        foreach (var text in lines)
+        {
+            var key = CatalogLinesImportHelper.NormKey(text);
+            if (!known.Add(key))
+            {
+                skipped++;
+                continue;
+            }
+
+            maxOrder++;
+            db.StoppageWorkItems.Add(new StoppageWorkItem
+            {
+                Id = Guid.NewGuid(),
+                Text = text,
+                IsActive = true,
+                SortOrder = maxOrder,
+                CreatedAt = now
+            });
+            imported++;
+        }
+
+        if (imported > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return Ok(new CatalogLinesImportResponse
+        {
+            Parsed = lines.Count,
+            Imported = imported,
+            SkippedDuplicates = skipped
+        });
+    }
+
     // ---------- Stoppages ----------
 
     [HttpGet("stoppages")]
@@ -344,7 +500,8 @@ public sealed class BrigadeRatingController(
             .ThenByDescending(x => x.StoppedAt)
             .ToListAsync(cancellationToken);
 
-        return Ok(rows.Select(MapListItem).ToList());
+        var liveNames = await LoadBrigadeDisplayNamesAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
+        return Ok(rows.Select(x => MapListItem(x, liveNames)).ToList());
     }
 
     [HttpGet("stoppages/{id:guid}")]
@@ -367,7 +524,8 @@ public sealed class BrigadeRatingController(
             return NotFound();
         }
 
-        return Ok(MapDetail(entity));
+        var liveNames = await LoadBrigadeDisplayNamesAsync([entity.BrigadeUserId], cancellationToken);
+        return Ok(MapDetail(entity, liveNames));
     }
 
     [HttpPost("stoppages")]
@@ -399,7 +557,8 @@ public sealed class BrigadeRatingController(
         db.BrigadeStoppages.Add(entity);
         DetachTrackedUsers();
         await db.SaveChangesAsync(cancellationToken);
-        return CreatedAtAction(nameof(GetStoppage), new { id = entity.Id }, MapDetail(entity));
+        var createdNames = await LoadBrigadeDisplayNamesAsync([entity.BrigadeUserId], cancellationToken);
+        return CreatedAtAction(nameof(GetStoppage), new { id = entity.Id }, MapDetail(entity, createdNames));
     }
 
     [HttpPut("stoppages/{id:guid}")]
@@ -444,7 +603,8 @@ public sealed class BrigadeRatingController(
         var saved = await db.BrigadeStoppages.AsNoTracking()
             .Include(x => x.Remarks)
             .FirstAsync(x => x.Id == id, cancellationToken);
-        return Ok(MapDetail(saved));
+        var savedNames = await LoadBrigadeDisplayNamesAsync([saved.BrigadeUserId], cancellationToken);
+        return Ok(MapDetail(saved, savedNames));
     }
 
     [HttpPatch("remarks/{id:guid}/resolved")]
@@ -546,6 +706,9 @@ public sealed class BrigadeRatingController(
         var totalHours = rows.Sum(x => x.Hours);
         var prevHours = prevRows.Sum(x => x.Hours);
 
+        // Имя бригады для UI — всегда live (снимок в строке остановки мог быть без №).
+        var liveNames = await LoadBrigadeDisplayNamesAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
+
         var ranking = rows
             .GroupBy(x => x.BrigadeUserId)
             .Select(g =>
@@ -559,7 +722,7 @@ public sealed class BrigadeRatingController(
                 return new BrigadeRankItemResponse
                 {
                     BrigadeUserId = g.Key,
-                    BrigadeName = first.BrigadeName,
+                    BrigadeName = ResolveBrigadeDisplayName(g.Key, first.BrigadeName, liveNames),
                     MasterName = first.MasterName,
                     StoppageCount = stoppages,
                     RemarkCount = remarks.Count,
@@ -646,7 +809,7 @@ public sealed class BrigadeRatingController(
             Stoppages = rows
                 .OrderByDescending(x => x.ReportDate)
                 .ThenByDescending(x => x.StoppedAt)
-                .Select(MapListItem)
+                .Select(x => MapListItem(x, liveNames))
                 .ToList()
         });
     }
@@ -671,6 +834,8 @@ public sealed class BrigadeRatingController(
             .OrderBy(x => x.ReportDate)
             .ThenBy(x => x.StoppedAt)
             .ToListAsync(cancellationToken);
+
+        var liveNames = await LoadBrigadeDisplayNamesAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
 
         using var workbook = new XLWorkbook();
         var ws = workbook.Worksheets.Add("Анализ остановок");
@@ -702,7 +867,7 @@ public sealed class BrigadeRatingController(
             ws.Cell(excelRow, 1).Value = n++;
             ws.Cell(excelRow, 2).Value = row.ReportDate.ToDateTime(TimeOnly.MinValue);
             ws.Cell(excelRow, 2).Style.DateFormat.Format = "dd.MM.yyyy";
-            ws.Cell(excelRow, 3).Value = row.BrigadeName;
+            ws.Cell(excelRow, 3).Value = ResolveBrigadeDisplayName(row.BrigadeUserId, row.BrigadeName, liveNames);
             ws.Cell(excelRow, 4).Value = row.MasterName;
             ws.Cell(excelRow, 5).Value = row.StoppedByName;
             ws.Cell(excelRow, 6).Value = row.StoppedAt.ToString("HH:mm");
@@ -780,25 +945,36 @@ public sealed class BrigadeRatingController(
                 : request.MasterName.Trim();
         }
 
-        // Работа: из справочника (снимок текста) или вручную; пустая строка допустима.
+        // Работа: из справочника или новый текст → find-or-create в справочник.
         Guid? workItemId = null;
-        var isWorkManual = request.IsWorkManual || request.WorkItemId is null || request.WorkItemId == Guid.Empty;
+        var isWorkManual = false;
         string workDescription;
-        if (isWorkManual)
+        if (!request.IsWorkManual && request.WorkItemId is Guid wid && wid != Guid.Empty)
         {
-            workDescription = (request.WorkDescription ?? string.Empty).Trim();
-        }
-        else
-        {
-            var workItem = await db.StoppageWorkItems.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == request.WorkItemId!.Value, cancellationToken);
+            var workItem = await db.StoppageWorkItems
+                .FirstOrDefaultAsync(x => x.Id == wid, cancellationToken);
             if (workItem is null)
             {
                 return (null, null, "Выбранная работа не найдена в справочнике.", "work_item_invalid");
             }
 
+            if (!workItem.IsActive)
+            {
+                workItem.IsActive = true;
+            }
+
             workItemId = workItem.Id;
             workDescription = workItem.Text.Trim();
+        }
+        else
+        {
+            workDescription = (request.WorkDescription ?? string.Empty).Trim();
+            if (workDescription.Length > 0)
+            {
+                var created = await CatalogLookup.FindOrCreateWorkAsync(db, workDescription, cancellationToken);
+                workItemId = created.Id;
+                workDescription = created.Text.Trim();
+            }
         }
 
         // Колонка WorkDescription — varchar(500), текст справочника может быть длиннее.
@@ -908,45 +1084,80 @@ public sealed class BrigadeRatingController(
             return (null, "Добавьте хотя бы один пункт акта.", "remarks_required");
         }
 
-        var actIds = raw
-            .Where(r => !r.IsManual && r.ActItemId is Guid)
-            .Select(r => r.ActItemId!.Value)
-            .Distinct()
-            .ToList();
-        var actMap = actIds.Count == 0
-            ? new Dictionary<Guid, StoppageActItem>()
-            : await db.StoppageActItems.AsNoTracking()
-                .Where(x => actIds.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id, cancellationToken);
+        // Весь справочник tracked — find-or-create без N запросов на строку.
+        var catalog = await db.StoppageActItems.ToListAsync(cancellationToken);
+        var byId = catalog.ToDictionary(x => x.Id);
+        var byKey = new Dictionary<string, StoppageActItem>(StringComparer.Ordinal);
+        foreach (var a in catalog)
+        {
+            var k = CatalogLookup.NormKey(a.Text);
+            if (!string.IsNullOrEmpty(k) && !byKey.ContainsKey(k))
+            {
+                byKey[k] = a;
+            }
+        }
 
+        var maxOrder = catalog.Count == 0 ? 0 : catalog.Max(x => x.SortOrder);
         var result = new List<StoppageRemark>();
         var order = 0;
+        var catalogDirty = false;
+
         foreach (var r in raw)
         {
-            var isManual = r.IsManual || r.ActItemId is null || r.ActItemId == Guid.Empty;
             string text;
             string comment;
-            Guid? actItemId;
+            Guid actItemId;
 
-            if (isManual)
+            if (!r.IsManual && r.ActItemId is Guid aid && aid != Guid.Empty)
             {
-                text = (r.Text ?? string.Empty).Trim();
-                comment = string.Empty;
-                actItemId = null;
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    continue;
-                }
-            }
-            else
-            {
-                if (!actMap.TryGetValue(r.ActItemId!.Value, out var act))
+                if (!byId.TryGetValue(aid, out var act))
                 {
                     return (null, "Выбранный пункт акта не найден в справочнике.", "act_item_invalid");
                 }
 
+                if (!act.IsActive)
+                {
+                    act.IsActive = true;
+                    catalogDirty = true;
+                }
+
                 text = act.Text.Trim();
                 comment = (r.Comment ?? string.Empty).Trim();
+                actItemId = act.Id;
+            }
+            else
+            {
+                text = (r.Text ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                comment = (r.Comment ?? string.Empty).Trim();
+                var key = CatalogLookup.NormKey(text);
+                if (!byKey.TryGetValue(key, out var act))
+                {
+                    maxOrder++;
+                    act = new StoppageActItem
+                    {
+                        Id = Guid.NewGuid(),
+                        Text = text,
+                        IsActive = true,
+                        SortOrder = maxOrder,
+                        CreatedAt = DateTimeOffset.UtcNow
+                    };
+                    db.StoppageActItems.Add(act);
+                    byId[act.Id] = act;
+                    byKey[key] = act;
+                    catalogDirty = true;
+                }
+                else if (!act.IsActive)
+                {
+                    act.IsActive = true;
+                    catalogDirty = true;
+                }
+
+                text = act.Text.Trim();
                 actItemId = act.Id;
             }
 
@@ -957,7 +1168,7 @@ public sealed class BrigadeRatingController(
                 ActItemId = actItemId,
                 Text = text,
                 Comment = comment,
-                IsManual = isManual,
+                IsManual = false,
                 IsResolved = r.IsResolved,
                 ResolvedAt = r.IsResolved ? DateTimeOffset.UtcNow : null,
                 SortOrder = order
@@ -967,6 +1178,11 @@ public sealed class BrigadeRatingController(
         if (result.Count == 0)
         {
             return (null, "Добавьте хотя бы один пункт акта.", "remarks_required");
+        }
+
+        if (catalogDirty)
+        {
+            await db.SaveChangesAsync(cancellationToken);
         }
 
         return (result, null, null);
@@ -1011,12 +1227,14 @@ public sealed class BrigadeRatingController(
         SortOrder = r.SortOrder
     };
 
-    private static BrigadeStoppageListItemResponse MapListItem(BrigadeStoppage x) => new()
+    private static BrigadeStoppageListItemResponse MapListItem(
+        BrigadeStoppage x,
+        IReadOnlyDictionary<Guid, string>? liveBrigadeNames = null) => new()
     {
         Id = x.Id,
         ReportDate = x.ReportDate,
         BrigadeUserId = x.BrigadeUserId,
-        BrigadeName = x.BrigadeName,
+        BrigadeName = ResolveBrigadeDisplayName(x.BrigadeUserId, x.BrigadeName, liveBrigadeNames),
         MasterName = x.MasterName,
         MasterPersonId = x.MasterPersonId,
         StoppedByName = x.StoppedByName,
@@ -1032,9 +1250,11 @@ public sealed class BrigadeRatingController(
         UnresolvedRemarkCount = x.Remarks.Count(r => !r.IsResolved)
     };
 
-    private static BrigadeStoppageDetailResponse MapDetail(BrigadeStoppage x)
+    private static BrigadeStoppageDetailResponse MapDetail(
+        BrigadeStoppage x,
+        IReadOnlyDictionary<Guid, string>? liveBrigadeNames = null)
     {
-        var item = MapListItem(x);
+        var item = MapListItem(x, liveBrigadeNames);
         return new BrigadeStoppageDetailResponse
         {
             Id = item.Id,
@@ -1060,6 +1280,42 @@ public sealed class BrigadeRatingController(
                 .Select(MapRemark)
                 .ToList()
         };
+    }
+
+    /// <summary>Актуальные «Имя №N» по BrigadeUserId (снимок в БД мог быть без номера).</summary>
+    private async Task<Dictionary<Guid, string>> LoadBrigadeDisplayNamesAsync(
+        IEnumerable<Guid> brigadeUserIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = brigadeUserIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        var rows = await db.Users.AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new { u.Id, u.DisplayName, u.UserName, u.BrigadeNumber })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(
+            x => x.Id,
+            x => UserDisplay.Format(x.DisplayName, x.UserName, x.BrigadeNumber));
+    }
+
+    private static string ResolveBrigadeDisplayName(
+        Guid brigadeUserId,
+        string snapshot,
+        IReadOnlyDictionary<Guid, string>? liveBrigadeNames)
+    {
+        if (liveBrigadeNames is not null
+            && liveBrigadeNames.TryGetValue(brigadeUserId, out var live)
+            && !string.IsNullOrWhiteSpace(live))
+        {
+            return live;
+        }
+
+        return snapshot;
     }
 
     private IQueryable<BrigadeStoppage> ScopeStoppages(IQueryable<BrigadeStoppage> q, bool seeAll)
@@ -1295,5 +1551,5 @@ public sealed class BrigadeRatingController(
     /// в роли Brigade) и добавляем « №номер»; для «кто остановил» (Department) передаём isBrigade: false.
     /// </summary>
     private static string DisplayOf(ApplicationUser u, bool isBrigade = true) =>
-        UserDisplay.FormatUserDisplay(u, isBrigade);
+        isBrigade ? UserDisplay.Format(u) : UserDisplay.FormatUserDisplay(u, isBrigade: false);
 }

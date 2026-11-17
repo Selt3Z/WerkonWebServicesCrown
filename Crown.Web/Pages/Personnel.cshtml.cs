@@ -94,7 +94,7 @@ public sealed class PersonnelModel(CrownApiClient api) : PageModel
 
     private async Task LoadOwnersAsync()
     {
-        var result = await api.GetAsync<List<RequestAssignee>>("api/requests/assignees", HttpContext.RequestAborted);
+        var result = await api.GetAsync<List<RequestAssignee>>("api/personnel/owners", HttpContext.RequestAborted);
         if (result.Ok && result.Data is not null)
         {
             Owners = result.Data;
