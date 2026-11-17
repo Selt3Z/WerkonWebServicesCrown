@@ -41,6 +41,38 @@ public static class CatalogTextLookup
         return sb.ToString().Trim();
     }
 
+    /// <summary>Лёгкий индекс справочника (AsNoTracking) — без 6k tracked-сущностей в ChangeTracker.</summary>
+    public static async Task<ActCatalogIndex> LoadActIndexAsync(AppDbContext db, CancellationToken cancellationToken)
+    {
+        var rows = await db.StoppageActItems.AsNoTracking()
+            .Select(x => new ActCatalogLite
+            {
+                Id = x.Id,
+                Text = x.Text,
+                IsActive = x.IsActive,
+                SortOrder = x.SortOrder
+            })
+            .ToListAsync(cancellationToken);
+
+        var byId = rows.ToDictionary(x => x.Id);
+        var byKey = new Dictionary<string, ActCatalogLite>(StringComparer.Ordinal);
+        foreach (var a in rows)
+        {
+            var k = NormKey(a.Text);
+            if (!string.IsNullOrEmpty(k) && !byKey.ContainsKey(k))
+            {
+                byKey[k] = a;
+            }
+        }
+
+        return new ActCatalogIndex
+        {
+            ById = byId,
+            ByKey = byKey,
+            MaxSortOrder = rows.Count == 0 ? 0 : rows.Max(x => x.SortOrder)
+        };
+    }
+
     public static async Task<StoppageActItem> FindOrCreateActAsync(
         AppDbContext db,
         string text,
@@ -48,29 +80,24 @@ public static class CatalogTextLookup
     {
         var trimmed = text.Trim();
         var key = NormKey(trimmed);
-        var existing = await db.StoppageActItems
-            .OrderByDescending(x => x.IsActive)
-            .ThenBy(x => x.SortOrder)
-            .ToListAsync(cancellationToken);
-        var hit = existing.FirstOrDefault(x => NormKey(x.Text) == key);
-        if (hit is not null)
+        var index = await LoadActIndexAsync(db, cancellationToken);
+        if (index.ByKey.TryGetValue(key, out var lite))
         {
-            if (!hit.IsActive)
+            var tracked = await EnsureActActiveAsync(db, lite, cancellationToken);
+            if (!lite.IsActive)
             {
-                hit.IsActive = true;
                 await db.SaveChangesAsync(cancellationToken);
             }
 
-            return hit;
+            return tracked;
         }
 
-        var maxOrder = existing.Count == 0 ? 0 : existing.Max(x => x.SortOrder);
         var entity = new StoppageActItem
         {
             Id = Guid.NewGuid(),
             Text = trimmed,
             IsActive = true,
-            SortOrder = maxOrder + 1,
+            SortOrder = index.MaxSortOrder + 1,
             CreatedAt = DateTimeOffset.UtcNow
         };
         db.StoppageActItems.Add(entity);
@@ -85,23 +112,25 @@ public static class CatalogTextLookup
     {
         var trimmed = text.Trim();
         var key = NormKey(trimmed);
-        var existing = await db.StoppageWorkItems
-            .OrderByDescending(x => x.IsActive)
-            .ThenBy(x => x.SortOrder)
+
+        // Без полного tracking: сначала лёгкий скан, потом одна tracked-строка.
+        var lite = await db.StoppageWorkItems.AsNoTracking()
+            .Select(x => new { x.Id, x.Text, x.IsActive, x.SortOrder })
             .ToListAsync(cancellationToken);
-        var hit = existing.FirstOrDefault(x => NormKey(x.Text) == key);
+        var hit = lite.FirstOrDefault(x => NormKey(x.Text) == key);
         if (hit is not null)
         {
-            if (!hit.IsActive)
+            var tracked = await db.StoppageWorkItems.FirstAsync(x => x.Id == hit.Id, cancellationToken);
+            if (!tracked.IsActive)
             {
-                hit.IsActive = true;
+                tracked.IsActive = true;
                 await db.SaveChangesAsync(cancellationToken);
             }
 
-            return hit;
+            return tracked;
         }
 
-        var maxOrder = existing.Count == 0 ? 0 : existing.Max(x => x.SortOrder);
+        var maxOrder = lite.Count == 0 ? 0 : lite.Max(x => x.SortOrder);
         var entity = new StoppageWorkItem
         {
             Id = Guid.NewGuid(),
@@ -113,5 +142,35 @@ public static class CatalogTextLookup
         db.StoppageWorkItems.Add(entity);
         await db.SaveChangesAsync(cancellationToken);
         return entity;
+    }
+
+    /// <summary>Подгружает tracked-сущность и помечает активной (SaveChanges — на вызывающем).</summary>
+    public static async Task<StoppageActItem> EnsureActActiveAsync(
+        AppDbContext db,
+        ActCatalogLite lite,
+        CancellationToken cancellationToken)
+    {
+        var tracked = await db.StoppageActItems.FirstAsync(x => x.Id == lite.Id, cancellationToken);
+        if (!tracked.IsActive)
+        {
+            tracked.IsActive = true;
+        }
+
+        return tracked;
+    }
+
+    public sealed class ActCatalogLite
+    {
+        public Guid Id { get; set; }
+        public string Text { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public int SortOrder { get; set; }
+    }
+
+    public sealed class ActCatalogIndex
+    {
+        public Dictionary<Guid, ActCatalogLite> ById { get; init; } = new();
+        public Dictionary<string, ActCatalogLite> ByKey { get; init; } = new(StringComparer.Ordinal);
+        public int MaxSortOrder { get; set; }
     }
 }

@@ -424,6 +424,17 @@ public sealed class AuditLogUserOption
     public string DisplayName { get; set; } = string.Empty;
 }
 
+public sealed class ClearAuditLogRequest
+{
+    public string? Confirmation { get; set; }
+    public string? Password { get; set; }
+}
+
+public sealed class ClearAuditLogResult
+{
+    public int Deleted { get; set; }
+}
+
 public sealed class UserListItem
 {
     public Guid Id { get; set; }
@@ -651,6 +662,18 @@ public sealed class CatalogLinesImportResult
     public int SkippedDuplicates { get; set; }
 }
 
+public sealed class StoppageActItemsList
+{
+    public List<StoppageActItem> Items { get; set; } = [];
+    public int Total { get; set; }
+}
+
+public sealed class StoppageWorkItemsList
+{
+    public List<StoppageWorkItem> Items { get; set; } = [];
+    public int Total { get; set; }
+}
+
 public sealed class PersonnelPerson
 {
     public Guid Id { get; set; }
@@ -796,6 +819,16 @@ public class BrigadeInspectionListItem
     public DateTimeOffset? UpdatedAt { get; set; }
     public int RemarkCount { get; set; }
     public List<string> RemarkTexts { get; set; } = [];
+}
+
+public sealed class BrigadeInspectionsPage
+{
+    public List<BrigadeInspectionListItem> Items { get; set; } = [];
+    public bool HasMore { get; set; }
+    public string Period { get; set; } = "month";
+    public DateOnly PeriodStart { get; set; }
+    public DateOnly PeriodEnd { get; set; }
+    public int EarliestYear { get; set; }
 }
 
 public sealed class BrigadeInspectionDetail : BrigadeInspectionListItem

@@ -9,6 +9,8 @@ namespace Crown.Web.Pages;
 [Authorize(Roles = AppRoles.Staff)]
 public sealed class HistoryModel(CrownApiClient api) : PageModel
 {
+    public const string ClearConfirmationWord = "ОЧИСТИТЬ";
+
     [BindProperty(SupportsGet = true)]
     public Guid? UserId { get; set; }
 
@@ -44,12 +46,21 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
         ("StoppageWorkItem", "Выполняемая работа"),
         ("PersonnelPerson", "Сотрудник"),
         ("AppSetting", "Настройки"),
-        ("User", "Пользователь")
+        ("User", "Пользователь"),
+        ("AuditLog", "Журнал")
     ];
 
     public bool HasMore { get; private set; }
 
     public string? Error { get; private set; }
+
+    public bool CanClear => User.IsInRole(AppRoles.Administrator);
+
+    [BindProperty]
+    public string? ClearConfirmation { get; set; }
+
+    [BindProperty]
+    public string? ClearPassword { get; set; }
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -83,6 +94,37 @@ public sealed class HistoryModel(CrownApiClient api) : PageModel
 
         Response.Headers["X-Has-More"] = hasMore ? "true" : "false";
         return Partial("_HistoryRows", items);
+    }
+
+    public async Task<IActionResult> OnPostClearAsync()
+    {
+        if (!CanClear)
+        {
+            return Forbid();
+        }
+
+        var result = await api.PostAsync<ClearAuditLogResult>(
+            "api/audit-log/clear",
+            new ClearAuditLogRequest
+            {
+                Confirmation = ClearConfirmation,
+                Password = ClearPassword
+            },
+            HttpContext.RequestAborted);
+
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            TempData["Warn"] = result.Error ?? "Не удалось очистить журнал.";
+            return RedirectToPage();
+        }
+
+        TempData["Ok"] = $"Журнал очищен. Удалено записей: {result.Data.Deleted}.";
+        return RedirectToPage();
     }
 
     private async Task<(List<AuditLogItem> Items, bool HasMore, string? Error, bool Challenge)> LoadAsync(int skip)

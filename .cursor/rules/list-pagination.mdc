@@ -1,38 +1,38 @@
 ---
-description: Infinite scroll pagination convention for all DB-backed lists (API and Blazor pages)
-globs: WerkonWebServicesRatchet/Features/**/*.cs,WerkonWebServicesRatchet.Web/Components/Pages/**/*.razor,WerkonWebServicesRatchet.Web/Services/RatchetApiClient.cs
+description: Списки Crown — не отдавать/не рисовать тысячи строк; поиск + чанки
+globs: Crown.Api/**/*.cs,Crown.Web/Pages/**/*.{cs,cshtml},Crown.Web/wwwroot/js/**/*.js
 alwaysApply: false
 ---
 
-# List pagination: infinite scroll only
+# Списки и каталоги (Crown)
 
-Every DB-backed list endpoint and list page MUST use chunked loading with infinite scroll. No page number buttons, no prev/next.
+## Запрещено
 
-## API (WerkonWebServicesRatchet)
+- API-list без `take`/`skip` (или жёсткого потолка), если таблица может вырасти (справочники, персонал, склад, оборудование, журнал).
+- Раздать весь каталог в HTML/JSON для `<select>` / inline-edit forms / picker.
+- Клиентский фильтр по уже загруженным 6k DOM-строкам.
 
-- List endpoints accept `[FromQuery] int? skip, [FromQuery] int? take`.
-- Normalize with `QueryPagingExtensions.NormalizePaging(skip, take)`.
-- Return `PagedResponse<T>` (`Contracts/Common/PagedResponse.cs`) with `Items` and `HasMore`.
-- Build the query with a stable ORDER BY (add `.ThenBy(x => x.Id)` tiebreaker), then call `.ToPagedResponseAsync(skip, take, ct)` from `Infrastructure/Persistence/QueryPagingExtensions.cs`. It fetches `take + 1` rows to compute `HasMore` without a COUNT query.
+## Паттерны
 
-Example: `ClientsController.GetAll`, `AuditLogController.Get`.
+1. **Read-only списки** (журнал, заявки, пользователи): `skip`/`take` + `PagedResponse` + infinite scroll (`data-infinite-scroll`), как `/history`.
+2. **Редактируемые справочники** (пункты акта / работы): серверный `q` + страница (≤50–200), не весь набор форм.
+3. **Пикеры / typeahead**: AJAX search (`q`, `take≈40`) + догрузка выбранных по `ids=…`. Эталон: `catalog-picker.js` + `BrigadeRatingStoppage?handler=CatalogSearch`.
 
-## Web client (RatchetApiClient)
+## API
 
-- List methods take `int skip = 0, int take = 30` and return `PagedResult<T>` (`Models/PagedResult.cs`).
-- For dropdowns that need "all" items, call the same method with a large `take` (server clamps to `MaxTake = 500`).
+- Нормализуй paging (`QueryPagingExtensions` / `CatalogItemsQuery.ClampPage`).
+- Большой каталог без явного `take` → режь до default (не «отдайте всё»).
+- Импорт: см. rule `audit-bulk` (одна audit-запись на пачку).
 
-## Blazor pages
+## Антипаттерн
 
-- State: `List<T> Items`, `bool HasMore`, `bool IsLoadingMore`, `const int PageSize`.
-- Initial load / search: reset list, `skip: 0`. Search must always reset to the first chunk.
-- `LoadMoreAsync()`: guard `if (IsLoadingMore || !HasMore) return;`, then fetch with `skip: Items.Count` and `AddRange`.
-- After the table render the shared component:
-
-```razor
-<InfiniteScroll HasMore="HasMore" IsLoading="IsLoadingMore" OnLoadMore="LoadMoreAsync" />
+```csharp
+// ❌ BAD
+var items = await db.StoppageActItems.AsNoTracking().ToListAsync();
+return Ok(items); // 6k → Web рисует 6k <form> → CRUD по 10с
 ```
 
-`Components/Shared/InfiniteScroll.razor` uses IntersectionObserver via `wwwroot/ratchet-infinite-scroll.js` (already wired in `App.razor`).
-
-Reference implementations: `ClientsPage.razor`, `CatalogServicesPage.razor`, `UsersPage.razor`, `HistoryPage.razor`.
+```csharp
+// ✅ OK
+return Ok(new { Items = page, Total = total }); // Web: поиск + 50 строк
+```

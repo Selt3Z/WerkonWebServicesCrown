@@ -101,7 +101,9 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
     public string PageTitle =>
         !IsEdit ? "Добавить" : IsInspection ? "Правка проверки" : "Правка остановки";
 
-    public string CancelUrl => IsInspection ? "/brigade-rating/inspections" : "/brigade-rating";
+    public string CancelUrl => IsInspection
+        ? BrigadeRatingInspectionsModel.ListPath(Input.Kind)
+        : "/brigade-rating";
 
     /// <summary>Цех выбранной бригады (readonly-поле «Цех»).</summary>
     public string CurrentWorkshop =>
@@ -252,7 +254,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             }
 
             TempData["Ok"] = "Проверка удалена.";
-            return Redirect("/brigade-rating/inspections");
+            return Redirect(BrigadeRatingInspectionsModel.ListPath(Input.Kind));
         }
 
         if (Id is not Guid id)
@@ -599,7 +601,48 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         EnsureCurrentBrigadeInList(Input.BrigadeUserId, Input.BrigadeNameHint, null);
         EnsureRemarkSlots();
         await LoadDependentAsync();
+        await LoadCatalogSelectionsAsync();
         return Page();
+    }
+
+    /// <summary>AJAX-поиск по справочнику act/work (не отдаём 6k строк в HTML).</summary>
+    public async Task<IActionResult> OnGetCatalogSearchAsync(string kind = "act", string? q = null, int take = 40)
+    {
+        if (!CanEnter)
+        {
+            return Forbid();
+        }
+
+        take = Math.Clamp(take, 1, 100);
+        var path = string.Equals(kind, "work", StringComparison.OrdinalIgnoreCase) ? "work-items" : "act-items";
+        var url = $"api/brigade-rating/{path}?activeOnly=true&take={take}&skip=0";
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            url += "&q=" + Uri.EscapeDataString(q.Trim());
+        }
+
+        if (path == "act-items")
+        {
+            var result = await api.GetAsync<StoppageActItemsList>(url, HttpContext.RequestAborted);
+            if (result.IsUnauthorized)
+            {
+                return Challenge();
+            }
+
+            var items = (result.Data?.Items ?? []).Select(x => new { id = x.Id, text = x.Text });
+            return new JsonResult(items);
+        }
+        else
+        {
+            var result = await api.GetAsync<StoppageWorkItemsList>(url, HttpContext.RequestAborted);
+            if (result.IsUnauthorized)
+            {
+                return Challenge();
+            }
+
+            var items = (result.Data?.Items ?? []).Select(x => new { id = x.Id, text = x.Text });
+            return new JsonResult(items);
+        }
     }
 
     private async Task LoadLookupsAsync()
@@ -613,23 +656,10 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             "api/requests/assignees",
             HttpContext.RequestAborted);
         Departments = depts.Data ?? [];
-
-        var acts = await api.GetAsync<List<StoppageActItem>>(
-            "api/brigade-rating/act-items?activeOnly=true",
-            HttpContext.RequestAborted);
-        ActItems = acts.Data ?? [];
     }
 
     private async Task LoadDependentAsync()
     {
-        var works = await api.GetAsync<List<StoppageWorkItem>>(
-            "api/brigade-rating/work-items",
-            HttpContext.RequestAborted);
-        var currentWorkItemId = Input.WorkItemId;
-        WorkItems = (works.Data ?? [])
-            .Where(x => x.IsActive || (currentWorkItemId is Guid cid && x.Id == cid))
-            .ToList();
-
         MasterPersonnel = await FetchPersonnelAsync(Input.BrigadeUserId, Input.MasterPersonId);
         StopperPersonnel = Input.StoppedByUserId is Guid sid
             ? await FetchPersonnelAsync(sid, Input.StoppedByPersonId)
@@ -642,6 +672,40 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         WorkshopPersonnel = IsInspection && Input.Kind == BrigadeInspectionKind.Pbiot
             ? await FetchWorkshopPersonnelAsync(CurrentWorkshop)
             : [];
+    }
+
+    /// <summary>Только уже выбранные пункты/работы — для отображения в форме.</summary>
+    private async Task LoadCatalogSelectionsAsync()
+    {
+        var actIds = Input.Remarks
+            .Where(r => r.ActItemId is Guid g && g != Guid.Empty)
+            .Select(r => r.ActItemId!.Value)
+            .Distinct()
+            .Take(100)
+            .ToList();
+        if (actIds.Count > 0)
+        {
+            var acts = await api.GetAsync<StoppageActItemsList>(
+                "api/brigade-rating/act-items?ids=" + string.Join(",", actIds),
+                HttpContext.RequestAborted);
+            ActItems = acts.Data?.Items ?? [];
+        }
+        else
+        {
+            ActItems = [];
+        }
+
+        if (Input.WorkItemId is Guid wid && wid != Guid.Empty)
+        {
+            var works = await api.GetAsync<StoppageWorkItemsList>(
+                "api/brigade-rating/work-items?ids=" + wid,
+                HttpContext.RequestAborted);
+            WorkItems = works.Data?.Items ?? [];
+        }
+        else
+        {
+            WorkItems = [];
+        }
     }
 
     private void ApplyNewDefaults()

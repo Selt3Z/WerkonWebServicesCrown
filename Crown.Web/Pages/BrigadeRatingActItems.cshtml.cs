@@ -9,12 +9,23 @@ namespace Crown.Web.Pages;
 [Authorize]
 public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
 {
+    public const int PageSize = 50;
+
     private bool CanOperate =>
         User.IsInRole(AppRoles.Administrator)
         || User.IsInRole(AppRoles.Dispatcher)
         || User.FindFirst(CrownAuthHandler.CanOperateBrigadeRatingClaim)?.Value == "1";
 
     public List<StoppageActItem> Items { get; private set; } = [];
+    public int Total { get; private set; }
+    public int PageIndex { get; private set; } = 1;
+    public int TotalPages => Math.Max(1, (int)Math.Ceiling(Total / (double)PageSize));
+
+    [BindProperty(SupportsGet = true)]
+    public string? Q { get; set; }
+
+    [BindProperty(SupportsGet = true, Name = "p")]
+    public int PageNum { get; set; } = 1;
 
     public string? Error { get; private set; }
 
@@ -76,7 +87,7 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
         }
 
         TempData["Ok"] = "Пункт добавлен.";
-        return RedirectToPage();
+        return RedirectToPage(ListRoute());
     }
 
     public async Task<IActionResult> OnPostSaveAsync()
@@ -88,7 +99,7 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
 
         if (EditId is not Guid id)
         {
-            return RedirectToPage();
+            return RedirectToPage(ListRoute());
         }
 
         var text = (EditText ?? string.Empty).Trim();
@@ -116,7 +127,7 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
         }
 
         TempData["Ok"] = "Сохранено.";
-        return RedirectToPage();
+        return RedirectToPage(ListRoute());
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(Guid id)
@@ -141,7 +152,7 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
             TempData["Ok"] = "Пункт удалён.";
         }
 
-        return RedirectToPage();
+        return RedirectToPage(ListRoute());
     }
 
     public async Task<IActionResult> OnPostImportAsync()
@@ -181,24 +192,36 @@ public sealed class BrigadeRatingActItemsModel(CrownApiClient api) : PageModel
         return RedirectToPage();
     }
 
+    private object ListRoute() => new { q = string.IsNullOrWhiteSpace(Q) ? null : Q.Trim(), p = PageNum > 1 ? PageNum : (int?)null };
+
     private async Task LoadAsync()
     {
-        var result = await api.GetAsync<List<StoppageActItem>>(
-            "api/brigade-rating/act-items",
-            HttpContext.RequestAborted);
+        PageIndex = PageNum < 1 ? 1 : PageNum;
+        var skip = (PageIndex - 1) * PageSize;
+        var q = string.IsNullOrWhiteSpace(Q) ? null : Q.Trim();
+        var url = "api/brigade-rating/act-items?take=" + PageSize
+                  + "&skip=" + skip
+                  + (q is null ? "" : "&q=" + Uri.EscapeDataString(q));
+
+        var result = await api.GetAsync<StoppageActItemsList>(url, HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {
             Items = [];
             return;
         }
 
-        if (!result.Ok)
+        if (!result.Ok || result.Data is null)
         {
             Error ??= result.Error;
             Items = [];
             return;
         }
 
-        Items = result.Data ?? [];
+        Items = result.Data.Items;
+        Total = result.Data.Total;
+        if (PageIndex > TotalPages && TotalPages >= 1)
+        {
+            PageIndex = TotalPages;
+        }
     }
 }

@@ -60,6 +60,17 @@ public sealed class BrigadeInspectionDetailResponse : BrigadeInspectionListItemR
     public List<BrigadeInspectionRemarkResponse> Remarks { get; set; } = [];
 }
 
+/// <summary>Страница списка проверок одного вида с периодом.</summary>
+public sealed class BrigadeInspectionsPageResponse
+{
+    public List<BrigadeInspectionListItemResponse> Items { get; set; } = [];
+    public bool HasMore { get; set; }
+    public string Period { get; set; } = "month";
+    public DateOnly PeriodStart { get; set; }
+    public DateOnly PeriodEnd { get; set; }
+    public int EarliestYear { get; set; }
+}
+
 public sealed class SaveInspectionRemarkRequest
 {
     public Guid? ActItemId { get; set; }

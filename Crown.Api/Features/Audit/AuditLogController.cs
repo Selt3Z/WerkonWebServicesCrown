@@ -1,8 +1,13 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Crown.Contracts.Audit;
 using Crown.Contracts.Common;
+using Crown.Domain.Entities;
+using Crown.Infrastructure.Api;
+using Crown.Infrastructure.Audit;
 using Crown.Infrastructure.Identity;
 using Crown.Infrastructure.Persistence;
 using Crown.Infrastructure.Time;
@@ -14,13 +19,20 @@ namespace Crown.Features.Audit;
 [Authorize(Policy = AuthorizationPolicies.ViewAuditLog)]
 public sealed class AuditLogController : ControllerBase
 {
+    public const string ClearConfirmationWord = "ОЧИСТИТЬ";
+
     private readonly AppDbContext _dbContext;
     private readonly AppTimeZone _appTimeZone;
+    private readonly UserManager<ApplicationUser> _users;
 
-    public AuditLogController(AppDbContext dbContext, AppTimeZone appTimeZone)
+    public AuditLogController(
+        AppDbContext dbContext,
+        AppTimeZone appTimeZone,
+        UserManager<ApplicationUser> users)
     {
         _dbContext = dbContext;
         _appTimeZone = appTimeZone;
+        _users = users;
     }
 
     [HttpGet]
@@ -103,5 +115,60 @@ public sealed class AuditLogController : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(response);
+    }
+
+    /// <summary>Админ: полная очистка журнала (ExecuteDelete) + одна запись об очистке.</summary>
+    [HttpPost("clear")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<ActionResult<ClearAuditLogResponse>> Clear(
+        [FromBody] ClearAuditLogRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request?.Confirmation?.Trim(), ClearConfirmationWord, StringComparison.Ordinal))
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.AuditLogClearConfirmRequired));
+        }
+
+        if (string.IsNullOrWhiteSpace(request!.Password))
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.PasswordRequired));
+        }
+
+        var userIdRaw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdRaw, out var userId))
+        {
+            return Forbid();
+        }
+
+        var user = await _users.FindByIdAsync(userId.ToString());
+        if (user is null || !user.IsActive)
+        {
+            return Forbid();
+        }
+
+        if (!await _users.CheckPasswordAsync(user, request.Password))
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.CurrentPasswordInvalid));
+        }
+
+        // Без ChangeTracker — иначе удаление сотен тысяч строк пыталось бы аудититься по одной.
+        var deleted = await _dbContext.AuditLogEntries.ExecuteDeleteAsync(cancellationToken);
+
+        var displayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName! : user.DisplayName;
+        _dbContext.AuditLogEntries.Add(new AuditLogEntry
+        {
+            Id = Guid.NewGuid(),
+            OccurredAtUtc = DateTime.UtcNow,
+            UserId = user.Id,
+            UserDisplayName = displayName,
+            Action = AuditActions.Cleared,
+            EntityType = AuditEntityTypes.AuditLog,
+            EntityId = Guid.Empty,
+            Summary = $"Журнал очищен (удалено записей: {deleted})",
+            EntityUrl = "/history"
+        });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new ClearAuditLogResponse { Deleted = deleted });
     }
 }

@@ -7,4 +7,5 @@ public static class AuditActions
     public const string Deleted = "Deleted";
     public const string Archived = "Archived";
     public const string Restored = "Restored";
+    public const string Cleared = "Cleared";
 }

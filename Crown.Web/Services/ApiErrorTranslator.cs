@@ -59,6 +59,8 @@ public static class ApiErrorTranslator
         ["folder_exists"] = "Папка с таким именем уже есть.",
         ["invalid_folder_move"] = "Нельзя переместить папку в саму себя или в её подпапку.",
         ["trash_clear_confirm_required"] = "Для очистки корзины введите подтверждение TRASH.",
+        ["audit_log_clear_confirm_required"] = "Для очистки журнала введите подтверждение ОЧИСТИТЬ.",
+        ["audit_log_clear_forbidden"] = "Очищать журнал может только администратор.",
         ["backup_already_running"] = "Резервное копирование уже выполняется.",
         ["backup_failed"] = "Не удалось создать резервную копию.",
         ["brigade_invalid"] = "Выберите бригаду (активный пользователь с ролью «Бригада»).",

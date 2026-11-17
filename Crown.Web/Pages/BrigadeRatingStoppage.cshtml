@@ -3,10 +3,13 @@
 @using Crown.Web.Models
 @{
     ViewData["Title"] = Model.PageTitle;
+    // Только уже выбранные пункты — полный справочник грузится через AJAX search.
     var actItemsJson = System.Text.Json.JsonSerializer.Serialize(
         Model.ActItems.Select(a => new { id = a.Id, text = a.Text }));
     var workItemsJson = System.Text.Json.JsonSerializer.Serialize(
         Model.WorkItems.Select(w => new { id = w.Id, text = w.Text }));
+    var actSearchUrl = Url.Page(null, "CatalogSearch", new { kind = "act" }) ?? "?handler=CatalogSearch&kind=act";
+    var workSearchUrl = Url.Page(null, "CatalogSearch", new { kind = "work" }) ?? "?handler=CatalogSearch&kind=work";
 
     // Серверное начальное состояние видимости секций (JS потом держит его в актуальном виде).
     var curMode = Model.IsInspection ? "inspection" : "stoppage";
@@ -75,7 +78,7 @@
 <div class="crown-page-head">
     <h1 class="section-title" id="page-title">@Model.PageTitle</h1>
     <div class="crown-page-head-actions d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/brigade-rating/inspections">Проверки</a>
+        <a class="btn btn-outline-secondary" href="@Model.CancelUrl">Проверки</a>
         <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
     </div>
 </div>
@@ -453,6 +456,8 @@
     const addBtn = document.getElementById('add-remark-row');
     const actItems = @Html.Raw(actItemsJson);
     const workItems = @Html.Raw(workItemsJson);
+    const actSearchUrl = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(actSearchUrl));
+    const workSearchUrl = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(workSearchUrl));
     const todayIso = '@Model.TodayIso';
     const savedUrl = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.SavedUrl));
 
@@ -485,7 +490,11 @@
             });
         });
         $('master-req').classList.toggle('d-none', !(mode === 'inspection' && kind === 'Supervising'));
-        $('cancel-link').setAttribute('href', mode === 'inspection' ? '/brigade-rating/inspections' : '/brigade-rating');
+        const kind = currentKind();
+        const inspList = kind === 'Pdk' ? '/brigade-rating/inspections/pdk'
+            : kind === 'Pbiot' ? '/brigade-rating/inspections/pbiot'
+            : '/brigade-rating/inspections/supervising';
+        $('cancel-link').setAttribute('href', mode === 'inspection' ? inspList : '/brigade-rating');
     }
 
     // ---------- Справочники из DOM ----------
@@ -655,12 +664,12 @@
     const workPicker = $('work-picker');
     const workText = $('work-text');
     const workManualInput = $('work-ismanual');
-    window.CrownCatalogPicker.mount(workPicker, { items: workItems });
+    window.CrownCatalogPicker.mount(workPicker, { items: workItems, searchUrl: workSearchUrl });
 
     // ---------- Пункты акта / нарушения ----------
     function wireRow(row) {
         const picker = row.querySelector('.remark-picker');
-        if (picker) window.CrownCatalogPicker.mount(picker, { items: actItems });
+        if (picker) window.CrownCatalogPicker.mount(picker, { items: actItems, searchUrl: actSearchUrl });
         row.querySelector('.remark-remove')?.addEventListener('click', () => {
             if (list.querySelectorAll('.brigade-remark-editor-row').length <= 1) return;
             row.remove();

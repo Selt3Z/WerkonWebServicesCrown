@@ -1,0 +1,66 @@
+@model (BrigadeInspectionKind Kind, bool CanEnter, List<BrigadeInspectionListItem> Items)
+@{
+    var kind = Model.Kind;
+    var canEnter = Model.CanEnter;
+    var items = Model.Items;
+}
+@foreach (var i in items)
+{
+    var href = canEnter ? $"/brigade-rating/stoppage?inspectionId={i.Id}" : null;
+    <tr class="@(canEnter ? "crown-row-link" : null)" data-href="@href">
+        @if (kind == BrigadeInspectionKind.Supervising)
+        {
+            <td>@i.SequenceNo</td>
+            <td class="text-nowrap">@i.ReportDate.ToString("dd.MM.yyyy")</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.Workshop)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.BrigadeNumber)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.MasterName)</td>
+            <td>@BrigadeRatingInspectionsModel.OutcomeLabel(i.Outcome)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.Well)</td>
+            <td class="inspection-remarks">
+                @foreach (var t in i.RemarkTexts)
+                {
+                    <div class="inspection-remark-line">@t</div>
+                }
+            </td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerPosition)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerName)</td>
+            <td>@(i.StopPoint ? "Да" : "Нет")</td>
+            <td>@(i.HasExplanation ? "Да" : "Нет")</td>
+            <td class="text-nowrap">@BrigadeRatingInspectionsModel.FixDateLabel(i)</td>
+        }
+        else if (kind == BrigadeInspectionKind.Pdk)
+        {
+            <td>@i.SequenceNo</td>
+            <td class="text-nowrap">@i.ReportDate.ToString("dd.MM.yyyy")</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.Workshop)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.BrigadeNumber)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.MasterName)</td>
+            <td>@i.RemarkCount</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerPosition)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerName)</td>
+            <td class="text-nowrap">@BrigadeRatingInspectionsModel.FixDateLabel(i)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.FixResponsibleText)</td>
+        }
+        else
+        {
+            <td>@i.SequenceNo</td>
+            <td class="text-nowrap">@i.ReportDate.ToString("dd.MM.yyyy")</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.Workshop)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.BrigadeNumber)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.MasterName)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.Well)</td>
+            <td class="inspection-remarks">
+                @foreach (var t in i.RemarkTexts)
+                {
+                    <div class="inspection-remark-line">@t</div>
+                }
+            </td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerPosition)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.CheckerName)</td>
+            <td class="text-nowrap">@BrigadeRatingInspectionsModel.FixDateLabel(i)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.FixReportText)</td>
+            <td>@BrigadeRatingInspectionsModel.Dash(i.FixResponsibleName)</td>
+        }
+    </tr>
+}

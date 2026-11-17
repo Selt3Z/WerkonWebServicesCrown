@@ -22,6 +22,12 @@ public sealed class AuditEntryFactory
         "NormalizedEmail"
     };
 
+    /// <summary>
+    /// Порог массовой операции: иначе N audit-строк после commit роняют второй SaveChanges
+    /// (импорт каталога/склада/оборудования/актов и т.п.).
+    /// </summary>
+    public const int BulkAuditThreshold = 20;
+
     public Task<List<AuditLogEntry>> CreateEntriesAsync(
         AppDbContext dbContext,
         IEnumerable<EntityEntry> entries,
@@ -29,12 +35,57 @@ public sealed class AuditEntryFactory
         string userDisplayName,
         CancellationToken cancellationToken)
     {
+        var tracked = entries as IList<EntityEntry> ?? entries.ToList();
         var auditEntries = new List<AuditLogEntry>();
         var occurredAtUtc = DateTime.UtcNow;
 
-        foreach (var entry in entries)
+        // (CLR-тип, Added|Deleted) → схлопнуть в одну запись журнала.
+        var collapsed = new HashSet<(Type Clr, EntityState State)>();
+        foreach (var state in new[] { EntityState.Added, EntityState.Deleted })
+        {
+            var groups = tracked
+                .Where(e => e.State == state && e.Entity is not AuditLogEntry and not ApplicationUser)
+                .GroupBy(e => e.Entity.GetType());
+
+            foreach (var group in groups)
+            {
+                var count = group.Count();
+                if (count < BulkAuditThreshold)
+                {
+                    continue;
+                }
+
+                var sample = group.First();
+                var sampleAction = state == EntityState.Added ? AuditActions.Created : AuditActions.Deleted;
+                if (!TryMapEntry(sample, sampleAction, out var entityType, out _, out _, out var entityUrl))
+                {
+                    continue;
+                }
+
+                collapsed.Add((group.Key, state));
+                auditEntries.Add(new AuditLogEntry
+                {
+                    Id = Guid.NewGuid(),
+                    OccurredAtUtc = occurredAtUtc,
+                    UserId = userId,
+                    UserDisplayName = userDisplayName,
+                    Action = sampleAction,
+                    EntityType = entityType,
+                    EntityId = Guid.Empty,
+                    Summary = BuildBulkSummary(entityType, sampleAction, count),
+                    EntityUrl = entityUrl
+                });
+            }
+        }
+
+        foreach (var entry in tracked)
         {
             if (entry.Entity is AuditLogEntry)
+            {
+                continue;
+            }
+
+            if (collapsed.Contains((entry.Entity.GetType(), entry.State)))
             {
                 continue;
             }
@@ -79,6 +130,26 @@ public sealed class AuditEntryFactory
         }
 
         return Task.FromResult(auditEntries);
+    }
+
+    private static string BuildBulkSummary(string entityType, string action, int count)
+    {
+        var label = entityType switch
+        {
+            AuditEntityTypes.StoppageActItem => "пунктов акта",
+            AuditEntityTypes.StoppageWorkItem => "выполняемых работ",
+            AuditEntityTypes.CatalogPart => "позиций каталога",
+            AuditEntityTypes.WarehousePart => "позиций склада",
+            AuditEntityTypes.EquipmentAsset => "единиц оборудования",
+            AuditEntityTypes.SpecialVehicleUnit => "единиц спецтехники",
+            AuditEntityTypes.Documentation => "документов",
+            AuditEntityTypes.PersonnelPerson => "сотрудников",
+            _ => entityType
+        };
+
+        return action == AuditActions.Deleted
+            ? $"Массовое удаление ({label}): −{count}"
+            : $"Массовое создание ({label}): +{count}";
     }
 
     private static bool HasMeaningfulUserChange(EntityEntry entry) =>

@@ -52,6 +52,20 @@ public sealed class CatalogLinesImportResponse
     public int SkippedDuplicates { get; set; }
 }
 
+/// <summary>Страница справочника пунктов акта (поиск + пейджинг).</summary>
+public sealed class StoppageActItemsListResponse
+{
+    public List<StoppageActItemResponse> Items { get; set; } = [];
+    public int Total { get; set; }
+}
+
+/// <summary>Страница справочника выполняемых работ.</summary>
+public sealed class StoppageWorkItemsListResponse
+{
+    public List<StoppageWorkItemResponse> Items { get; set; } = [];
+    public int Total { get; set; }
+}
+
 public sealed class StoppageRemarkResponse
 {
     public Guid Id { get; set; }

@@ -99,6 +99,7 @@ public static class UiHelpers
         "Deleted" => "Удалено",
         "Archived" => "В архив",
         "Restored" => "Восстановлено",
+        "Cleared" => "Очищено",
         _ => string.IsNullOrWhiteSpace(action) ? "—" : action
     };
 
@@ -121,6 +122,7 @@ public static class UiHelpers
         "PersonnelPerson" => "Сотрудник",
         "AppSetting" => "Настройки",
         "User" => "Пользователь",
+        "AuditLog" => "Журнал",
         _ => string.IsNullOrWhiteSpace(entityType) ? "—" : entityType
     };
 }

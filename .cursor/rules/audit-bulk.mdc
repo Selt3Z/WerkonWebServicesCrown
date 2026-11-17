@@ -1,0 +1,33 @@
+---
+description: Массовые Create/Delete — одна запись в журнал аудита, не N тысяч
+globs: Crown.Api/**/*.cs
+alwaysApply: false
+---
+
+# Bulk audit (журнал)
+
+При `SaveChanges` с ≥20 `Added`/`Deleted` одного CLR-типа `AuditEntryFactory` **схлопывает** их в одну строку журнала (`Массовое создание/удаление …: ±N`).
+
+## Обязательно
+
+- Импорт / seed / batch: можно `Add`/`AddRange` пачкой и один `SaveChanges` — аудит уже безопасен.
+- Не обходить фабрику отдельными тысячами `SaveChanges` «ради аудита» — это хуже.
+- Ручная одна запись (как очистка журнала): писать `AuditLogEntry` напрямую; `ExecuteDelete` для массового wipe (без трекера).
+
+## Порог
+
+`AuditEntryFactory.BulkAuditThreshold` (= 20). Не дублируй логику схлопывания в контроллерах.
+
+## Антипаттерн
+
+```csharp
+// ❌ BAD — 6000 audit rows после успешного import → 500 клиенту, данные уже в БД
+foreach (var x in rows) db.Items.Add(x);
+await db.SaveChangesAsync(); // interceptor пишет 6000 AuditLogEntry
+```
+
+```csharp
+// ✅ OK — один SaveChanges; фабрика сама сделает 1 audit-строку при count ≥ порога
+db.Items.AddRange(batch);
+await db.SaveChangesAsync();
+```

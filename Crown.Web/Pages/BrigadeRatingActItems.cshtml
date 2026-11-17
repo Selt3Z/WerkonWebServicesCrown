@@ -2,6 +2,7 @@
 @model BrigadeRatingActItemsModel
 @{
     ViewData["Title"] = "Пункты по акту предписания";
+    var q = Model.Q;
 }
 
 <div class="crown-page-head">
@@ -23,6 +24,8 @@
 }
 
 <form method="post" asp-page-handler="Add" class="list-filters mb-3">
+    <input type="hidden" name="Q" value="@q" />
+    <input type="hidden" name="p" value="@Model.PageIndex" />
     <div class="filter-field filter-field-inline filter-field-grow">
         <label class="form-label" for="new-act-text">Новый пункт</label>
         <input id="new-act-text" class="form-control" name="NewText" value="@Model.NewText" placeholder="Текст пункта по акту" required />
@@ -30,12 +33,19 @@
     <button type="submit" class="btn btn-success">Добавить</button>
 </form>
 
-<div class="list-filters mb-3">
+<form method="get" class="list-filters mb-3">
     <div class="filter-field filter-field-inline filter-field-grow catalog-list-filter">
         <label class="form-label" for="act-items-search">Поиск</label>
-        <input id="act-items-search" class="form-control" type="search" placeholder="Фильтр по тексту…" autocomplete="off" />
+        <input id="act-items-search" class="form-control" type="search" name="q" value="@q" placeholder="Фильтр по тексту…" autocomplete="off" />
     </div>
-</div>
+    <button type="submit" class="btn btn-outline-secondary">Найти</button>
+    @if (!string.IsNullOrWhiteSpace(q))
+    {
+        <a class="btn btn-outline-secondary" href="/brigade-rating/act-items">Сброс</a>
+    }
+</form>
+
+<p class="text-muted small mb-2">Всего: @Model.Total · страница @Model.PageIndex / @Model.TotalPages</p>
 
 <section class="entity-panel">
     @* Десктоп: таблица без «Статус». Мобилка: карточки — иначе Текст схлопывается. *@
@@ -51,10 +61,12 @@
             <tbody>
             @foreach (var item in Model.Items)
             {
-                <tr class="catalog-list-row @(!item.IsActive ? "text-muted" : null)" data-catalog-text="@item.Text">
+                <tr class="@(!item.IsActive ? "text-muted" : null)">
                     <td>@item.SortOrder</td>
                     <td>
                         <form method="post" asp-page-handler="Save" id="act-save-@item.Id" class="crown-op-form">
+                            <input type="hidden" name="Q" value="@q" />
+                            <input type="hidden" name="p" value="@Model.PageIndex" />
                             <input type="hidden" name="EditId" value="@item.Id" />
                             <input type="hidden" name="EditIsActive" value="@(item.IsActive ? "true" : "false")" />
                             <input class="form-control act-item-text" name="EditText" value="@item.Text" required />
@@ -63,6 +75,8 @@
                     <td class="text-end text-nowrap">
                         <button type="submit" form="act-save-@item.Id" class="btn btn-outline-secondary btn-sm">Сохранить</button>
                         <form method="post" asp-page-handler="Delete" class="crown-op-form d-inline">
+                            <input type="hidden" name="Q" value="@q" />
+                            <input type="hidden" name="p" value="@Model.PageIndex" />
                             <input type="hidden" name="id" value="@item.Id" />
                             <button type="submit" class="btn btn-outline-danger btn-sm"
                                     data-confirm="Удалить пункт из справочника? В уже созданных остановках он станет «Вручную», текст и комментарий сохранятся.">
@@ -74,7 +88,7 @@
             }
             @if (Model.Items.Count == 0)
             {
-                <tr><td colspan="3" class="text-muted text-center">Пока пусто — добавьте типовые пункты сверху.</td></tr>
+                <tr><td colspan="3" class="text-muted text-center">@(string.IsNullOrWhiteSpace(q) ? "Пока пусто — добавьте типовые пункты сверху." : "Ничего не найдено.")</td></tr>
             }
             </tbody>
         </table>
@@ -83,17 +97,19 @@
     <div class="schedule-mobile-cards act-items-mobile">
         @if (Model.Items.Count == 0)
         {
-            <p class="text-muted text-center mb-0">Пока пусто — добавьте типовые пункты сверху.</p>
+            <p class="text-muted text-center mb-0">@(string.IsNullOrWhiteSpace(q) ? "Пока пусто — добавьте типовые пункты сверху." : "Ничего не найдено.")</p>
         }
         else
         {
             @foreach (var item in Model.Items)
             {
-                <div class="schedule-card act-item-card catalog-list-row @(!item.IsActive ? "text-muted" : null)" data-catalog-text="@item.Text">
+                <div class="schedule-card act-item-card @(!item.IsActive ? "text-muted" : null)">
                     <div class="schedule-card-header">
                         <span class="schedule-card-time">№ @item.SortOrder</span>
                     </div>
                     <form method="post" asp-page-handler="Save" id="act-save-m-@item.Id" class="crown-op-form act-item-card-form">
+                        <input type="hidden" name="Q" value="@q" />
+                        <input type="hidden" name="p" value="@Model.PageIndex" />
                         <input type="hidden" name="EditId" value="@item.Id" />
                         <input type="hidden" name="EditIsActive" value="@(item.IsActive ? "true" : "false")" />
                         <input class="form-control act-item-text" name="EditText" value="@item.Text" required />
@@ -101,6 +117,8 @@
                     <div class="act-item-card-actions">
                         <button type="submit" form="act-save-m-@item.Id" class="btn btn-outline-secondary btn-sm">Сохранить</button>
                         <form method="post" asp-page-handler="Delete" class="crown-op-form">
+                            <input type="hidden" name="Q" value="@q" />
+                            <input type="hidden" name="p" value="@Model.PageIndex" />
                             <input type="hidden" name="id" value="@item.Id" />
                             <button type="submit" class="btn btn-outline-danger btn-sm"
                                     data-confirm="Удалить пункт из справочника? В уже созданных остановках он станет «Вручную», текст и комментарий сохранятся.">
@@ -114,19 +132,16 @@
     </div>
 </section>
 
-@section Scripts {
-<script>
-(() => {
-    const input = document.getElementById('act-items-search');
-    if (!input) return;
-    const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
-    input.addEventListener('input', () => {
-        const q = norm(input.value);
-        document.querySelectorAll('.catalog-list-row').forEach(row => {
-            const hay = norm(row.getAttribute('data-catalog-text'));
-            row.classList.toggle('d-none', q !== '' && !hay.includes(q));
-        });
-    });
-})();
-</script>
+@if (Model.TotalPages > 1)
+{
+    <nav class="list-filters mt-3" aria-label="Страницы">
+        @if (Model.PageIndex > 1)
+        {
+            <a class="btn btn-outline-secondary btn-sm" href="?q=@Uri.EscapeDataString(q ?? "")&p=@(Model.PageIndex - 1)">← Назад</a>
+        }
+        @if (Model.PageIndex < Model.TotalPages)
+        {
+            <a class="btn btn-outline-secondary btn-sm" href="?q=@Uri.EscapeDataString(q ?? "")&p=@(Model.PageIndex + 1)">Вперёд →</a>
+        }
+    </nav>
 }

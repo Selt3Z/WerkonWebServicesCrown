@@ -62,8 +62,12 @@ public sealed class BrigadeRatingController(
     // ---------- Справочник пунктов акта ----------
 
     [HttpGet("act-items")]
-    public async Task<ActionResult<List<StoppageActItemResponse>>> ListActItems(
+    public async Task<ActionResult<StoppageActItemsListResponse>> ListActItems(
         [FromQuery] bool activeOnly = false,
+        [FromQuery] string? q = null,
+        [FromQuery] int? take = null,
+        [FromQuery] int? skip = null,
+        [FromQuery] string? ids = null,
         CancellationToken cancellationToken = default)
     {
         if (!await CanViewAsync(cancellationToken))
@@ -71,15 +75,54 @@ public sealed class BrigadeRatingController(
             return Forbid();
         }
 
-        var q = db.StoppageActItems.AsNoTracking().AsQueryable();
+        var query = db.StoppageActItems.AsNoTracking().AsQueryable();
         if (activeOnly)
         {
-            q = q.Where(x => x.IsActive);
+            query = query.Where(x => x.IsActive);
         }
 
-        var items = await q
+        // Точечная подгрузка выбранных пунктов (форма остановки/проверки).
+        if (!string.IsNullOrWhiteSpace(ids))
+        {
+            var idSet = ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty)
+                .Distinct()
+                .Take(100)
+                .ToList();
+            var byIds = await query
+                .Where(x => idSet.Contains(x.Id))
+                .Select(x => new StoppageActItemResponse
+                {
+                    Id = x.Id,
+                    Text = x.Text,
+                    IsActive = x.IsActive,
+                    SortOrder = x.SortOrder
+                })
+                .ToListAsync(cancellationToken);
+            return Ok(new StoppageActItemsListResponse { Items = byIds, Total = byIds.Count });
+        }
+
+        var term = (q ?? string.Empty).Trim();
+        if (term.Length > 0)
+        {
+            query = query.Where(x => EF.Functions.ILike(x.Text, $"%{EscapeLike(term)}%"));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var (t, s) = CatalogItemsQuery.ClampPage(take, skip);
+        // Без take — короткие справочники целиком; большие режем DefaultTake (не отдаём 6k в UI).
+        if (take is null && total <= CatalogItemsQuery.MaxTake)
+        {
+            t = total;
+            s = 0;
+        }
+
+        var items = await query
             .OrderBy(x => x.SortOrder)
             .ThenBy(x => x.Text)
+            .Skip(s)
+            .Take(t <= 0 ? CatalogItemsQuery.DefaultTake : t)
             .Select(x => new StoppageActItemResponse
             {
                 Id = x.Id,
@@ -89,8 +132,13 @@ public sealed class BrigadeRatingController(
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(items);
+        return Ok(new StoppageActItemsListResponse { Items = items, Total = total });
     }
+
+    private static string EscapeLike(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
 
     [HttpPost("act-items")]
     public async Task<ActionResult<StoppageActItemResponse>> CreateActItem(
@@ -239,30 +287,41 @@ public sealed class BrigadeRatingController(
         var now = DateTimeOffset.UtcNow;
         var imported = 0;
         var skipped = 0;
-        foreach (var text in lines)
+        var batch = new List<StoppageActItem>(Math.Min(lines.Count, 4096));
+        var detect = db.ChangeTracker.AutoDetectChangesEnabled;
+        db.ChangeTracker.AutoDetectChangesEnabled = false;
+        try
         {
-            var key = CatalogLinesImportHelper.NormKey(text);
-            if (!known.Add(key))
+            foreach (var text in lines)
             {
-                skipped++;
-                continue;
+                var key = CatalogLinesImportHelper.NormKey(text);
+                if (!known.Add(key))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                maxOrder++;
+                batch.Add(new StoppageActItem
+                {
+                    Id = Guid.NewGuid(),
+                    Text = text,
+                    IsActive = true,
+                    SortOrder = maxOrder,
+                    CreatedAt = now
+                });
+                imported++;
             }
 
-            maxOrder++;
-            db.StoppageActItems.Add(new StoppageActItem
+            if (batch.Count > 0)
             {
-                Id = Guid.NewGuid(),
-                Text = text,
-                IsActive = true,
-                SortOrder = maxOrder,
-                CreatedAt = now
-            });
-            imported++;
+                db.StoppageActItems.AddRange(batch);
+                await db.SaveChangesAsync(cancellationToken);
+            }
         }
-
-        if (imported > 0)
+        finally
         {
-            await db.SaveChangesAsync(cancellationToken);
+            db.ChangeTracker.AutoDetectChangesEnabled = detect;
         }
 
         return Ok(new CatalogLinesImportResponse
@@ -276,8 +335,12 @@ public sealed class BrigadeRatingController(
     // ---------- Справочник выполняемых работ ----------
 
     [HttpGet("work-items")]
-    public async Task<ActionResult<List<StoppageWorkItemResponse>>> ListWorkItems(
+    public async Task<ActionResult<StoppageWorkItemsListResponse>> ListWorkItems(
         [FromQuery] bool activeOnly = false,
+        [FromQuery] string? q = null,
+        [FromQuery] int? take = null,
+        [FromQuery] int? skip = null,
+        [FromQuery] string? ids = null,
         CancellationToken cancellationToken = default)
     {
         if (!await CanViewAsync(cancellationToken))
@@ -285,15 +348,52 @@ public sealed class BrigadeRatingController(
             return Forbid();
         }
 
-        var q = db.StoppageWorkItems.AsNoTracking().AsQueryable();
+        var query = db.StoppageWorkItems.AsNoTracking().AsQueryable();
         if (activeOnly)
         {
-            q = q.Where(x => x.IsActive);
+            query = query.Where(x => x.IsActive);
         }
 
-        var items = await q
+        if (!string.IsNullOrWhiteSpace(ids))
+        {
+            var idSet = ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty)
+                .Distinct()
+                .Take(100)
+                .ToList();
+            var byIds = await query
+                .Where(x => idSet.Contains(x.Id))
+                .Select(x => new StoppageWorkItemResponse
+                {
+                    Id = x.Id,
+                    Text = x.Text,
+                    IsActive = x.IsActive,
+                    SortOrder = x.SortOrder
+                })
+                .ToListAsync(cancellationToken);
+            return Ok(new StoppageWorkItemsListResponse { Items = byIds, Total = byIds.Count });
+        }
+
+        var term = (q ?? string.Empty).Trim();
+        if (term.Length > 0)
+        {
+            query = query.Where(x => EF.Functions.ILike(x.Text, $"%{EscapeLike(term)}%"));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var (t, s) = CatalogItemsQuery.ClampPage(take, skip);
+        if (take is null && total <= CatalogItemsQuery.MaxTake)
+        {
+            t = total;
+            s = 0;
+        }
+
+        var items = await query
             .OrderBy(x => x.SortOrder)
             .ThenBy(x => x.Text)
+            .Skip(s)
+            .Take(t <= 0 ? CatalogItemsQuery.DefaultTake : t)
             .Select(x => new StoppageWorkItemResponse
             {
                 Id = x.Id,
@@ -303,7 +403,7 @@ public sealed class BrigadeRatingController(
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(items);
+        return Ok(new StoppageWorkItemsListResponse { Items = items, Total = total });
     }
 
     [HttpPost("work-items")]
@@ -443,30 +543,41 @@ public sealed class BrigadeRatingController(
         var now = DateTimeOffset.UtcNow;
         var imported = 0;
         var skipped = 0;
-        foreach (var text in lines)
+        var batch = new List<StoppageWorkItem>(Math.Min(lines.Count, 4096));
+        var detect = db.ChangeTracker.AutoDetectChangesEnabled;
+        db.ChangeTracker.AutoDetectChangesEnabled = false;
+        try
         {
-            var key = CatalogLinesImportHelper.NormKey(text);
-            if (!known.Add(key))
+            foreach (var text in lines)
             {
-                skipped++;
-                continue;
+                var key = CatalogLinesImportHelper.NormKey(text);
+                if (!known.Add(key))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                maxOrder++;
+                batch.Add(new StoppageWorkItem
+                {
+                    Id = Guid.NewGuid(),
+                    Text = text,
+                    IsActive = true,
+                    SortOrder = maxOrder,
+                    CreatedAt = now
+                });
+                imported++;
             }
 
-            maxOrder++;
-            db.StoppageWorkItems.Add(new StoppageWorkItem
+            if (batch.Count > 0)
             {
-                Id = Guid.NewGuid(),
-                Text = text,
-                IsActive = true,
-                SortOrder = maxOrder,
-                CreatedAt = now
-            });
-            imported++;
+                db.StoppageWorkItems.AddRange(batch);
+                await db.SaveChangesAsync(cancellationToken);
+            }
         }
-
-        if (imported > 0)
+        finally
         {
-            await db.SaveChangesAsync(cancellationToken);
+            db.ChangeTracker.AutoDetectChangesEnabled = detect;
         }
 
         return Ok(new CatalogLinesImportResponse
@@ -1084,20 +1195,8 @@ public sealed class BrigadeRatingController(
             return (null, "Добавьте хотя бы один пункт акта.", "remarks_required");
         }
 
-        // Весь справочник tracked — find-or-create без N запросов на строку.
-        var catalog = await db.StoppageActItems.ToListAsync(cancellationToken);
-        var byId = catalog.ToDictionary(x => x.Id);
-        var byKey = new Dictionary<string, StoppageActItem>(StringComparer.Ordinal);
-        foreach (var a in catalog)
-        {
-            var k = CatalogLookup.NormKey(a.Text);
-            if (!string.IsNullOrEmpty(k) && !byKey.ContainsKey(k))
-            {
-                byKey[k] = a;
-            }
-        }
-
-        var maxOrder = catalog.Count == 0 ? 0 : catalog.Max(x => x.SortOrder);
+        // AsNoTracking-индекс: не тащим 6k сущностей в ChangeTracker на каждое сохранение.
+        var index = await CatalogLookup.LoadActIndexAsync(db, cancellationToken);
         var result = new List<StoppageRemark>();
         var order = 0;
         var catalogDirty = false;
@@ -1110,20 +1209,21 @@ public sealed class BrigadeRatingController(
 
             if (!r.IsManual && r.ActItemId is Guid aid && aid != Guid.Empty)
             {
-                if (!byId.TryGetValue(aid, out var act))
+                if (!index.ById.TryGetValue(aid, out var lite))
                 {
                     return (null, "Выбранный пункт акта не найден в справочнике.", "act_item_invalid");
                 }
 
-                if (!act.IsActive)
+                if (!lite.IsActive)
                 {
-                    act.IsActive = true;
+                    await CatalogLookup.EnsureActActiveAsync(db, lite, cancellationToken);
+                    lite.IsActive = true;
                     catalogDirty = true;
                 }
 
-                text = act.Text.Trim();
+                text = lite.Text.Trim();
                 comment = (r.Comment ?? string.Empty).Trim();
-                actItemId = act.Id;
+                actItemId = lite.Id;
             }
             else
             {
@@ -1135,30 +1235,38 @@ public sealed class BrigadeRatingController(
 
                 comment = (r.Comment ?? string.Empty).Trim();
                 var key = CatalogLookup.NormKey(text);
-                if (!byKey.TryGetValue(key, out var act))
+                if (!index.ByKey.TryGetValue(key, out var lite))
                 {
-                    maxOrder++;
-                    act = new StoppageActItem
+                    index.MaxSortOrder++;
+                    var act = new StoppageActItem
                     {
                         Id = Guid.NewGuid(),
                         Text = text,
                         IsActive = true,
-                        SortOrder = maxOrder,
+                        SortOrder = index.MaxSortOrder,
                         CreatedAt = DateTimeOffset.UtcNow
                     };
                     db.StoppageActItems.Add(act);
-                    byId[act.Id] = act;
-                    byKey[key] = act;
+                    lite = new CatalogLookup.ActCatalogLite
+                    {
+                        Id = act.Id,
+                        Text = act.Text,
+                        IsActive = true,
+                        SortOrder = act.SortOrder
+                    };
+                    index.ById[act.Id] = lite;
+                    index.ByKey[key] = lite;
                     catalogDirty = true;
                 }
-                else if (!act.IsActive)
+                else if (!lite.IsActive)
                 {
-                    act.IsActive = true;
+                    await CatalogLookup.EnsureActActiveAsync(db, lite, cancellationToken);
+                    lite.IsActive = true;
                     catalogDirty = true;
                 }
 
-                text = act.Text.Trim();
-                actItemId = act.Id;
+                text = lite.Text.Trim();
+                actItemId = lite.Id;
             }
 
             order++;

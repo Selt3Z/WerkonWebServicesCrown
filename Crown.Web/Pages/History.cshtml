@@ -4,7 +4,27 @@
     ViewData["Title"] = "Журнал";
 }
 
-<h1 class="section-title">Журнал</h1>
+<div class="crown-page-head">
+    <h1 class="section-title">Журнал</h1>
+</div>
+
+@if (Model.CanClear)
+{
+    <form method="post" asp-page-handler="Clear" class="list-filters mb-3">
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="audit-clear-confirm">Подтверждение</label>
+            <input id="audit-clear-confirm" class="form-control" name="ClearConfirmation"
+                   placeholder="Введите @HistoryModel.ClearConfirmationWord" autocomplete="off" required />
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="audit-clear-password">Пароль админа</label>
+            <input id="audit-clear-password" class="form-control" type="password" name="ClearPassword"
+                   autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn btn-outline-danger btn-sm"
+                data-confirm="Очистить весь журнал безвозвратно?">Очистить журнал</button>
+    </form>
+}
 
 <form method="get" class="list-filters history-filters mb-3">
     <div class="filter-field filter-field-inline">

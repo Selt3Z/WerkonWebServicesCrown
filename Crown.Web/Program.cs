@@ -28,7 +28,8 @@ var apiBaseUri = new Uri(apiBaseUrl.EndsWith('/') ? apiBaseUrl : apiBaseUrl + "/
 builder.Services.AddHttpClient<CrownApiClient>(client =>
     {
         client.BaseAddress = apiBaseUri;
-        client.Timeout = TimeSpan.FromSeconds(60);
+        // Импорт справочников (тысячи строк) + обычные CRUD; 60с давал ложный красный алерт после успешного commit.
+        client.Timeout = TimeSpan.FromSeconds(180);
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {

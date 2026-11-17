@@ -1,8 +1,11 @@
+using ClosedXML.Excel;
 using Crown.Contracts.BrigadeRating;
+using Crown.Contracts.Common;
 using Crown.Domain.Entities;
 using Crown.Infrastructure.Identity;
 using Crown.Infrastructure.Import;
 using Crown.Infrastructure.Persistence;
+using Crown.Infrastructure.Time;
 using CatalogLookup = Crown.Infrastructure.Import.CatalogTextLookup;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -21,15 +24,23 @@ namespace Crown.Features.BrigadeRating;
 [Authorize]
 public sealed class InspectionsController(
     AppDbContext db,
-    UserManager<ApplicationUser> users) : ControllerBase
+    UserManager<ApplicationUser> users,
+    AppTimeZone time) : ControllerBase
 {
     private const int MaxSequenceRetries = 3;
 
     // ---------- CRUD ----------
 
     [HttpGet]
-    public async Task<ActionResult<List<BrigadeInspectionListItemResponse>>> List(
-        [FromQuery] BrigadeInspectionKind? kind = null,
+    public async Task<ActionResult<BrigadeInspectionsPageResponse>> List(
+        [FromQuery] BrigadeInspectionKind kind,
+        [FromQuery] string? period = null,
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        [FromQuery] int? year = null,
+        [FromQuery] int? month = null,
+        [FromQuery] int? skip = null,
+        [FromQuery] int? take = null,
         CancellationToken cancellationToken = default)
     {
         if (!await CanViewAsync())
@@ -37,19 +48,102 @@ public sealed class InspectionsController(
             return Forbid();
         }
 
-        var q = db.BrigadeInspections.AsNoTracking().Include(x => x.Remarks).AsQueryable();
-        if (kind is not null)
+        if (!Enum.IsDefined(kind))
         {
-            q = q.Where(x => x.Kind == kind.Value);
+            return BadRequest(new { error = "inspection_kind_invalid", message = "Укажите вид проверки." });
         }
 
-        var rows = await q
+        var (periodKey, start, end) = ResolveListPeriod(period, from, to, year, month);
+        var (normalizedSkip, normalizedTake) = QueryPagingExtensions.NormalizePaging(skip, take);
+
+        var baseQuery = db.BrigadeInspections.AsNoTracking()
+            .Where(x => x.Kind == kind);
+
+        var earliest = await baseQuery.MinAsync(x => (DateOnly?)x.ReportDate, cancellationToken);
+        var earliestYear = earliest?.Year ?? time.GetToday().Year;
+
+        var rows = await baseQuery
+            .Include(x => x.Remarks)
+            .Where(x => x.ReportDate >= start && x.ReportDate <= end)
+            .OrderByDescending(x => x.SequenceNo)
+            .ThenByDescending(x => x.Id)
+            .Skip(normalizedSkip)
+            .Take(normalizedTake + 1)
+            .ToListAsync(cancellationToken);
+
+        var hasMore = rows.Count > normalizedTake;
+        if (hasMore)
+        {
+            rows.RemoveAt(rows.Count - 1);
+        }
+
+        var live = await LoadBrigadeSnapshotsAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
+        return Ok(new BrigadeInspectionsPageResponse
+        {
+            Items = rows.Select(x => MapListItem(x, live)).ToList(),
+            HasMore = hasMore,
+            Period = periodKey,
+            PeriodStart = start,
+            PeriodEnd = end,
+            EarliestYear = earliestYear
+        });
+    }
+
+    /// <summary>Один xlsx: три вкладки (Супервайзинг / ПДК / ПБиОТ) за период.</summary>
+    [HttpGet("export.xlsx")]
+    public async Task<IActionResult> ExportXlsx(
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync())
+        {
+            return Forbid();
+        }
+
+        var (start, end) = ResolveFromTo(from, to);
+        var rows = await db.BrigadeInspections.AsNoTracking()
+            .Include(x => x.Remarks)
+            .Where(x => x.ReportDate >= start && x.ReportDate <= end)
             .OrderBy(x => x.Kind)
-            .ThenByDescending(x => x.SequenceNo)
+            .ThenBy(x => x.ReportDate)
+            .ThenBy(x => x.SequenceNo)
             .ToListAsync(cancellationToken);
 
         var live = await LoadBrigadeSnapshotsAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
-        return Ok(rows.Select(x => MapListItem(x, live)).ToList());
+        var mapped = rows.Select(x => MapListItem(x, live)).ToList();
+
+        using var workbook = new XLWorkbook();
+        foreach (var kind in new[]
+                 {
+                     BrigadeInspectionKind.Supervising,
+                     BrigadeInspectionKind.Pdk,
+                     BrigadeInspectionKind.Pbiot
+                 })
+        {
+            var sheetName = kind switch
+            {
+                BrigadeInspectionKind.Pdk => "ПДК",
+                BrigadeInspectionKind.Pbiot => "ПБиОТ",
+                _ => "Супервайзинг"
+            };
+            var ws = workbook.Worksheets.Add(sheetName);
+            WriteExportHeader(ws, kind);
+            var kindRows = mapped.Where(x => x.Kind == kind).ToList();
+            for (var i = 0; i < kindRows.Count; i++)
+            {
+                WriteExportRow(ws, kind, i + 2, kindRows[i]);
+            }
+
+            ws.Columns().AdjustToContents(1, 40);
+        }
+
+        await using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        var fileName = start == end
+            ? $"Проверки {start:dd.MM.yyyy}.xlsx"
+            : $"Проверки {start:dd.MM.yyyy}-{end:dd.MM.yyyy}.xlsx";
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
     }
 
     [HttpGet("{id:guid}")]
@@ -597,19 +691,8 @@ public sealed class InspectionsController(
             return (null, "Добавьте хотя бы одно нарушение.", "remarks_required");
         }
 
-        var catalog = await db.StoppageActItems.ToListAsync(cancellationToken);
-        var byId = catalog.ToDictionary(x => x.Id);
-        var byKey = new Dictionary<string, StoppageActItem>(StringComparer.Ordinal);
-        foreach (var a in catalog)
-        {
-            var k = CatalogLookup.NormKey(a.Text);
-            if (!string.IsNullOrEmpty(k) && !byKey.ContainsKey(k))
-            {
-                byKey[k] = a;
-            }
-        }
-
-        var maxOrder = catalog.Count == 0 ? 0 : catalog.Max(x => x.SortOrder);
+        // AsNoTracking-индекс — не раздуваем ChangeTracker на 6k строк.
+        var index = await CatalogLookup.LoadActIndexAsync(db, cancellationToken);
         var result = new List<BrigadeInspectionRemark>();
         var order = 0;
         var catalogDirty = false;
@@ -622,20 +705,21 @@ public sealed class InspectionsController(
 
             if (!r.IsManual && r.ActItemId is Guid aid && aid != Guid.Empty)
             {
-                if (!byId.TryGetValue(aid, out var act))
+                if (!index.ById.TryGetValue(aid, out var lite))
                 {
                     return (null, "Выбранный пункт акта не найден в справочнике.", "act_item_invalid");
                 }
 
-                if (!act.IsActive)
+                if (!lite.IsActive)
                 {
-                    act.IsActive = true;
+                    await CatalogLookup.EnsureActActiveAsync(db, lite, cancellationToken);
+                    lite.IsActive = true;
                     catalogDirty = true;
                 }
 
-                text = act.Text.Trim();
+                text = lite.Text.Trim();
                 comment = Clean(r.Comment);
-                actItemId = act.Id;
+                actItemId = lite.Id;
             }
             else
             {
@@ -647,30 +731,38 @@ public sealed class InspectionsController(
 
                 comment = Clean(r.Comment);
                 var key = CatalogLookup.NormKey(text);
-                if (!byKey.TryGetValue(key, out var act))
+                if (!index.ByKey.TryGetValue(key, out var lite))
                 {
-                    maxOrder++;
-                    act = new StoppageActItem
+                    index.MaxSortOrder++;
+                    var act = new StoppageActItem
                     {
                         Id = Guid.NewGuid(),
                         Text = text,
                         IsActive = true,
-                        SortOrder = maxOrder,
+                        SortOrder = index.MaxSortOrder,
                         CreatedAt = DateTimeOffset.UtcNow
                     };
                     db.StoppageActItems.Add(act);
-                    byId[act.Id] = act;
-                    byKey[key] = act;
+                    lite = new CatalogLookup.ActCatalogLite
+                    {
+                        Id = act.Id,
+                        Text = act.Text,
+                        IsActive = true,
+                        SortOrder = act.SortOrder
+                    };
+                    index.ById[act.Id] = lite;
+                    index.ByKey[key] = lite;
                     catalogDirty = true;
                 }
-                else if (!act.IsActive)
+                else if (!lite.IsActive)
                 {
-                    act.IsActive = true;
+                    await CatalogLookup.EnsureActActiveAsync(db, lite, cancellationToken);
+                    lite.IsActive = true;
                     catalogDirty = true;
                 }
 
-                text = act.Text.Trim();
-                actItemId = act.Id;
+                text = lite.Text.Trim();
+                actItemId = lite.Id;
             }
 
             if (text.Length > 2000 || (comment?.Length ?? 0) > 1000)
@@ -838,6 +930,160 @@ public sealed class InspectionsController(
     }
 
     // ---------- Helpers ----------
+
+    private (string Period, DateOnly Start, DateOnly End) ResolveListPeriod(
+        string? period,
+        DateOnly? from,
+        DateOnly? to,
+        int? year,
+        int? month)
+    {
+        var today = time.GetToday();
+        var key = (period ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (key is "today" or "month" or "year")
+        {
+            return key switch
+            {
+                "today" => ("today", today, today),
+                "year" => (
+                    "year",
+                    new DateOnly(year is >= 2000 and <= 2100 ? year.Value : today.Year, 1, 1),
+                    new DateOnly(year is >= 2000 and <= 2100 ? year.Value : today.Year, 12, 31)),
+                _ => ResolveMonthPreset(today, year, month)
+            };
+        }
+
+        if (from is not null || to is not null)
+        {
+            var (start, end) = ResolveFromTo(from, to);
+            return ("custom", start, end);
+        }
+
+        return ResolveMonthPreset(today, year, month);
+    }
+
+    private (DateOnly Start, DateOnly End) ResolveFromTo(DateOnly? from, DateOnly? to)
+    {
+        var today = time.GetToday();
+        var end = to ?? today;
+        var start = from ?? new DateOnly(end.Year, end.Month, 1);
+        if (start > end)
+        {
+            (start, end) = (end, start);
+        }
+
+        return (start, end);
+    }
+
+    private static (string Period, DateOnly Start, DateOnly End) ResolveMonthPreset(
+        DateOnly today,
+        int? year,
+        int? month)
+    {
+        var y = year is >= 2000 and <= 2100 ? year.Value : today.Year;
+        var m = month is >= 1 and <= 12 ? month.Value : today.Month;
+        var start = new DateOnly(y, m, 1);
+        var end = start.AddMonths(1).AddDays(-1);
+        if (y == today.Year && m == today.Month && end > today)
+        {
+            end = today;
+        }
+
+        return ("month", start, end);
+    }
+
+    private static void WriteExportHeader(IXLWorksheet ws, BrigadeInspectionKind kind)
+    {
+        string[] headers = kind switch
+        {
+            BrigadeInspectionKind.Pdk =>
+            [
+                "№", "Дата", "Цех", "Бригада №", "ФИО Мастера", "Нарушения",
+                "Должность", "ФИО Проверяющего", "Дата устранения", "Ответственный за устранения"
+            ],
+            BrigadeInspectionKind.Pbiot =>
+            [
+                "№", "Дата", "Цех", "Бригада №", "ФИО Мастера", "Скважина", "Нарушения",
+                "Должность", "ФИО Проверяющего", "Дата устранения", "Отчёт об устранении",
+                "Ответственный за устранения"
+            ],
+            _ =>
+            [
+                "№", "Дата", "Цех", "Бригада №", "ФИО Мастера", "Предписание / Замечание / Остановка",
+                "Скважина", "Нарушения", "Должность", "ФИО Проверяющего", "Остановочный пункт",
+                "Объяснительная", "Дата устранения"
+            ]
+        };
+
+        for (var c = 0; c < headers.Length; c++)
+        {
+            ws.Cell(1, c + 1).Value = headers[c];
+        }
+
+        ws.Range(1, 1, 1, headers.Length).Style.Font.Bold = true;
+        ws.Range(1, 1, 1, headers.Length).Style.Alignment.WrapText = true;
+    }
+
+    private static void WriteExportRow(
+        IXLWorksheet ws,
+        BrigadeInspectionKind kind,
+        int excelRow,
+        BrigadeInspectionListItemResponse item)
+    {
+        var fixDate = item.FixDateIsManual
+            ? (item.FixDateManualText ?? string.Empty)
+            : (item.FixDate?.ToString("dd.MM.yyyy") ?? string.Empty);
+        var remarks = string.Join("\n", item.RemarkTexts);
+
+        ws.Cell(excelRow, 1).Value = item.SequenceNo;
+        ws.Cell(excelRow, 2).Value = item.ReportDate.ToDateTime(TimeOnly.MinValue);
+        ws.Cell(excelRow, 2).Style.DateFormat.Format = "dd.MM.yyyy";
+        ws.Cell(excelRow, 3).Value = item.Workshop;
+        ws.Cell(excelRow, 4).Value = item.BrigadeNumber;
+        ws.Cell(excelRow, 5).Value = item.MasterName;
+
+        if (kind == BrigadeInspectionKind.Pdk)
+        {
+            ws.Cell(excelRow, 6).Value = item.RemarkCount;
+            ws.Cell(excelRow, 7).Value = item.CheckerPosition ?? string.Empty;
+            ws.Cell(excelRow, 8).Value = item.CheckerName;
+            ws.Cell(excelRow, 9).Value = fixDate;
+            ws.Cell(excelRow, 10).Value = item.FixResponsibleText ?? string.Empty;
+            return;
+        }
+
+        if (kind == BrigadeInspectionKind.Pbiot)
+        {
+            ws.Cell(excelRow, 6).Value = item.Well ?? string.Empty;
+            ws.Cell(excelRow, 7).Value = remarks;
+            ws.Cell(excelRow, 7).Style.Alignment.WrapText = true;
+            ws.Cell(excelRow, 8).Value = item.CheckerPosition ?? string.Empty;
+            ws.Cell(excelRow, 9).Value = item.CheckerName;
+            ws.Cell(excelRow, 10).Value = fixDate;
+            ws.Cell(excelRow, 11).Value = item.FixReportText ?? string.Empty;
+            ws.Cell(excelRow, 12).Value = item.FixResponsibleName ?? string.Empty;
+            return;
+        }
+
+        ws.Cell(excelRow, 6).Value = OutcomeLabel(item.Outcome);
+        ws.Cell(excelRow, 7).Value = item.Well ?? string.Empty;
+        ws.Cell(excelRow, 8).Value = remarks;
+        ws.Cell(excelRow, 8).Style.Alignment.WrapText = true;
+        ws.Cell(excelRow, 9).Value = item.CheckerPosition ?? string.Empty;
+        ws.Cell(excelRow, 10).Value = item.CheckerName;
+        ws.Cell(excelRow, 11).Value = item.StopPoint ? "Да" : "Нет";
+        ws.Cell(excelRow, 12).Value = item.HasExplanation ? "Да" : "Нет";
+        ws.Cell(excelRow, 13).Value = fixDate;
+    }
+
+    private static string OutcomeLabel(BrigadeInspectionOutcome? outcome) => outcome switch
+    {
+        BrigadeInspectionOutcome.Prescription => "Предписание",
+        BrigadeInspectionOutcome.Remark => "Замечание",
+        BrigadeInspectionOutcome.Stoppage => "Остановка",
+        _ => string.Empty
+    };
 
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

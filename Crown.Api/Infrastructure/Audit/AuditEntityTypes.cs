@@ -19,4 +19,5 @@ public static class AuditEntityTypes
     public const string PersonnelPerson = "PersonnelPerson";
     public const string AppSetting = "AppSetting";
     public const string User = "User";
+    public const string AuditLog = "AuditLog";
 }

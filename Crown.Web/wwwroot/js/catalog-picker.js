@@ -1,4 +1,4 @@
-/* Поиск по справочнику (act/work): фильтр + выбор; свободный текст = новый пункт. */
+/* Поиск по справочнику (act/work): локальный список или AJAX; свободный текст = новый пункт. */
 (() => {
     function norm(s) {
         return String(s || '')
@@ -18,11 +18,12 @@
 
     /**
      * @param {HTMLElement} root .catalog-picker
-     * @param {{ items: {id:string,text:string}[], onChange?: Function }} opts
+     * @param {{ items?: {id:string,text:string}[], searchUrl?: string, onChange?: Function }} opts
      */
     function mountCatalogPicker(root, opts) {
         if (!root || root.dataset.pickerReady === '1') return;
         const items = Array.isArray(opts?.items) ? opts.items : [];
+        const searchUrl = opts?.searchUrl || '';
         const idInput = root.querySelector('.catalog-picker-id');
         const manualInput = root.querySelector('.catalog-picker-manual');
         const textInput = root.querySelector('.catalog-picker-input');
@@ -37,6 +38,8 @@
 
         root.dataset.pickerReady = '1';
         root._catalogItems = items;
+        let searchTimer = 0;
+        let searchToken = 0;
 
         function setManual(text) {
             idInput.value = '';
@@ -49,6 +52,11 @@
             idInput.value = item.id;
             manualInput.value = 'false';
             textInput.value = item.text;
+            // Запоминаем выбранный пункт в локальном кэше (чтобы не потерять после AJAX).
+            const list = root._catalogItems || [];
+            if (!list.some(x => x.id === item.id)) {
+                root._catalogItems = [item, ...list].slice(0, 80);
+            }
             opts?.onChange?.({ id: item.id, text: item.text, manual: false });
         }
 
@@ -57,17 +65,11 @@
             menu.innerHTML = '';
         }
 
-        function showFiltered() {
-            const q = norm(textInput.value);
-            const list = root._catalogItems || [];
-            const matched = !q
-                ? list.slice(0, 40)
-                : list.filter(x => norm(x.text).includes(q)).slice(0, 40);
-
+        function renderMatched(matched, q) {
             if (matched.length === 0) {
                 menu.innerHTML = q
                     ? `<div class="catalog-picker-hint">Нет в справочнике — сохранится как новый пункт</div>`
-                    : `<div class="catalog-picker-hint">Справочник пуст — введите новый пункт</div>`;
+                    : `<div class="catalog-picker-hint">Начните ввод для поиска</div>`;
                 menu.classList.remove('d-none');
                 return;
             }
@@ -76,6 +78,46 @@
                 `<button type="button" class="catalog-picker-option" data-id="${escapeHtml(x.id)}" title="${escapeHtml(x.text)}">${escapeHtml(x.text)}</button>`
             ).join('');
             menu.classList.remove('d-none');
+        }
+
+        function showLocal() {
+            const q = norm(textInput.value);
+            const list = root._catalogItems || [];
+            const matched = !q
+                ? list.slice(0, 40)
+                : list.filter(x => norm(x.text).includes(q)).slice(0, 40);
+            renderMatched(matched, q);
+        }
+
+        async function showRemote() {
+            const q = textInput.value.trim();
+            const token = ++searchToken;
+            menu.innerHTML = `<div class="catalog-picker-hint">Поиск…</div>`;
+            menu.classList.remove('d-none');
+            try {
+                const url = searchUrl + (searchUrl.includes('?') ? '&' : '?')
+                    + 'q=' + encodeURIComponent(q)
+                    + '&take=40';
+                const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('search failed');
+                const data = await res.json();
+                if (token !== searchToken) return;
+                const matched = Array.isArray(data) ? data : [];
+                root._catalogItems = matched;
+                renderMatched(matched, norm(q));
+            } catch {
+                if (token !== searchToken) return;
+                menu.innerHTML = `<div class="catalog-picker-hint">Ошибка поиска — можно ввести новый пункт</div>`;
+            }
+        }
+
+        function showFiltered() {
+            if (searchUrl) {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(showRemote, 220);
+            } else {
+                showLocal();
+            }
         }
 
         function syncFromDom() {
@@ -109,7 +151,7 @@
             const btn = e.target.closest('.catalog-picker-option');
             if (!btn) return;
             const id = btn.getAttribute('data-id');
-            const hit = (root._catalogItems || []).find(x => x.id === id);
+            const hit = (root._catalogItems || []).find(x => String(x.id) === String(id));
             if (hit) {
                 setSelected(hit);
                 hide();
