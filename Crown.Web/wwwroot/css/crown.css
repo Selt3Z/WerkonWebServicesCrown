@@ -254,7 +254,9 @@ a.history-user-link:hover {
 }
 .crown-requests-table .col-op { width: 2.8rem; text-align: center; }
 .crown-requests-table .col-init { width: 9rem; }
-.crown-requests-table .col-date { width: 8.2rem; }
+.crown-requests-table .col-date,
+.crown-requests-table th.col-date,
+.crown-requests-table td.col-date { width: 8.2rem; }
 .crown-requests-table .col-dept { width: 7.5rem; }
 .crown-requests-table .col-phone { width: 8.2rem; }
 .crown-requests-table .col-body { width: auto; }
@@ -267,7 +269,9 @@ a.history-user-link:hover {
     white-space: nowrap;
 }
 /* Срок целиком — не режем дату/время. */
-.crown-requests-table .col-date {
+.crown-requests-table .col-date,
+.crown-requests-table th.col-date,
+.crown-requests-table td.col-date {
     white-space: nowrap;
     overflow: visible;
     text-overflow: clip;
@@ -452,9 +456,9 @@ a.history-user-link:hover {
     flex: 0 0 auto;
 }
 
-/* Документация: дата/размер узкие; действия — одна горизонтальная полоса. */
-.crown-table th.col-date,
-.crown-table td.col-date {
+/* Документация: дата/размер узкие. Не трогаем .crown-requests-table — иначе даты заявок схлопываются. */
+.crown-table:not(.crown-requests-table) th.col-date,
+.crown-table:not(.crown-requests-table) td.col-date {
     width: 1%;
     white-space: nowrap;
 }
