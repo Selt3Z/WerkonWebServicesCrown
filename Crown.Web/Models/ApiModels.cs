@@ -435,6 +435,17 @@ public sealed class ClearAuditLogResult
     public int Deleted { get; set; }
 }
 
+public sealed class ClearBrigadeCatalogRequest
+{
+    public string? Confirmation { get; set; }
+    public string? Password { get; set; }
+}
+
+public sealed class ClearBrigadeCatalogResult
+{
+    public int Deleted { get; set; }
+}
+
 public sealed class UserListItem
 {
     public Guid Id { get; set; }

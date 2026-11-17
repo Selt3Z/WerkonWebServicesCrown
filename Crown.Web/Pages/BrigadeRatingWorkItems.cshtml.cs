@@ -10,11 +10,14 @@ namespace Crown.Web.Pages;
 public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 {
     public const int PageSize = 50;
+    public const string ClearConfirmationWord = "ОЧИСТИТЬ";
 
     private bool CanOperate =>
         User.IsInRole(AppRoles.Administrator)
         || User.IsInRole(AppRoles.Dispatcher)
         || User.FindFirst(CrownAuthHandler.CanOperateBrigadeRatingClaim)?.Value == "1";
+
+    public bool CanClear => User.IsInRole(AppRoles.Administrator);
 
     public List<StoppageWorkItem> Items { get; private set; } = [];
     public int Total { get; private set; }
@@ -43,6 +46,12 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
 
     [BindProperty]
     public IFormFile? ImportFile { get; set; }
+
+    [BindProperty]
+    public string? ClearConfirmation { get; set; }
+
+    [BindProperty]
+    public string? ClearPassword { get; set; }
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -190,6 +199,67 @@ public sealed class BrigadeRatingWorkItemsModel(CrownApiClient api) : PageModel
         var r = result.Data;
         TempData["Ok"] =
             $"Импорт: добавлено {r.Imported}, пропущено дублей {r.SkippedDuplicates} (распознано строк {r.Parsed}).";
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnGetExportAsync()
+    {
+        if (!CanOperate)
+        {
+            return Forbid();
+        }
+
+        var response = await api.OpenDownloadAsync(
+            "api/brigade-rating/work-items/export.xlsx",
+            HttpContext.RequestAborted);
+        if (response is null)
+        {
+            return StatusCode(502);
+        }
+
+        Response.RegisterForDispose(response);
+        if (!response.IsSuccessStatusCode)
+        {
+            return StatusCode((int)response.StatusCode);
+        }
+
+        var stream = await response.Content.ReadAsStreamAsync(HttpContext.RequestAborted);
+        var contentType = response.Content.Headers.ContentType?.ToString()
+            ?? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+            ?? response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+            ?? "work-items.xlsx";
+        return File(stream, contentType, fileName);
+    }
+
+    public async Task<IActionResult> OnPostClearAsync()
+    {
+        if (!CanClear)
+        {
+            return Forbid();
+        }
+
+        var result = await api.PostAsync<ClearBrigadeCatalogResult>(
+            "api/brigade-rating/work-items/clear",
+            new ClearBrigadeCatalogRequest
+            {
+                Confirmation = ClearConfirmation,
+                Password = ClearPassword
+            },
+            HttpContext.RequestAborted);
+
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            TempData["Warn"] = result.Error ?? "Не удалось очистить справочник.";
+            return RedirectToPage();
+        }
+
+        TempData["Ok"] = $"Справочник очищен. Удалено: {result.Data.Deleted}.";
         return RedirectToPage();
     }
 

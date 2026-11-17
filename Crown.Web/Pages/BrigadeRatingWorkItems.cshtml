@@ -8,6 +8,7 @@
 <div class="crown-page-head">
     <h1 class="section-title">Выполняемые работы</h1>
     <div class="crown-page-head-actions">
+        <a class="btn btn-outline-secondary" asp-page-handler="Export">Экспорт</a>
         <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="crown-op-form d-inline">
             <input type="file" id="work-import-file" name="ImportFile" class="d-none"
                    accept=".xlsx,.xls,.csv,.txt,.doc,.docx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv"
@@ -21,6 +22,24 @@
 @if (!string.IsNullOrEmpty(Model.Error))
 {
     <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (Model.CanClear)
+{
+    <form method="post" asp-page-handler="Clear" class="list-filters mb-3">
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="work-clear-confirm">Подтверждение</label>
+            <input id="work-clear-confirm" class="form-control" name="ClearConfirmation"
+                   placeholder="Введите @BrigadeRatingWorkItemsModel.ClearConfirmationWord" autocomplete="off" required />
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="work-clear-password">Пароль админа</label>
+            <input id="work-clear-password" class="form-control" type="password" name="ClearPassword"
+                   autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn btn-outline-danger btn-sm"
+                data-confirm="Удалить все работы справочника безвозвратно? Связи в остановках обнулятся.">Очистить справочник</button>
+    </form>
 }
 
 <form method="post" asp-page-handler="Add" class="list-filters mb-3">

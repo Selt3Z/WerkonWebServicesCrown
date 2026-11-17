@@ -50,6 +50,8 @@ public static class ApiErrorCodes
     public const string TrashClearConfirmRequired = "trash_clear_confirm_required";
     public const string AuditLogClearConfirmRequired = "audit_log_clear_confirm_required";
     public const string AuditLogClearForbidden = "audit_log_clear_forbidden";
+    public const string CatalogClearConfirmRequired = "catalog_clear_confirm_required";
+    public const string CatalogClearForbidden = "catalog_clear_forbidden";
     public const string InvalidFolderMove = "invalid_folder_move";
 
     public const string UnsupportedCurrency = "unsupported_currency";

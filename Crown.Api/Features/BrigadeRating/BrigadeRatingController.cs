@@ -1,7 +1,11 @@
+using System.Globalization;
 using System.Security.Claims;
 using ClosedXML.Excel;
 using Crown.Contracts.BrigadeRating;
+using Crown.Contracts.Common;
 using Crown.Domain.Entities;
+using Crown.Infrastructure.Api;
+using Crown.Infrastructure.Audit;
 using Crown.Infrastructure.Identity;
 using Crown.Infrastructure.Import;
 using Crown.Infrastructure.Persistence;
@@ -22,6 +26,11 @@ public sealed class BrigadeRatingController(
     UserManager<ApplicationUser> users,
     AppTimeZone time) : ControllerBase
 {
+    public const string CatalogClearConfirmationWord = "ОЧИСТИТЬ";
+
+    private static readonly StringComparer CatalogAlphaComparer =
+        StringComparer.Create(CultureInfo.GetCultureInfo("ru-RU"), CompareOptions.IgnoreCase);
+
     // ---------- Участники (роль Brigade) ----------
 
     [HttpGet("brigades")]
@@ -281,32 +290,37 @@ public sealed class BrigadeRatingController(
 
         var maxOrder = await db.StoppageActItems.MaxAsync(x => (int?)x.SortOrder, cancellationToken) ?? 0;
         var now = DateTimeOffset.UtcNow;
-        var imported = 0;
         var skipped = 0;
-        var batch = new List<StoppageActItem>(Math.Min(lines.Count, 4096));
+        var uniqueNew = new List<string>(Math.Min(lines.Count, 4096));
+        foreach (var text in lines)
+        {
+            var key = CatalogLinesImportHelper.NormKey(text);
+            if (!known.Add(key))
+            {
+                skipped++;
+                continue;
+            }
+
+            uniqueNew.Add(text);
+        }
+
+        // Начальный SortOrder — по алфавиту (ru-RU), затем хвост после уже существующих.
+        uniqueNew.Sort(CatalogAlphaComparer);
+        var batch = new List<StoppageActItem>(uniqueNew.Count);
         var detect = db.ChangeTracker.AutoDetectChangesEnabled;
         db.ChangeTracker.AutoDetectChangesEnabled = false;
         try
         {
-            foreach (var text in lines)
+            for (var i = 0; i < uniqueNew.Count; i++)
             {
-                var key = CatalogLinesImportHelper.NormKey(text);
-                if (!known.Add(key))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                maxOrder++;
                 batch.Add(new StoppageActItem
                 {
                     Id = Guid.NewGuid(),
-                    Text = text,
+                    Text = uniqueNew[i],
                     IsActive = true,
-                    SortOrder = maxOrder,
+                    SortOrder = maxOrder + i + 1,
                     CreatedAt = now
                 });
-                imported++;
             }
 
             if (batch.Count > 0)
@@ -323,10 +337,46 @@ public sealed class BrigadeRatingController(
         return Ok(new CatalogLinesImportResponse
         {
             Parsed = lines.Count,
-            Imported = imported,
+            Imported = batch.Count,
             SkippedDuplicates = skipped
         });
     }
+
+    [HttpGet("act-items/export.xlsx")]
+    public async Task<IActionResult> ExportActItems(CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var items = await db.StoppageActItems.AsNoTracking()
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Text)
+            .ToListAsync(cancellationToken);
+
+        using var workbook = new XLWorkbook();
+        WriteCatalogSheet(workbook, "Пункты акта", items.Select(x => (x.SortOrder, x.Text, x.IsActive)));
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return File(
+            stream.ToArray(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "act-items.xlsx");
+    }
+
+    [HttpPost("act-items/clear")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public Task<ActionResult<ClearBrigadeCatalogResponse>> ClearActItems(
+        [FromBody] ClearBrigadeCatalogRequest? request,
+        CancellationToken cancellationToken) =>
+        ClearCatalogAsync(
+            request,
+            db.StoppageActItems,
+            AuditEntityTypes.StoppageActItem,
+            "Справочник пунктов акта очищен",
+            "/brigade-rating/act-items",
+            cancellationToken);
 
     // ---------- Справочник выполняемых работ ----------
 
@@ -537,32 +587,36 @@ public sealed class BrigadeRatingController(
 
         var maxOrder = await db.StoppageWorkItems.MaxAsync(x => (int?)x.SortOrder, cancellationToken) ?? 0;
         var now = DateTimeOffset.UtcNow;
-        var imported = 0;
         var skipped = 0;
-        var batch = new List<StoppageWorkItem>(Math.Min(lines.Count, 4096));
+        var uniqueNew = new List<string>(Math.Min(lines.Count, 4096));
+        foreach (var text in lines)
+        {
+            var key = CatalogLinesImportHelper.NormKey(text);
+            if (!known.Add(key))
+            {
+                skipped++;
+                continue;
+            }
+
+            uniqueNew.Add(text);
+        }
+
+        uniqueNew.Sort(CatalogAlphaComparer);
+        var batch = new List<StoppageWorkItem>(uniqueNew.Count);
         var detect = db.ChangeTracker.AutoDetectChangesEnabled;
         db.ChangeTracker.AutoDetectChangesEnabled = false;
         try
         {
-            foreach (var text in lines)
+            for (var i = 0; i < uniqueNew.Count; i++)
             {
-                var key = CatalogLinesImportHelper.NormKey(text);
-                if (!known.Add(key))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                maxOrder++;
                 batch.Add(new StoppageWorkItem
                 {
                     Id = Guid.NewGuid(),
-                    Text = text,
+                    Text = uniqueNew[i],
                     IsActive = true,
-                    SortOrder = maxOrder,
+                    SortOrder = maxOrder + i + 1,
                     CreatedAt = now
                 });
-                imported++;
             }
 
             if (batch.Count > 0)
@@ -579,10 +633,46 @@ public sealed class BrigadeRatingController(
         return Ok(new CatalogLinesImportResponse
         {
             Parsed = lines.Count,
-            Imported = imported,
+            Imported = batch.Count,
             SkippedDuplicates = skipped
         });
     }
+
+    [HttpGet("work-items/export.xlsx")]
+    public async Task<IActionResult> ExportWorkItems(CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var items = await db.StoppageWorkItems.AsNoTracking()
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Text)
+            .ToListAsync(cancellationToken);
+
+        using var workbook = new XLWorkbook();
+        WriteCatalogSheet(workbook, "Выполняемые работы", items.Select(x => (x.SortOrder, x.Text, x.IsActive)));
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return File(
+            stream.ToArray(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "work-items.xlsx");
+    }
+
+    [HttpPost("work-items/clear")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public Task<ActionResult<ClearBrigadeCatalogResponse>> ClearWorkItems(
+        [FromBody] ClearBrigadeCatalogRequest? request,
+        CancellationToken cancellationToken) =>
+        ClearCatalogAsync(
+            request,
+            db.StoppageWorkItems,
+            AuditEntityTypes.StoppageWorkItem,
+            "Справочник выполняемых работ очищен",
+            "/brigade-rating/work-items",
+            cancellationToken);
 
     // ---------- Stoppages ----------
 
@@ -1593,6 +1683,86 @@ public sealed class BrigadeRatingController(
         }
 
         return daily;
+    }
+
+    private static void WriteCatalogSheet(
+        XLWorkbook workbook,
+        string sheetName,
+        IEnumerable<(int SortOrder, string Text, bool IsActive)> rows)
+    {
+        var ws = workbook.Worksheets.Add(sheetName);
+        ws.Cell(1, 1).Value = "№";
+        ws.Cell(1, 2).Value = "Текст";
+        ws.Cell(1, 3).Value = "Активен";
+        ws.Range(1, 1, 1, 3).Style.Font.Bold = true;
+
+        var excelRow = 2;
+        foreach (var row in rows)
+        {
+            ws.Cell(excelRow, 1).Value = row.SortOrder;
+            ws.Cell(excelRow, 2).Value = row.Text;
+            ws.Cell(excelRow, 3).Value = row.IsActive ? "Да" : "Нет";
+            excelRow++;
+        }
+
+        ws.Columns().AdjustToContents(1, 60);
+    }
+
+    /// <summary>Wipe через ExecuteDelete + одна запись в журнал (без N тысяч Deleted).</summary>
+    private async Task<ActionResult<ClearBrigadeCatalogResponse>> ClearCatalogAsync<TEntity>(
+        ClearBrigadeCatalogRequest? request,
+        DbSet<TEntity> set,
+        string entityType,
+        string summaryPrefix,
+        string entityUrl,
+        CancellationToken cancellationToken)
+        where TEntity : class
+    {
+        if (!string.Equals(request?.Confirmation?.Trim(), CatalogClearConfirmationWord, StringComparison.Ordinal))
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.CatalogClearConfirmRequired));
+        }
+
+        if (string.IsNullOrWhiteSpace(request!.Password))
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.PasswordRequired));
+        }
+
+        var userIdRaw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdRaw, out var userId))
+        {
+            return Forbid();
+        }
+
+        var user = await users.FindByIdAsync(userId.ToString());
+        if (user is null || !user.IsActive)
+        {
+            return Forbid();
+        }
+
+        if (!await users.CheckPasswordAsync(user, request.Password))
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.CurrentPasswordInvalid));
+        }
+
+        var deleted = await set.ExecuteDeleteAsync(cancellationToken);
+
+        var displayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName! : user.DisplayName;
+        db.AuditLogEntries.Add(new AuditLogEntry
+        {
+            Id = Guid.NewGuid(),
+            OccurredAtUtc = DateTime.UtcNow,
+            UserId = user.Id,
+            UserDisplayName = displayName,
+            Action = AuditActions.Cleared,
+            EntityType = entityType,
+            EntityId = Guid.Empty,
+            Summary = $"{summaryPrefix} (удалено: {deleted})",
+            EntityUrl = entityUrl
+        });
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new ClearBrigadeCatalogResponse { Deleted = deleted });
     }
 
     private async Task<bool> CanViewAsync(CancellationToken cancellationToken)

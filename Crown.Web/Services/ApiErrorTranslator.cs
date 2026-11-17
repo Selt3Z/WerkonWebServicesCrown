@@ -61,6 +61,8 @@ public static class ApiErrorTranslator
         ["trash_clear_confirm_required"] = "Для очистки корзины введите подтверждение TRASH.",
         ["audit_log_clear_confirm_required"] = "Для очистки журнала введите подтверждение ОЧИСТИТЬ.",
         ["audit_log_clear_forbidden"] = "Очищать журнал может только администратор.",
+        ["catalog_clear_confirm_required"] = "Для очистки справочника введите подтверждение ОЧИСТИТЬ.",
+        ["catalog_clear_forbidden"] = "Очищать справочник может только администратор.",
         ["backup_already_running"] = "Резервное копирование уже выполняется.",
         ["backup_failed"] = "Не удалось создать резервную копию.",
         ["brigade_invalid"] = "Выберите бригаду (активный пользователь с ролью «Бригада»).",

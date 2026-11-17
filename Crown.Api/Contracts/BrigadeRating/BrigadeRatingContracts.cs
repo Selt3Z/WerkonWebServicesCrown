@@ -52,6 +52,21 @@ public sealed class CatalogLinesImportResponse
     public int SkippedDuplicates { get; set; }
 }
 
+/// <summary>Админ: полная очистка справочника пунктов акта / работ.</summary>
+public sealed class ClearBrigadeCatalogRequest
+{
+    /// <summary>Должно быть ровно «ОЧИСТИТЬ».</summary>
+    public string? Confirmation { get; set; }
+
+    /// <summary>Текущий пароль администратора.</summary>
+    public string? Password { get; set; }
+}
+
+public sealed class ClearBrigadeCatalogResponse
+{
+    public int Deleted { get; set; }
+}
+
 /// <summary>Страница справочника пунктов акта (поиск + пейджинг).</summary>
 public sealed class StoppageActItemsListResponse
 {
