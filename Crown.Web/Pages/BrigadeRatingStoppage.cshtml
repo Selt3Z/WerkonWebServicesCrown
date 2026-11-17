@@ -8,8 +8,9 @@
         Model.ActItems.Select(a => new { id = a.Id, text = a.Text }));
     var workItemsJson = System.Text.Json.JsonSerializer.Serialize(
         Model.WorkItems.Select(w => new { id = w.Id, text = w.Text }));
-    var actSearchUrl = Url.Page(null, "CatalogSearch", new { kind = "act" }) ?? "?handler=CatalogSearch&kind=act";
-    var workSearchUrl = Url.Page(null, "CatalogSearch", new { kind = "work" }) ?? "?handler=CatalogSearch&kind=work";
+    // Явный путь без ambient id — иначе handler-URL ломается на /stoppage/{guid}.
+    var actSearchUrl = "/brigade-rating/stoppage?handler=CatalogSearch&kind=act";
+    var workSearchUrl = "/brigade-rating/stoppage?handler=CatalogSearch&kind=work";
 
     // Серверное начальное состояние видимости секций (JS потом держит его в актуальном виде).
     var curMode = Model.IsInspection ? "inspection" : "stoppage";
@@ -490,7 +491,6 @@
             });
         });
         $('master-req').classList.toggle('d-none', !(mode === 'inspection' && kind === 'Supervising'));
-        const kind = currentKind();
         const inspList = kind === 'Pdk' ? '/brigade-rating/inspections/pdk'
             : kind === 'Pbiot' ? '/brigade-rating/inspections/pbiot'
             : '/brigade-rating/inspections/supervising';

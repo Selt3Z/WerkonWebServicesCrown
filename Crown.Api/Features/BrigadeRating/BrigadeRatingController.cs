@@ -103,10 +103,11 @@ public sealed class BrigadeRatingController(
             return Ok(new StoppageActItemsListResponse { Items = byIds, Total = byIds.Count });
         }
 
-        var term = (q ?? string.Empty).Trim();
+        var term = (q ?? string.Empty).Trim().ToLower();
         if (term.Length > 0)
         {
-            query = query.Where(x => EF.Functions.ILike(x.Text, $"%{EscapeLike(term)}%"));
+            // ToLower+Contains — стабильный ILIKE через Npgsql (без ESCAPE-сюрпризов).
+            query = query.Where(x => x.Text.ToLower().Contains(term));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -134,11 +135,6 @@ public sealed class BrigadeRatingController(
 
         return Ok(new StoppageActItemsListResponse { Items = items, Total = total });
     }
-
-    private static string EscapeLike(string value) =>
-        value.Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal);
 
     [HttpPost("act-items")]
     public async Task<ActionResult<StoppageActItemResponse>> CreateActItem(
@@ -375,10 +371,10 @@ public sealed class BrigadeRatingController(
             return Ok(new StoppageWorkItemsListResponse { Items = byIds, Total = byIds.Count });
         }
 
-        var term = (q ?? string.Empty).Trim();
+        var term = (q ?? string.Empty).Trim().ToLower();
         if (term.Length > 0)
         {
-            query = query.Where(x => EF.Functions.ILike(x.Text, $"%{EscapeLike(term)}%"));
+            query = query.Where(x => x.Text.ToLower().Contains(term));
         }
 
         var total = await query.CountAsync(cancellationToken);

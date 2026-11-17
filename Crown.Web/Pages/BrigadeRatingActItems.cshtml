@@ -145,3 +145,18 @@
         }
     </nav>
 }
+
+@section Scripts {
+<script>
+(() => {
+    const form = document.querySelector('form.list-filters[method="get"]');
+    const input = document.getElementById('act-items-search');
+    if (!form || !input) return;
+    let t = 0;
+    input.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => form.requestSubmit(), 350);
+    });
+})();
+</script>
+}

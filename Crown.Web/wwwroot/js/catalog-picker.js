@@ -102,7 +102,10 @@
                 if (!res.ok) throw new Error('search failed');
                 const data = await res.json();
                 if (token !== searchToken) return;
-                const matched = Array.isArray(data) ? data : [];
+                // Массив или { items: [...] } — на всякий случай.
+                const matched = Array.isArray(data)
+                    ? data
+                    : (Array.isArray(data?.items) ? data.items : []);
                 root._catalogItems = matched;
                 renderMatched(matched, norm(q));
             } catch {

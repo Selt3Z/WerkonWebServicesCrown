@@ -629,6 +629,11 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
                 return Challenge();
             }
 
+            if (!result.Ok)
+            {
+                return StatusCode(result.Status > 0 ? result.Status : 502);
+            }
+
             var items = (result.Data?.Items ?? []).Select(x => new { id = x.Id, text = x.Text });
             return new JsonResult(items);
         }
@@ -638,6 +643,11 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             if (result.IsUnauthorized)
             {
                 return Challenge();
+            }
+
+            if (!result.Ok)
+            {
+                return StatusCode(result.Status > 0 ? result.Status : 502);
             }
 
             var items = (result.Data?.Items ?? []).Select(x => new { id = x.Id, text = x.Text });
