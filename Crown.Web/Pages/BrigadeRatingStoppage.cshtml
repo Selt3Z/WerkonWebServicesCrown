@@ -79,7 +79,7 @@
 <div class="crown-page-head">
     <h1 class="section-title" id="page-title">@Model.PageTitle</h1>
     <div class="crown-page-head-actions d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="@Model.CancelUrl">Проверки</a>
+        <a class="btn btn-outline-secondary" href="@Model.CancelUrl">@(Model.IsInspection ? "Проверки" : "Остановки")</a>
         <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
     </div>
 </div>

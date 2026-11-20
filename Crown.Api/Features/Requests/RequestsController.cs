@@ -231,9 +231,13 @@ public sealed class RequestsController : ControllerBase
         // Исходящие: я инициатор (Returned показываем — надо править/переподать).
         var outgoingQuery = baseQuery.Where(x => x.InitiatorUserId == userId);
 
+        // Потолок очереди «Сегодня» — LINQ Take, без безразмерного DOM.
+        const int todayCap = 200;
         var incoming = await ProjectListItems(incomingQuery.OrderBy(x => x.DueAt).ThenBy(x => x.Id))
+            .Take(todayCap)
             .ToListAsync(cancellationToken);
         var outgoing = await ProjectListItems(outgoingQuery.OrderBy(x => x.DueAt).ThenBy(x => x.Id))
+            .Take(todayCap)
             .ToListAsync(cancellationToken);
 
         return Ok(new TodayRequestsResponse

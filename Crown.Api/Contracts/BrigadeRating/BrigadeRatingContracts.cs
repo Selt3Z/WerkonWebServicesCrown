@@ -119,6 +119,17 @@ public sealed class BrigadeStoppageDetailResponse : BrigadeStoppageListItemRespo
     public List<StoppageRemarkResponse> Remarks { get; set; } = [];
 }
 
+/// <summary>Страница списка остановок с периодом и пагинацией.</summary>
+public sealed class BrigadeStoppagesPageResponse
+{
+    public List<BrigadeStoppageListItemResponse> Items { get; set; } = [];
+    public bool HasMore { get; set; }
+    public string Period { get; set; } = "month";
+    public DateOnly PeriodStart { get; set; }
+    public DateOnly PeriodEnd { get; set; }
+    public int EarliestYear { get; set; }
+}
+
 public sealed class SaveStoppageRemarkRequest
 {
     public Guid? Id { get; set; }

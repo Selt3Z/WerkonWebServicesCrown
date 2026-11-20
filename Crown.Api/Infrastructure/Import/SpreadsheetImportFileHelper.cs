@@ -347,6 +347,76 @@ public static class SpreadsheetImportFileHelper
         return false;
     }
 
+    /// <summary>Дата из ячейки: DateTime / OADate / текст.</summary>
+    public static bool TryReadDateOnlyCell(IXLCell cell, out DateOnly? date)
+    {
+        date = null;
+        if (cell.IsEmpty())
+        {
+            return true;
+        }
+
+        var value = cell.Value;
+        if (value.IsDateTime)
+        {
+            date = DateOnly.FromDateTime(value.GetDateTime());
+            return true;
+        }
+
+        if (value.IsNumber)
+        {
+            try
+            {
+                date = DateOnly.FromDateTime(DateTime.FromOADate(value.GetNumber()));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return TryParseDateOnly(ReadCell(cell.Worksheet, cell.Address.RowNumber, cell.Address.ColumnNumber), out date);
+    }
+
+    /// <summary>Время из ячейки: DateTime / дробь суток / текст HH:mm.</summary>
+    public static bool TryReadTimeOnlyCell(IXLCell cell, out TimeOnly? time)
+    {
+        time = null;
+        if (cell.IsEmpty())
+        {
+            return true;
+        }
+
+        var value = cell.Value;
+        if (value.IsDateTime)
+        {
+            var dt = value.GetDateTime();
+            time = new TimeOnly(dt.Hour, dt.Minute);
+            return true;
+        }
+
+        if (value.IsNumber)
+        {
+            var number = value.GetNumber();
+            // Excel time = доля суток (0..1); полные OADate тоже ок.
+            try
+            {
+                var dt = number is >= 0 and < 1
+                    ? DateTime.FromOADate(number)
+                    : DateTime.FromOADate(number);
+                time = new TimeOnly(dt.Hour, dt.Minute);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return TryParseTimeOnly(ReadCell(cell.Worksheet, cell.Address.RowNumber, cell.Address.ColumnNumber), out time);
+    }
+
     private static bool IsLegacyXls(byte[] data) =>
         data.Length >= 8
         && data[0] == 0xD0 && data[1] == 0xCF && data[2] == 0x11 && data[3] == 0xE0

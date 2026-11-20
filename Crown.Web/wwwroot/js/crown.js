@@ -145,6 +145,10 @@ document.addEventListener('keydown', function (e) {
                     if (skip <= prevSkip) {
                         more = false;
                     }
+                    // Мягкий потолок DOM — дальше только со сбросом фильтра.
+                    if (skip >= 2000) {
+                        more = false;
+                    }
                     publishHasMore(more);
                 } else {
                     publishHasMore(false);

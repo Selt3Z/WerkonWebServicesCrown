@@ -206,6 +206,26 @@ public sealed class DocumentationInboxSyncService
 
         // Кэш папок: относительный путь "a/b" → FolderId
         var folderCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        // Один SaveChanges на пачку — не N round-trips на файл.
+        const int commitEvery = 40;
+        var pendingMoves = new List<(string InboxRoot, string AbsolutePath, string RelativeKey)>();
+        var dirty = 0;
+
+        async Task FlushAsync()
+        {
+            if (dirty > 0)
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                dirty = 0;
+            }
+
+            foreach (var move in pendingMoves)
+            {
+                MoveToBucket(move.InboxRoot, move.AbsolutePath, move.RelativeKey, ".processed", stamp);
+            }
+
+            pendingMoves.Clear();
+        }
 
         foreach (var (inboxRoot, absolutePath, relativeKey) in files)
         {
@@ -301,11 +321,23 @@ public sealed class DocumentationInboxSyncService
                     }
                 }
 
-                await _db.SaveChangesAsync(cancellationToken);
-                MoveToBucket(inboxRoot, absolutePath, relativeKey, ".processed", stamp);
+                dirty++;
+                pendingMoves.Add((inboxRoot, absolutePath, relativeKey));
+                if (dirty >= commitEvery)
+                {
+                    await FlushAsync();
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // Откатываем незакоммиченный трекер, чтобы один битый файл не сорвал пачку.
+                foreach (var entry in _db.ChangeTracker.Entries().ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+
+                dirty = 0;
+                pendingMoves.Clear();
                 result.Failed++;
                 result.Messages.Add($"{relativeKey}: {ex.Message}");
                 _logger.LogWarning(ex, "Inbox import failed for {Owner} / {Key}", owner.Id, relativeKey);
@@ -320,6 +352,7 @@ public sealed class DocumentationInboxSyncService
             }
         }
 
+        await FlushAsync();
         return result;
     }
 
@@ -373,6 +406,7 @@ public sealed class DocumentationInboxSyncService
                     CreatedAt = DateTimeOffset.UtcNow
                 };
                 _db.DocumentationFolders.Add(folder);
+                // Папку нужно зафиксировать до уникального FK/поиска детей в той же пачке.
                 await _db.SaveChangesAsync(cancellationToken);
                 result.FoldersCreated++;
             }

@@ -111,6 +111,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
         modelBuilder.Entity<AuditLogEntry>(entity =>
         {
             entity.HasIndex(x => x.OccurredAtUtc);
+            // IX_AuditLogEntries_UserId — в миграции 20261119160000_PerfSearchIndexes (без правки snapshot).
             entity.Property(x => x.UserDisplayName).HasMaxLength(200);
             entity.Property(x => x.Action).HasMaxLength(32);
             entity.Property(x => x.EntityType).HasMaxLength(64);

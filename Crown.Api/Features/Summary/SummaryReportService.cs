@@ -241,72 +241,80 @@ public sealed class SummaryReportService
         // Год — по месяцам, иначе колонок слишком много.
         if (period == "year")
         {
+            var submittedByMonth = new Dictionary<int, int>();
+            var completedByMonth = new Dictionary<int, int>();
+            foreach (var row in rows)
+            {
+                var submittedLocal = DateOnly.FromDateTime(_time.FromUtc(row.SubmittedAt.UtcDateTime));
+                if (submittedLocal.Year == startLocal.Year)
+                {
+                    submittedByMonth[submittedLocal.Month] =
+                        submittedByMonth.GetValueOrDefault(submittedLocal.Month) + 1;
+                }
+
+                if (row.Status == ServiceRequestStatus.Completed
+                    && row.CompletedAt is { } completedAt
+                    && (row.InitiatorUserId == userId || row.ExecutorUserId == userId))
+                {
+                    var completedLocal = DateOnly.FromDateTime(_time.FromUtc(completedAt.UtcDateTime));
+                    if (completedLocal.Year == startLocal.Year)
+                    {
+                        completedByMonth[completedLocal.Month] =
+                            completedByMonth.GetValueOrDefault(completedLocal.Month) + 1;
+                    }
+                }
+            }
+
             for (var month = 1; month <= 12; month++)
             {
                 var monthStart = new DateOnly(startLocal.Year, month, 1);
-                if (monthStart > endLocal)
-                {
-                    break;
-                }
-
-                var monthEnd = monthStart.AddMonths(1).AddDays(-1);
-                if (monthEnd > endLocal)
-                {
-                    monthEnd = endLocal;
-                }
-
-                if (monthEnd < startLocal)
+                if (monthStart > endLocal || monthStart.AddMonths(1).AddDays(-1) < startLocal)
                 {
                     continue;
                 }
-
-                var rangeStart = monthStart < startLocal ? startLocal : monthStart;
-                var (fromUtc, _) = _time.GetDayRangeUtc(rangeStart);
-                var (_, toUtc) = _time.GetDayRangeUtc(monthEnd);
-                var from = ToOffset(fromUtc);
-                var to = ToOffset(toUtc);
 
                 points.Add(new SummaryDailyTrendItemResponse
                 {
                     Date = monthStart,
                     Label = monthStart.ToString("MM"),
-                    SubmittedCount = rows.Count(x => x.SubmittedAt >= from && x.SubmittedAt < to),
-                    CompletedCount = CountCompletedInRange(rows, userId, from, to)
+                    SubmittedCount = submittedByMonth.GetValueOrDefault(month),
+                    CompletedCount = completedByMonth.GetValueOrDefault(month)
                 });
             }
 
             return points;
         }
 
+        // Один проход по rows → словарь по локальному дню (не days×n).
+        var submittedByDay = new Dictionary<DateOnly, int>();
+        var completedByDay = new Dictionary<DateOnly, int>();
+        foreach (var row in rows)
+        {
+            var submittedLocal = DateOnly.FromDateTime(_time.FromUtc(row.SubmittedAt.UtcDateTime));
+            submittedByDay[submittedLocal] = submittedByDay.GetValueOrDefault(submittedLocal) + 1;
+
+            if (row.Status == ServiceRequestStatus.Completed
+                && row.CompletedAt is { } completedAt
+                && (row.InitiatorUserId == userId || row.ExecutorUserId == userId))
+            {
+                var completedLocal = DateOnly.FromDateTime(_time.FromUtc(completedAt.UtcDateTime));
+                completedByDay[completedLocal] = completedByDay.GetValueOrDefault(completedLocal) + 1;
+            }
+        }
+
         for (var day = startLocal; day <= endLocal; day = day.AddDays(1))
         {
-            var (dayStartUtc, dayEndUtc) = _time.GetDayRangeUtc(day);
-            var dayStart = ToOffset(dayStartUtc);
-            var dayEnd = ToOffset(dayEndUtc);
-
             points.Add(new SummaryDailyTrendItemResponse
             {
                 Date = day,
                 Label = period == "month" ? day.Day.ToString() : day.ToString("dd.MM"),
-                SubmittedCount = rows.Count(x => x.SubmittedAt >= dayStart && x.SubmittedAt < dayEnd),
-                CompletedCount = CountCompletedInRange(rows, userId, dayStart, dayEnd)
+                SubmittedCount = submittedByDay.GetValueOrDefault(day),
+                CompletedCount = completedByDay.GetValueOrDefault(day)
             });
         }
 
         return points;
     }
-
-    private static int CountCompletedInRange(
-        List<RequestSnap> rows,
-        Guid userId,
-        DateTimeOffset from,
-        DateTimeOffset to) =>
-        rows.Count(x =>
-            x.Status == ServiceRequestStatus.Completed
-            && x.CompletedAt is { } completedAt
-            && completedAt >= from
-            && completedAt < to
-            && (x.InitiatorUserId == userId || x.ExecutorUserId == userId));
 
     private static SummaryStatusBreakdownResponse Breakdown(IReadOnlyList<RequestSnap> rows) =>
         new()

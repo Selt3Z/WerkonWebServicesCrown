@@ -103,7 +103,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
 
     public string CancelUrl => IsInspection
         ? BrigadeRatingInspectionsModel.ListPath(Input.Kind)
-        : "/brigade-rating";
+        : "/brigade-rating/stoppages";
 
     /// <summary>Цех выбранной бригады (readonly-поле «Цех»).</summary>
     public string CurrentWorkshop =>
@@ -259,7 +259,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
 
         if (Id is not Guid id)
         {
-            return RedirectToPage("/BrigadeRating");
+            return Redirect("/brigade-rating/stoppages");
         }
 
         var result = await api.DeleteAsync($"api/brigade-rating/stoppages/{id}", HttpContext.RequestAborted);
@@ -275,7 +275,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         }
 
         TempData["Ok"] = "Остановка удалена.";
-        return RedirectToPage("/BrigadeRating");
+        return Redirect("/brigade-rating/stoppages");
     }
 
     // ---------- Сохранение остановки ----------

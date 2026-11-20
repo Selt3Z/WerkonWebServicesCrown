@@ -147,60 +147,6 @@ public sealed class BrigadeRatingModel(CrownApiClient api, AppTime time) : PageM
         return File(stream, contentType, fileName);
     }
 
-    public async Task<IActionResult> OnPostResolveRemarkAsync(
-        Guid remarkId,
-        bool isResolved,
-        string? period,
-        DateOnly? from,
-        DateOnly? to,
-        int? year,
-        int? month)
-    {
-        if (!CanAccess)
-        {
-            return Forbid();
-        }
-
-        var result = await api.PatchAsync<StoppageRemarkItem>(
-            $"api/brigade-rating/remarks/{remarkId}/resolved",
-            new SetRemarkResolvedRequest { IsResolved = isResolved },
-            HttpContext.RequestAborted);
-        if (result.IsUnauthorized)
-        {
-            return Challenge();
-        }
-
-        if (!result.Ok)
-        {
-            TempData["Warn"] = result.Error ?? "Не удалось обновить пункт.";
-        }
-
-        return RedirectToPage(new { period, from, to, year, month });
-    }
-
-    public async Task<IActionResult> OnGetStoppageAsync(Guid id)
-    {
-        if (!CanAccess)
-        {
-            return Forbid();
-        }
-
-        var result = await api.GetAsync<BrigadeStoppageDetail>(
-            $"api/brigade-rating/stoppages/{id}",
-            HttpContext.RequestAborted);
-        if (result.IsUnauthorized)
-        {
-            return Challenge();
-        }
-
-        if (!result.Ok || result.Data is null)
-        {
-            return NotFound();
-        }
-
-        return new JsonResult(result.Data, CrownApiClient.JsonOptions);
-    }
-
     private static string NormalizePeriod(string? period) =>
         (period ?? "month").Trim().ToLowerInvariant() switch
         {

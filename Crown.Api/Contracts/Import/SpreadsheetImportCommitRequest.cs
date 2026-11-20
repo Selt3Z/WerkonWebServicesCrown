@@ -38,4 +38,23 @@ public sealed class SpreadsheetImportCommitRequest
 
     /// <summary>Владелец каталога услуг (обязателен для import-catalog-parts).</summary>
     public Guid? OwnerUserId { get; set; }
+
+    // ---------- Импорт остановок (индексы с 0) ----------
+
+    public int? ReportDateColumn { get; set; }
+
+    public int? BrigadeColumn { get; set; }
+
+    public int? MasterColumn { get; set; }
+
+    public int? StoppedByColumn { get; set; }
+
+    public int? StoppedAtColumn { get; set; }
+
+    public int? RestartedAtColumn { get; set; }
+
+    public int? WorkColumn { get; set; }
+
+    /// <summary>Пункты акта: многострочная ячейка (как в экспорте «Анализ Остановок»).</summary>
+    public int? RemarksColumn { get; set; }
 }

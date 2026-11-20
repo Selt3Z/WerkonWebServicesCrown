@@ -1,0 +1,254 @@
+@page "/brigade-rating/stoppages/import"
+@model BrigadeRatingStoppagesImportModel
+@{
+    ViewData["Title"] = "Импорт остановок";
+}
+
+@Html.AntiForgeryToken()
+
+<div class="crown-page-head">
+    <h1 class="section-title">Импорт остановок</h1>
+    <div class="crown-page-head-actions">
+        <a class="btn btn-outline-secondary" href="/brigade-rating/stoppages">К остановкам</a>
+        <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+    </div>
+</div>
+
+<div class="entity-panel" id="stoppage-import-panel">
+    <p class="form-text mb-2">
+        Файл .xlsx (как «Анализ Остановок»): первая строка — заголовки.
+        Обязательны дата, бригада, кто остановил, время стопа и пункты акта; остальное опционально.
+        Бригада — как в системе («КРС-219» / «Бригада КРС №219»).
+        Пункты с номерами «1. 2. 3.» режутся на отдельные замечания; в справочник акта новые строки не добавляются.
+    </p>
+    <div class="mb-2 filter-field">
+        <label class="form-label" for="stop-import-file">Файл</label>
+        <input class="form-control" type="file" id="stop-import-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    </div>
+    <div id="stop-import-map" class="transport-form-grid" hidden>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-date">Дата <span class="crown-req">*</span></label>
+            <select class="form-select" id="stop-map-date"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-brigade">Бригада <span class="crown-req">*</span></label>
+            <select class="form-select" id="stop-map-brigade"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-master">Мастер</label>
+            <select class="form-select" id="stop-map-master"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-stopped-by">Кто остановил <span class="crown-req">*</span></label>
+            <select class="form-select" id="stop-map-stopped-by"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-stopped-at">Время остановки <span class="crown-req">*</span></label>
+            <select class="form-select" id="stop-map-stopped-at"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-restarted-at">Время пуска</label>
+            <select class="form-select" id="stop-map-restarted-at"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-work">Выполняемая работа</label>
+            <select class="form-select" id="stop-map-work"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="stop-map-remarks">Пункты акта <span class="crown-req">*</span></label>
+            <select class="form-select" id="stop-map-remarks"></select>
+        </div>
+    </div>
+    <div id="stop-import-sample" class="table-responsive mb-2" hidden></div>
+    <div class="d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="stop-import-preview">Прочитать файл</button>
+        <button type="button" class="btn btn-save btn-sm" id="stop-import-commit" hidden>Импортировать</button>
+    </div>
+    <div id="stop-import-status" class="form-text mt-2"></div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const fileInput = document.getElementById('stop-import-file');
+    const mapWrap = document.getElementById('stop-import-map');
+    const sample = document.getElementById('stop-import-sample');
+    const previewBtn = document.getElementById('stop-import-preview');
+    const commitBtn = document.getElementById('stop-import-commit');
+    const status = document.getElementById('stop-import-status');
+    const antiforgery = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+    let fileB64 = null;
+    let headers = [];
+
+    const errLabel = {
+        date_required: 'нет даты',
+        date_invalid: 'некорректная дата',
+        brigade_required: 'нет бригады',
+        brigade_unknown: 'бригада не найдена',
+        stopped_at_required: 'нет времени остановки',
+        stopped_at_invalid: 'некорректное время остановки',
+        restarted_at_invalid: 'некорректное время пуска',
+        stopped_by_required: 'не указано, кто остановил',
+        remarks_required: 'нет пунктов акта',
+        work_too_long: 'работа длиннее 500 символов',
+        duplicate: 'дубликат'
+    };
+
+    function fillSelect(sel, withEmpty) {
+        sel.innerHTML = withEmpty ? '<option value="">— не импортировать —</option>' : '';
+        headers.forEach(function (h, i) {
+            const opt = document.createElement('option');
+            opt.value = String(i);
+            opt.textContent = h || ('Столбец ' + (i + 1));
+            sel.appendChild(opt);
+        });
+    }
+
+    function guess() {
+        const aliases = [
+            ['stop-map-date', ['дата', 'отчетн', 'сутки']],
+            ['stop-map-brigade', ['бригад']],
+            ['stop-map-master', ['мастер']],
+            ['stop-map-stopped-by', ['кто остановил', 'остановил', 'должность']],
+            ['stop-map-stopped-at', ['время останов', 'остановк']],
+            ['stop-map-restarted-at', ['время запуск', 'время пуск', 'запуск', 'пуск']],
+            ['stop-map-work', ['выполняем', 'работ']],
+            ['stop-map-remarks', ['пункт', 'акту', 'предписан', 'из за чего']]
+        ];
+        aliases.forEach(function (pair) {
+            const id = pair[0];
+            const keys = pair[1];
+            let found = -1;
+            for (let i = 0; i < headers.length && found < 0; i++) {
+                const h = (headers[i] || '').toLowerCase().replace(/\s+/g, ' ');
+                for (let k = 0; k < keys.length; k++) {
+                    if (h.indexOf(keys[k]) >= 0) { found = i; break; }
+                }
+            }
+            if (found >= 0) {
+                const el = document.getElementById(id);
+                if (el) el.value = String(found);
+            }
+        });
+    }
+
+    function opt(id) {
+        const v = document.getElementById(id).value;
+        return v === '' ? null : parseInt(v, 10);
+    }
+
+    previewBtn.addEventListener('click', function () {
+        const f = fileInput.files && fileInput.files[0];
+        if (!f) { status.textContent = 'Выберите файл.'; return; }
+        status.textContent = 'Читаю…';
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('__RequestVerificationToken', antiforgery);
+        fetch('/brigade-rating/stoppages/import?handler=ImportPreview', {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin'
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+                if (!res.ok) {
+                    status.textContent = (res.j && (res.j.message || res.j.error)) || 'Ошибка чтения файла.';
+                    return;
+                }
+                headers = res.j.headers || [];
+                fillSelect(document.getElementById('stop-map-date'), false);
+                fillSelect(document.getElementById('stop-map-brigade'), false);
+                fillSelect(document.getElementById('stop-map-master'), true);
+                fillSelect(document.getElementById('stop-map-stopped-by'), false);
+                fillSelect(document.getElementById('stop-map-stopped-at'), false);
+                fillSelect(document.getElementById('stop-map-restarted-at'), true);
+                fillSelect(document.getElementById('stop-map-work'), true);
+                fillSelect(document.getElementById('stop-map-remarks'), false);
+                guess();
+                mapWrap.hidden = false;
+                commitBtn.hidden = false;
+                const rows = res.j.sampleRows || [];
+                let html = '<table class="table crown-table"><thead><tr>';
+                headers.forEach(function (h) { html += '<th>' + (h || '') + '</th>'; });
+                html += '</tr></thead><tbody>';
+                rows.slice(0, 5).forEach(function (row) {
+                    html += '<tr>';
+                    (row || []).forEach(function (c) { html += '<td>' + (c || '') + '</td>'; });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                sample.innerHTML = html;
+                sample.hidden = false;
+                status.textContent = 'Строк данных: ' + (res.j.totalRows || 0) + '. Сопоставьте столбцы и нажмите «Импортировать».';
+                const reader = new FileReader();
+                reader.onload = function () {
+                    const s = String(reader.result || '');
+                    const i = s.indexOf(',');
+                    fileB64 = i >= 0 ? s.slice(i + 1) : s;
+                };
+                reader.readAsDataURL(f);
+            })
+            .catch(function () { status.textContent = 'Сеть/сервер недоступны.'; });
+    });
+
+    commitBtn.addEventListener('click', function () {
+        if (!fileB64) { status.textContent = 'Сначала прочитайте файл.'; return; }
+        const dateCol = opt('stop-map-date');
+        const brigadeCol = opt('stop-map-brigade');
+        const stoppedByCol = opt('stop-map-stopped-by');
+        const stoppedAtCol = opt('stop-map-stopped-at');
+        const remarksCol = opt('stop-map-remarks');
+        if (dateCol === null || brigadeCol === null || stoppedByCol === null || stoppedAtCol === null || remarksCol === null) {
+            status.textContent = 'Укажите обязательные столбцы: дата, бригада, кто остановил, время стопа, пункты.';
+            return;
+        }
+        const required = [dateCol, brigadeCol, stoppedByCol, stoppedAtCol, remarksCol];
+        if (new Set(required).size !== required.length) {
+            status.textContent = 'Обязательные поля должны ссылаться на разные столбцы.';
+            return;
+        }
+        status.textContent = 'Импорт…';
+        fetch('/brigade-rating/stoppages/import?handler=ImportCommit', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': antiforgery
+            },
+            body: JSON.stringify({
+                fileBase64: fileB64,
+                reportDateColumn: dateCol,
+                brigadeColumn: brigadeCol,
+                masterColumn: opt('stop-map-master'),
+                stoppedByColumn: stoppedByCol,
+                stoppedAtColumn: stoppedAtCol,
+                restartedAtColumn: opt('stop-map-restarted-at'),
+                workColumn: opt('stop-map-work'),
+                remarksColumn: remarksCol
+            })
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+                if (!res.ok) {
+                    status.textContent = (res.j && (res.j.message || res.j.error)) || 'Ошибка импорта.';
+                    return;
+                }
+                const created = res.j.created || 0;
+                const errors = res.j.errors || 0;
+                const rows = res.j.errorRows || [];
+                let msg = 'Готово: создано ' + created + (errors ? ', ошибок ' + errors : '') + '.';
+                if (rows.length) {
+                    msg += ' Примеры: ' + rows.slice(0, 5).map(function (e) {
+                        return 'стр.' + e.rowNumber + ' — ' + (errLabel[e.code] || e.code);
+                    }).join('; ');
+                }
+                status.textContent = msg;
+                if (created > 0) {
+                    setTimeout(function () { location.href = '/brigade-rating/stoppages'; }, 900);
+                }
+            })
+            .catch(function () { status.textContent = 'Сеть/сервер недоступны.'; });
+    });
+})();
+</script>
+}

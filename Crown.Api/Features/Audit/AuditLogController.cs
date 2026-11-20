@@ -102,16 +102,18 @@ public sealed class AuditLogController : ControllerBase
     public async Task<ActionResult<List<AuditLogUserOptionResponse>>> GetUsers(
         CancellationToken cancellationToken)
     {
-        var response = await _dbContext.AuditLogEntries
-            .AsNoTracking()
-            .Where(x => x.UserId.HasValue)
-            .GroupBy(x => new { x.UserId, x.UserDisplayName })
-            .Select(x => new AuditLogUserOptionResponse
+        // Не GroupBy по всему журналу: полу-join к Users + индекс UserId.
+        var response = await _dbContext.Users.AsNoTracking()
+            .Where(u => _dbContext.AuditLogEntries.Any(a => a.UserId == u.Id))
+            .OrderBy(u => u.DisplayName)
+            .ThenBy(u => u.UserName)
+            .Select(u => new AuditLogUserOptionResponse
             {
-                UserId = x.Key.UserId!.Value,
-                DisplayName = x.Key.UserDisplayName
+                UserId = u.Id,
+                DisplayName = u.DisplayName != null && u.DisplayName != ""
+                    ? u.DisplayName
+                    : (u.UserName ?? u.Id.ToString())
             })
-            .OrderBy(x => x.DisplayName)
             .ToListAsync(cancellationToken);
 
         return Ok(response);

@@ -85,23 +85,18 @@ public sealed class EquipmentController : ControllerBase
     public async Task<ActionResult<List<EquipmentRequestCategoryResponse>>> GetRequestCategories(
         CancellationToken cancellationToken)
     {
-        var assets = await _db.EquipmentAssets.AsNoTracking()
+        // GROUP BY в SQL — не тащим все assets в CLR.
+        var groups = await _db.EquipmentAssets.AsNoTracking()
             .Where(x => !x.IsArchived)
-            .Select(x => new { x.Name, x.Category, x.Availability })
-            .ToListAsync(cancellationToken);
-
-        var groups = assets
-            .GroupBy(x => string.IsNullOrWhiteSpace(x.Category) ? x.Name.Trim() : x.Category.Trim(),
-                StringComparer.OrdinalIgnoreCase)
-            .Where(g => !string.IsNullOrWhiteSpace(g.Key))
-            .OrderBy(g => g.Key)
+            .GroupBy(x => x.Category != null && x.Category != "" ? x.Category : x.Name)
             .Select(g => new EquipmentRequestCategoryResponse
             {
                 Name = g.Key,
                 FreeCount = g.Count(x => x.Availability == EquipmentAvailability.Free),
                 TotalActive = g.Count()
             })
-            .ToList();
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
 
         return Ok(groups);
     }
@@ -132,7 +127,7 @@ public sealed class EquipmentController : ControllerBase
         var asset = await _db.EquipmentAssets
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Include(x => x.Movements.OrderByDescending(m => m.OccurredAt))
+            .Include(x => x.Movements.OrderByDescending(m => m.OccurredAt).Take(100))
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (asset is null)
         {

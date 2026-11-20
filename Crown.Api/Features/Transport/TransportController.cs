@@ -37,33 +37,36 @@ public sealed class TransportController : ControllerBase
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var vehicles = await _db.Vehicles.AsNoTracking()
+        // Фильтры в SQL — не тащим весь парк в CLR ради поиска/стоянки.
+        var vehicleQuery = _db.Vehicles.AsNoTracking()
             .Include(x => x.CurrentParking)
-            .Where(x => x.IsActive)
-            .OrderBy(x => x.PlateNumber)
-            .ToListAsync(cancellationToken);
+            .Where(x => x.IsActive);
 
         if (parkingId is Guid pid)
         {
-            vehicles = vehicles
-                .Where(x => x.CurrentParkingId == pid)
-                .ToList();
+            vehicleQuery = vehicleQuery.Where(x => x.CurrentParkingId == pid);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var term = search.Trim().ToLowerInvariant();
-            vehicles = vehicles
-                .Where(x => x.PlateNumber.ToLowerInvariant().Contains(term)
-                            || x.Name.ToLowerInvariant().Contains(term)
-                            || (x.VehicleType?.ToLowerInvariant().Contains(term) ?? false)
-                            || (x.Vin?.ToLowerInvariant().Contains(term) ?? false))
-                .ToList();
+            var term = search.Trim().ToLower();
+            vehicleQuery = vehicleQuery.Where(x =>
+                x.PlateNumber.ToLower().Contains(term)
+                || x.Name.ToLower().Contains(term)
+                || (x.VehicleType != null && x.VehicleType.ToLower().Contains(term))
+                || (x.Vin != null && x.Vin.ToLower().Contains(term)));
         }
 
-        var openTrips = await _db.VehicleTrips.AsNoTracking()
-            .Where(x => OpenStatuses.Contains(x.Status))
+        var vehicles = await vehicleQuery
+            .OrderBy(x => x.PlateNumber)
             .ToListAsync(cancellationToken);
+
+        var vehicleIds = vehicles.Select(v => v.Id).ToList();
+        var openTrips = vehicleIds.Count == 0
+            ? []
+            : await _db.VehicleTrips.AsNoTracking()
+                .Where(x => OpenStatuses.Contains(x.Status) && vehicleIds.Contains(x.VehicleId))
+                .ToListAsync(cancellationToken);
         var openByVehicle = openTrips
             .GroupBy(x => x.VehicleId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(t => t.PlannedStartAt).First());

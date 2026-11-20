@@ -3,6 +3,7 @@ using System.Security.Claims;
 using ClosedXML.Excel;
 using Crown.Contracts.BrigadeRating;
 using Crown.Contracts.Common;
+using Crown.Contracts.Import;
 using Crown.Domain.Entities;
 using Crown.Infrastructure.Api;
 using Crown.Infrastructure.Audit;
@@ -24,7 +25,8 @@ namespace Crown.Features.BrigadeRating;
 public sealed class BrigadeRatingController(
     AppDbContext db,
     UserManager<ApplicationUser> users,
-    AppTimeZone time) : ControllerBase
+    AppTimeZone time,
+    BrigadeStoppageImportService stoppageImport) : ControllerBase
 {
     public const string CatalogClearConfirmationWord = "ОЧИСТИТЬ";
 
@@ -223,6 +225,8 @@ public sealed class BrigadeRatingController(
             return NotFound();
         }
 
+        var removedOrder = entity.SortOrder;
+
         // В остановках: пункт → «Вручную», текст и комментарий сохраняем.
         var linked = await db.StoppageRemarks
             .Where(x => x.ActItemId == id)
@@ -246,6 +250,17 @@ public sealed class BrigadeRatingController(
 
         db.StoppageActItems.Remove(entity);
         await db.SaveChangesAsync(cancellationToken);
+
+        // Схлопываем дыру одним UPDATE — без загрузки строк и без N audit Updated.
+        if (removedOrder > 0)
+        {
+            await db.StoppageActItems
+                .Where(x => x.SortOrder > removedOrder)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(x => x.SortOrder, x => x.SortOrder - 1),
+                    cancellationToken);
+        }
+
         return NoContent();
     }
 
@@ -530,6 +545,8 @@ public sealed class BrigadeRatingController(
             return NotFound();
         }
 
+        var removedOrder = entity.SortOrder;
+
         // В остановках: работа → «Вручную», снимок WorkDescription сохраняем.
         var linked = await db.BrigadeStoppages
             .Where(x => x.WorkItemId == id)
@@ -543,6 +560,16 @@ public sealed class BrigadeRatingController(
 
         db.StoppageWorkItems.Remove(entity);
         await db.SaveChangesAsync(cancellationToken);
+
+        if (removedOrder > 0)
+        {
+            await db.StoppageWorkItems
+                .Where(x => x.SortOrder > removedOrder)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(x => x.SortOrder, x => x.SortOrder - 1),
+                    cancellationToken);
+        }
+
         return NoContent();
     }
 
@@ -677,9 +704,15 @@ public sealed class BrigadeRatingController(
     // ---------- Stoppages ----------
 
     [HttpGet("stoppages")]
-    public async Task<ActionResult<List<BrigadeStoppageListItemResponse>>> ListStoppages(
+    public async Task<ActionResult<BrigadeStoppagesPageResponse>> ListStoppages(
+        [FromQuery] string? period = null,
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to = null,
+        [FromQuery] int? year = null,
+        [FromQuery] int? month = null,
+        [FromQuery] Guid? brigadeUserId = null,
+        [FromQuery] int? skip = null,
+        [FromQuery] int? take = null,
         CancellationToken cancellationToken = default)
     {
         if (!await CanViewAsync(cancellationToken))
@@ -687,18 +720,112 @@ public sealed class BrigadeRatingController(
             return Forbid();
         }
 
-        var (start, end) = ResolvePeriod(from, to);
+        var (periodKey, start, end) = ResolveDashboardPeriod(period, from, to, year, month);
+        var (normalizedSkip, normalizedTake) = QueryPagingExtensions.NormalizePaging(skip, take);
         // Полный рейтинг / список: любой с доступом к разделу видит все бригады.
         var seeAll = true;
-        var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
+
+        var earliestDate = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking(), seeAll)
+            .Select(x => (DateOnly?)x.ReportDate)
+            .MinAsync(cancellationToken);
+        var earliestYear = earliestDate?.Year ?? time.GetToday().Year;
+
+        var query = ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
                 .Include(x => x.Remarks)
-                .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
+                .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll);
+
+        if (brigadeUserId is Guid bid && bid != Guid.Empty)
+        {
+            query = query.Where(x => x.BrigadeUserId == bid);
+        }
+
+        var rows = await query
             .OrderByDescending(x => x.ReportDate)
             .ThenByDescending(x => x.StoppedAt)
+            .ThenByDescending(x => x.Id)
+            .Skip(normalizedSkip)
+            .Take(normalizedTake + 1)
             .ToListAsync(cancellationToken);
 
+        var hasMore = rows.Count > normalizedTake;
+        if (hasMore)
+        {
+            rows.RemoveAt(rows.Count - 1);
+        }
+
         var liveNames = await LoadBrigadeDisplayNamesAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
-        return Ok(rows.Select(x => MapListItem(x, liveNames)).ToList());
+        return Ok(new BrigadeStoppagesPageResponse
+        {
+            Items = rows.Select(x => MapListItem(x, liveNames)).ToList(),
+            HasMore = hasMore,
+            Period = periodKey,
+            PeriodStart = start,
+            PeriodEnd = end,
+            EarliestYear = earliestYear
+        });
+    }
+
+    [HttpPost("stoppages/import/preview")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(SpreadsheetImportFileHelper.MaxFileBytes + 1024 * 1024)]
+    public async Task<ActionResult<SpreadsheetImportPreviewResponse>> PreviewStoppagesImport(
+        IFormFile? file,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.SpreadsheetImportInvalidFile));
+        }
+
+        if (file.Length > SpreadsheetImportFileHelper.MaxFileBytes)
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.SpreadsheetImportFileTooLarge));
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            using var buffer = new MemoryStream((int)file.Length);
+            await stream.CopyToAsync(buffer, cancellationToken);
+            return Ok(stoppageImport.Preview(buffer.ToArray(), file.FileName));
+        }
+        catch (SpreadsheetImportException ex)
+        {
+            return BadRequest(ApiErrors.FromCode(ex.Code));
+        }
+    }
+
+    [HttpPost("stoppages/import/commit")]
+    [RequestSizeLimit(8 * 1024 * 1024)]
+    public async Task<ActionResult<SpreadsheetImportCommitResponse>> CommitStoppagesImport(
+        [FromBody] SpreadsheetImportCommitRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var uid = CurrentUserId();
+        if (uid is null)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var result = await stoppageImport.CommitAsync(request, uid.Value, cancellationToken);
+            return Ok(result);
+        }
+        catch (SpreadsheetImportException ex)
+        {
+            return BadRequest(ApiErrors.FromCode(ex.Code));
+        }
     }
 
     [HttpGet("stoppages/{id:guid}")]
@@ -889,19 +1016,35 @@ public sealed class BrigadeRatingController(
                 .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
             .ToListAsync(cancellationToken);
 
-        var prevRows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
-                .Include(x => x.Remarks)
-                .Where(x => x.ReportDate >= prevStart && x.ReportDate <= prevEnd), seeAll)
-            .ToListAsync(cancellationToken);
+        // Предыдущий период — только агрегаты в SQL, без Include Remarks в CLR.
+        var prevQuery = ScopeStoppages(
+            db.BrigadeStoppages.AsNoTracking()
+                .Where(x => x.ReportDate >= prevStart && x.ReportDate <= prevEnd),
+            seeAll);
+        var prevStoppageCount = await prevQuery.CountAsync(cancellationToken);
+        var prevHours = prevStoppageCount == 0
+            ? 0m
+            : await prevQuery.SumAsync(x => x.Hours, cancellationToken);
+        var prevRemarkQuery = ScopeStoppages(
+                db.BrigadeStoppages.AsNoTracking()
+                    .Where(x => x.ReportDate >= prevStart && x.ReportDate <= prevEnd),
+                seeAll)
+            .SelectMany(x => x.Remarks);
+        var prevRemarkCount = await prevRemarkQuery.CountAsync(cancellationToken);
+        var prevResolved = prevRemarkCount == 0
+            ? 0
+            : await prevRemarkQuery.CountAsync(r => r.IsResolved, cancellationToken);
+        var prevUnresolved = prevRemarkCount - prevResolved;
+        var prevAverageHours = prevStoppageCount == 0
+            ? 0m
+            : Math.Round(
+                await prevQuery.Where(x => x.RestartedAt != null).Select(x => (decimal?)x.Hours).AverageAsync(cancellationToken) ?? 0m,
+                2);
 
         var remarkFlat = rows.SelectMany(x => x.Remarks).ToList();
-        var prevRemarks = prevRows.SelectMany(x => x.Remarks).ToList();
         var resolved = remarkFlat.Count(x => x.IsResolved);
         var unresolved = remarkFlat.Count(x => !x.IsResolved);
-        var prevResolved = prevRemarks.Count(x => x.IsResolved);
-        var prevUnresolved = prevRemarks.Count(x => !x.IsResolved);
         var totalHours = rows.Sum(x => x.Hours);
-        var prevHours = prevRows.Sum(x => x.Hours);
 
         // Имя бригады для UI — всегда live (снимок в строке остановки мог быть без №).
         var liveNames = await LoadBrigadeDisplayNamesAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
@@ -990,24 +1133,21 @@ public sealed class BrigadeRatingController(
             {
                 PreviousPeriodStart = prevStart,
                 PreviousPeriodEnd = prevEnd,
-                PreviousStoppageCount = prevRows.Count,
-                PreviousRemarkCount = prevRemarks.Count,
+                PreviousStoppageCount = prevStoppageCount,
+                PreviousRemarkCount = prevRemarkCount,
                 PreviousResolvedRemarkCount = prevResolved,
                 PreviousUnresolvedRemarkCount = prevUnresolved,
                 PreviousTotalHours = prevHours,
-                PreviousResolutionRatePercent = Percent(prevResolved, prevRemarks.Count),
-                PreviousAverageHours = AverageHours(prevRows)
+                PreviousResolutionRatePercent = Percent(prevResolved, prevRemarkCount),
+                PreviousAverageHours = prevAverageHours
             },
             DailyTrend = BuildDailyTrend(periodKey, start, end, rows),
             TopStoppers = topStoppers,
             BrigadeRanking = ranking,
             TopRemarks = top,
             TopWorks = topWorks,
-            Stoppages = rows
-                .OrderByDescending(x => x.ReportDate)
-                .ThenByDescending(x => x.StoppedAt)
-                .Select(x => MapListItem(x, liveNames))
-                .ToList()
+            // Список остановок — отдельная страница /brigade-rating/stoppages.
+            Stoppages = []
         });
     }
 

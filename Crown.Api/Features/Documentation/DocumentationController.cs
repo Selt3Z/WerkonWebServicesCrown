@@ -281,6 +281,7 @@ public sealed class DocumentationController : ControllerBase
                             && x.DeletedAt == null
                             && EF.Functions.ILike(x.FileName, like))
                 .OrderBy(x => x.FileName)
+                .Take(200)
                 .Select(x => new DocumentationFileItemResponse
                 {
                     Id = x.Id,
@@ -295,6 +296,8 @@ public sealed class DocumentationController : ControllerBase
             {
                 f.PathLabel = PathOf(f.FolderId);
             }
+
+            folders = folders.Take(200).ToList();
         }
         else
         {
@@ -303,6 +306,7 @@ public sealed class DocumentationController : ControllerBase
                             && x.ParentFolderId == folderId
                             && x.DeletedAt == null)
                 .OrderBy(x => x.Name)
+                .Take(500)
                 .Select(x => new DocumentationFolderItemResponse
                 {
                     Id = x.Id,
@@ -317,6 +321,7 @@ public sealed class DocumentationController : ControllerBase
                             && x.FolderId == folderId
                             && x.DeletedAt == null)
                 .OrderBy(x => x.FileName)
+                .Take(500)
                 .Select(x => new DocumentationFileItemResponse
                 {
                     Id = x.Id,
@@ -1343,20 +1348,38 @@ public sealed class DocumentationController : ControllerBase
         bool includeDeleted,
         CancellationToken cancellationToken)
     {
+        // Один SELECT всех папок owner'а + BFS в памяти (не N запросов по глубине).
+        var root = await _db.DocumentationFolders.AsNoTracking()
+            .Where(x => x.Id == rootFolderId)
+            .Select(x => new { x.Id, x.OwnerUserId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (root is null)
+        {
+            return [];
+        }
+
+        var all = await _db.DocumentationFolders.AsNoTracking()
+            .Where(x => x.OwnerUserId == root.OwnerUserId
+                        && (includeDeleted || x.DeletedAt == null))
+            .Select(x => new { x.Id, x.ParentFolderId })
+            .ToListAsync(cancellationToken);
+
+        var childrenOf = all
+            .Where(x => x.ParentFolderId is not null)
+            .GroupBy(x => x.ParentFolderId!.Value)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
+
         var result = new List<Guid> { rootFolderId };
         var queue = new Queue<Guid>();
         queue.Enqueue(rootFolderId);
         while (queue.Count > 0)
         {
             var id = queue.Dequeue();
-            var childrenQuery = _db.DocumentationFolders.AsNoTracking()
-                .Where(x => x.ParentFolderId == id);
-            if (!includeDeleted)
+            if (!childrenOf.TryGetValue(id, out var children))
             {
-                childrenQuery = childrenQuery.Where(x => x.DeletedAt == null);
+                continue;
             }
 
-            var children = await childrenQuery.Select(x => x.Id).ToListAsync(cancellationToken);
             foreach (var child in children)
             {
                 result.Add(child);

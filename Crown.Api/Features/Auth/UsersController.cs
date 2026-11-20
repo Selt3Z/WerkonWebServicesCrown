@@ -56,12 +56,28 @@ public sealed class UsersController : ControllerBase
             users.RemoveAt(users.Count - 1);
         }
 
-        var items = new List<UserListItemResponse>();
+        // Роли одним JOIN — не N× GetRolesAsync.
+        var userIds = users.Select(u => u.Id).ToList();
+        var roleByUser = await (
+                from ur in _db.UserRoles
+                join r in _db.Roles on ur.RoleId equals r.Id
+                where userIds.Contains(ur.UserId)
+                select new { ur.UserId, r.Name })
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
 
-        foreach (var user in users)
+        var primaryRole = roleByUser
+            .GroupBy(x => x.UserId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.Name).OrderBy(x => x).FirstOrDefault() ?? string.Empty);
+
+        var items = users.Select(user =>
         {
-            items.Add(await MapListItemAsync(user));
-        }
+            primaryRole.TryGetValue(user.Id, out var role);
+            role ??= string.Empty;
+            return MapListItem(user, role, forDisplay: true);
+        }).ToList();
 
         return Ok(new PagedResponse<UserListItemResponse>
         {
@@ -500,8 +516,12 @@ public sealed class UsersController : ControllerBase
     {
         var roles = await _userManager.GetRolesAsync(user);
         var role = roles.OrderBy(x => x).FirstOrDefault() ?? string.Empty;
-        var isBrigade = IsBrigadeRole(role);
+        return MapListItem(user, role, forDisplay);
+    }
 
+    private static UserListItemResponse MapListItem(ApplicationUser user, string role, bool forDisplay)
+    {
+        var isBrigade = IsBrigadeRole(role);
         return new UserListItemResponse
         {
             Id = user.Id,

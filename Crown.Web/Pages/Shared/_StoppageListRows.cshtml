@@ -1,0 +1,30 @@
+@model (bool CanEnter, List<BrigadeStoppageListItem> Items)
+@{
+    var canEnter = Model.CanEnter;
+    var items = Model.Items;
+}
+@foreach (var s in items)
+{
+    <tr class="@(canEnter ? "crown-row-link" : null)"
+        @(canEnter ? $"data-href=/brigade-rating/stoppage/{s.Id}" : null)>
+        <td class="text-nowrap">@s.ReportDate.ToString("dd.MM.yyyy")</td>
+        <td>@s.BrigadeName</td>
+        <td>@s.MasterName</td>
+        <td>@s.StoppedByName</td>
+        <td>@s.StoppedAt.ToString("HH:mm")</td>
+        <td>@(s.RestartedAt?.ToString("HH:mm") ?? "—")</td>
+        <td>@s.Hours.ToString("0.##")</td>
+        <td>
+            <button type="button"
+                    class="brigade-remarks-open brigade-click-badge @(s.UnresolvedRemarkCount > 0 ? "brigade-click-badge-open" : null)"
+                    data-stoppage-id="@s.Id">
+                @s.RemarkCount
+                @if (s.UnresolvedRemarkCount > 0)
+                {
+                    <span>(@s.UnresolvedRemarkCount)</span>
+                }
+            </button>
+        </td>
+        <td title="@s.WorkDescription">@(s.WorkDescription.Length > 60 ? s.WorkDescription[..60] + "…" : s.WorkDescription)</td>
+    </tr>
+}

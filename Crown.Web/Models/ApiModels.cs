@@ -741,6 +741,16 @@ public sealed class BrigadeStoppageDetail : BrigadeStoppageListItem
     public List<StoppageRemarkItem> Remarks { get; set; } = [];
 }
 
+public sealed class BrigadeStoppagesPage
+{
+    public List<BrigadeStoppageListItem> Items { get; set; } = [];
+    public bool HasMore { get; set; }
+    public string Period { get; set; } = "month";
+    public DateOnly PeriodStart { get; set; }
+    public DateOnly PeriodEnd { get; set; }
+    public int EarliestYear { get; set; }
+}
+
 public sealed class SaveStoppageRemarkRequest
 {
     public Guid? Id { get; set; }
@@ -984,6 +994,16 @@ public sealed class SpreadsheetImportCommitRequest
     public int? CategoryColumn { get; set; }
     public int? DescriptionColumn { get; set; }
     public int? LocationColumn { get; set; }
+
+    // Остановки
+    public int? ReportDateColumn { get; set; }
+    public int? BrigadeColumn { get; set; }
+    public int? MasterColumn { get; set; }
+    public int? StoppedByColumn { get; set; }
+    public int? StoppedAtColumn { get; set; }
+    public int? RestartedAtColumn { get; set; }
+    public int? WorkColumn { get; set; }
+    public int? RemarksColumn { get; set; }
 }
 
 public sealed class SpreadsheetImportCommitResult

@@ -161,6 +161,7 @@ builder.Services.AddScoped<DataExportService>();
 builder.Services.AddScoped<CatalogPartImportService>();
 builder.Services.AddScoped<WarehousePartImportService>();
 builder.Services.AddScoped<EquipmentAssetImportService>();
+builder.Services.AddScoped<BrigadeStoppageImportService>();
 builder.Services.AddScoped<WarehouseStockService>();
 builder.Services.AddScoped<Crown.Infrastructure.Requests.RequestAssetReservationService>();
 builder.Services.AddScoped<Crown.Features.Summary.SummaryReportService>();

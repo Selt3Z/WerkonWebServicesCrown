@@ -66,22 +66,6 @@
         .OrderByDescending(x => x.StoppageCount)
         .ThenByDescending(x => x.UnresolvedRemarkCount)
         .ToList();
-    var stoppagesJson = System.Text.Json.JsonSerializer.Serialize(
-        (d?.Stoppages ?? []).Select(s => new
-        {
-            id = s.Id,
-            brigadeUserId = s.BrigadeUserId,
-            brigadeName = s.BrigadeName,
-            masterName = s.MasterName,
-            stoppedByName = s.StoppedByName,
-            reportDate = s.ReportDate.ToString("dd.MM.yyyy"),
-            stoppedAt = s.StoppedAt.ToString("HH:mm"),
-            restartedAt = s.RestartedAt?.ToString("HH:mm"),
-            hours = s.Hours,
-            remarkCount = s.RemarkCount,
-            unresolvedRemarkCount = s.UnresolvedRemarkCount,
-            workDescription = s.WorkDescription
-        }));
     var exportHref = UiHelpers.BuildUrl(
         "/brigade-rating",
         ("handler", "Export"),
@@ -92,14 +76,21 @@
         ("month", Model.Period == "month" ? Model.Month?.ToString() : null));
 }
 
-@Html.AntiForgeryToken()
-
 <div class="brigade-rating-page">
     <div class="crown-page-head">
         <h1 class="section-title">Рейтинг бригад</h1>
         <div class="crown-page-head-actions">
-            @* Просмотр проверок — всем с доступом к разделу; запись — только оператор (проверяется на странице/API). *@
+            @* Просмотр — всем с доступом к разделу; запись — только оператор (проверяется на странице/API). *@
             <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/inspections/supervising" title="Проверки бригад">Проверки</a>
+            <a class="btn btn-outline-secondary btn-sm"
+               href="@UiHelpers.BuildUrl(
+                   "/brigade-rating/stoppages",
+                   ("period", Model.Period),
+                   ("from", Model.Period == "custom" ? Model.From?.ToString("yyyy-MM-dd") : null),
+                   ("to", Model.Period == "custom" ? Model.To?.ToString("yyyy-MM-dd") : null),
+                   ("year", Model.Period is "month" or "year" ? Model.Year?.ToString() : null),
+                   ("month", Model.Period == "month" ? Model.Month?.ToString() : null))"
+               title="Остановки за период">Остановки</a>
             @if (Model.CanEnter)
             {
                 <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/work-items" title="Справочник выполняемых работ">Выполняемые работы</a>
@@ -287,12 +278,17 @@
                     {
                         <li class="brigade-rank-item">
                             <div class="brigade-rank-head">
-                                <button type="button"
-                                        class="brigade-rank-name-btn brigade-click-badge"
-                                        data-brigade-id="@row.BrigadeUserId"
-                                        data-brigade-name="@row.BrigadeName">
+                                <a class="brigade-rank-name-btn brigade-click-badge"
+                                   href="@UiHelpers.BuildUrl(
+                                       "/brigade-rating/stoppages",
+                                       ("period", Model.Period),
+                                       ("from", Model.Period == "custom" ? Model.From?.ToString("yyyy-MM-dd") : null),
+                                       ("to", Model.Period == "custom" ? Model.To?.ToString("yyyy-MM-dd") : null),
+                                       ("year", Model.Period is "month" or "year" ? Model.Year?.ToString() : null),
+                                       ("month", Model.Period == "month" ? Model.Month?.ToString() : null),
+                                       ("brigadeUserId", row.BrigadeUserId.ToString()))">
                                     @row.BrigadeName
-                                </button>
+                                </a>
                                 <span class="text-muted">@row.MasterName</span>
                                 <span class="brigade-rank-meta">@row.UnresolvedRemarkCount откр. · @row.TotalHours.ToString("0.##") ч · @row.StoppageCount ост.</span>
                             </div>
@@ -327,7 +323,7 @@
             </section>
 
             <section class="entity-panel">
-                <h2 class="section-title">Топ-10 работ</h2>
+                <h2 class="section-title">Топ-10 работ с замечаниями</h2>
                 @if (d.TopWorks.Count == 0)
                 {
                     <p class="text-muted mb-0">Работы в остановках не указаны.</p>
@@ -484,264 +480,6 @@
             </section>
         }
 
-        <section class="entity-panel">
-            <h2 class="section-title">Остановки за период</h2>
-            <div class="crown-table-wrap brigade-stoppages-period-wrap">
-                <table class="table crown-table">
-                    <thead>
-                    <tr>
-                        <th>Дата</th>
-                        <th>Бригада</th>
-                        <th>Мастер</th>
-                        <th>Кто остановил</th>
-                        <th>Стоп</th>
-                        <th>Пуск</th>
-                        <th>Часы</th>
-                        <th>Пункты</th>
-                        <th>Работа</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var s in d.Stoppages)
-                    {
-                        <tr class="@(Model.CanEnter ? "crown-row-link" : null)"
-                            @(Model.CanEnter ? $"data-href=/brigade-rating/stoppage/{s.Id}" : null)>
-                            <td>@s.ReportDate.ToString("dd.MM.yyyy")</td>
-                            <td>@s.BrigadeName</td>
-                            <td>@s.MasterName</td>
-                            <td>@s.StoppedByName</td>
-                            <td>@s.StoppedAt.ToString("HH:mm")</td>
-                            <td>@(s.RestartedAt?.ToString("HH:mm") ?? "—")</td>
-                            <td>@s.Hours.ToString("0.##")</td>
-                            <td>
-                                <button type="button"
-                                        class="brigade-remarks-open brigade-click-badge @(s.UnresolvedRemarkCount > 0 ? "brigade-click-badge-open" : null)"
-                                        data-stoppage-id="@s.Id">
-                                    @s.RemarkCount
-                                    @if (s.UnresolvedRemarkCount > 0)
-                                    {
-                                        <span>(@s.UnresolvedRemarkCount)</span>
-                                    }
-                                </button>
-                            </td>
-                            <td title="@s.WorkDescription">@(s.WorkDescription.Length > 60 ? s.WorkDescription[..60] + "…" : s.WorkDescription)</td>
-                        </tr>
-                    }
-                    @if (d.Stoppages.Count == 0)
-                    {
-                        <tr><td colspan="9" class="text-muted text-center">Нет остановок.</td></tr>
-                    }
-                    </tbody>
-                </table>
-            </div>
-        </section>
     }
 </div>
 
-<div class="brigade-remarks-overlay d-none" id="brigadeRemarksOverlay" hidden>
-    <div class="brigade-remarks-panel" role="dialog" aria-modal="true" aria-labelledby="brigadeRemarksModalLabel">
-        <div class="brigade-remarks-panel-head">
-            <h2 class="section-title mb-0" id="brigadeRemarksModalLabel">Пункты акта</h2>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="brigadeRemarksClose" aria-label="Закрыть">✕</button>
-        </div>
-        <p class="text-muted mb-2" id="brigadeRemarksMeta"></p>
-        <div id="brigadeRemarksList" class="brigade-remarks-list"></div>
-        <p class="text-danger d-none" id="brigadeRemarksError"></p>
-    </div>
-</div>
-
-<div class="brigade-remarks-overlay d-none" id="brigadeStoppagesOverlay" hidden>
-    <div class="brigade-remarks-panel brigade-stoppages-panel" role="dialog" aria-modal="true" aria-labelledby="brigadeStoppagesModalLabel">
-        <div class="brigade-remarks-panel-head">
-            <h2 class="section-title mb-0" id="brigadeStoppagesModalLabel">Остановки бригады</h2>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="brigadeStoppagesClose" aria-label="Закрыть">✕</button>
-        </div>
-        <p class="text-muted mb-2" id="brigadeStoppagesMeta"></p>
-        <div class="crown-table-wrap">
-            <table class="table crown-table" id="brigadeStoppagesTable">
-                <thead>
-                <tr>
-                    <th>Дата</th>
-                    <th>Мастер</th>
-                    <th>Кто остановил</th>
-                    <th>Стоп</th>
-                    <th>Пуск</th>
-                    <th>Часы</th>
-                    <th>Пункты</th>
-                    <th>Работа</th>
-                </tr>
-                </thead>
-                <tbody id="brigadeStoppagesBody"></tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-@section Scripts {
-<script>
-(() => {
-    const canEnter = @(Model.CanEnter ? "true" : "false");
-    const period = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Period));
-    const from = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.From?.ToString("yyyy-MM-dd")));
-    const to = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.To?.ToString("yyyy-MM-dd")));
-    const year = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Year?.ToString()));
-    const month = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Month?.ToString()));
-    const allStoppages = @Html.Raw(stoppagesJson);
-    const overlay = document.getElementById('brigadeRemarksOverlay');
-    const list = document.getElementById('brigadeRemarksList');
-    const meta = document.getElementById('brigadeRemarksMeta');
-    const err = document.getElementById('brigadeRemarksError');
-    const antiforgery = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
-    const stopOverlay = document.getElementById('brigadeStoppagesOverlay');
-    const stopMeta = document.getElementById('brigadeStoppagesMeta');
-    const stopBody = document.getElementById('brigadeStoppagesBody');
-
-    function openOverlay(el) {
-        el.classList.remove('d-none');
-        el.hidden = false;
-    }
-    function closeOverlay(el) {
-        el.classList.add('d-none');
-        el.hidden = true;
-    }
-    document.getElementById('brigadeRemarksClose')?.addEventListener('click', () => closeOverlay(overlay));
-    overlay?.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(overlay); });
-    document.getElementById('brigadeStoppagesClose')?.addEventListener('click', () => closeOverlay(stopOverlay));
-    stopOverlay?.addEventListener('click', (e) => { if (e.target === stopOverlay) closeOverlay(stopOverlay); });
-
-    document.querySelectorAll('tr.crown-row-link').forEach(tr => {
-        tr.addEventListener('click', (e) => {
-            if (e.target.closest('button, a, input, select, label')) return;
-            const href = tr.getAttribute('data-href');
-            if (href) window.location.href = href;
-        });
-    });
-
-    document.querySelectorAll('.brigade-rank-name-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-brigade-id');
-            const name = btn.getAttribute('data-brigade-name') || '';
-            const rows = allStoppages.filter(s => s.brigadeUserId === id);
-            stopMeta.textContent = name + (rows.length ? ` · ${rows.length} ост.` : '');
-            stopBody.innerHTML = '';
-            if (!rows.length) {
-                stopBody.innerHTML = '<tr><td colspan="8" class="text-muted text-center">Нет остановок за период.</td></tr>';
-            } else {
-                rows.forEach(s => {
-                    const tr = document.createElement('tr');
-                    if (canEnter) {
-                        tr.className = 'crown-row-link';
-                        tr.setAttribute('data-href', `/brigade-rating/stoppage/${s.id}`);
-                        tr.addEventListener('click', (e) => {
-                            if (e.target.closest('button, a')) return;
-                            window.location.href = tr.getAttribute('data-href');
-                        });
-                    }
-                    const work = (s.workDescription || '').length > 60
-                        ? s.workDescription.slice(0, 60) + '…'
-                        : (s.workDescription || '');
-                    const openCls = s.unresolvedRemarkCount > 0 ? ' brigade-click-badge-open' : '';
-                    const unresolved = s.unresolvedRemarkCount > 0
-                        ? ` <span>(${s.unresolvedRemarkCount})</span>`
-                        : '';
-                    tr.innerHTML = `
-                        <td>${s.reportDate}</td>
-                        <td>${escapeHtml(s.masterName || '')}</td>
-                        <td>${escapeHtml(s.stoppedByName || '')}</td>
-                        <td>${s.stoppedAt}</td>
-                        <td>${s.restartedAt || '—'}</td>
-                        <td>${Number(s.hours).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}</td>
-                        <td><button type="button" class="brigade-remarks-open brigade-click-badge${openCls}" data-stoppage-id="${s.id}">${s.remarkCount}${unresolved}</button></td>
-                        <td title="${escapeHtml(s.workDescription || '')}">${escapeHtml(work)}</td>`;
-                    stopBody.appendChild(tr);
-                    tr.querySelector('.brigade-remarks-open')?.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openRemarks(s.id);
-                    });
-                });
-            }
-            openOverlay(stopOverlay);
-        });
-    });
-
-    function escapeHtml(s) {
-        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    }
-
-    function resolveAction(remarkId, nextResolved) {
-        const q = new URLSearchParams({
-            handler: 'ResolveRemark',
-            remarkId,
-            isResolved: nextResolved ? 'true' : 'false',
-            period: period || 'month'
-        });
-        if (from) q.set('from', from);
-        if (to) q.set('to', to);
-        if (year) q.set('year', year);
-        if (month) q.set('month', month);
-        return `/brigade-rating?${q.toString()}`;
-    }
-
-    async function openRemarks(id) {
-        list.innerHTML = '<p class="text-muted">Загрузка…</p>';
-        err.classList.add('d-none');
-        meta.textContent = '';
-        document.getElementById('brigadeRemarksModalLabel').textContent = 'Пункты акта';
-        openOverlay(overlay);
-        try {
-            const res = await fetch(`/brigade-rating?handler=Stoppage&id=${encodeURIComponent(id)}`);
-            if (!res.ok) throw new Error('load_failed');
-            const data = await res.json();
-            meta.textContent = `${data.brigadeName} · ${data.reportDate} · ${data.masterName}`;
-            if (!data.remarks?.length) {
-                list.innerHTML = '<p class="text-muted">Пунктов нет.</p>';
-                return;
-            }
-            list.innerHTML = '';
-            data.remarks.forEach((r, i) => {
-                const row = document.createElement('div');
-                row.className = 'brigade-remark-row';
-                const text = document.createElement('div');
-                text.className = 'brigade-remark-text';
-                const comment = r.comment && !r.isManual ? ` (${r.comment})` : '';
-                text.textContent = `${i + 1}. ${r.text}${comment}`;
-                row.appendChild(text);
-                if (canEnter) {
-                    const form = document.createElement('form');
-                    form.method = 'post';
-                    form.action = resolveAction(r.id, !r.isResolved);
-                    const token = document.createElement('input');
-                    token.type = 'hidden';
-                    token.name = '__RequestVerificationToken';
-                    token.value = antiforgery;
-                    form.appendChild(token);
-                    const toggle = document.createElement('button');
-                    toggle.type = 'submit';
-                    toggle.className = r.isResolved ? 'btn btn-sm btn-outline-success' : 'btn btn-sm btn-outline-warning';
-                    toggle.textContent = r.isResolved ? 'Выполнено' : 'Открыто';
-                    form.appendChild(toggle);
-                    row.appendChild(form);
-                } else {
-                    const badge = document.createElement('span');
-                    badge.className = r.isResolved ? 'badge bg-success' : 'badge bg-warning text-dark';
-                    badge.textContent = r.isResolved ? 'Выполнено' : 'Открыто';
-                    row.appendChild(badge);
-                }
-                list.appendChild(row);
-            });
-        } catch {
-            list.innerHTML = '';
-            err.textContent = 'Не удалось загрузить пункты.';
-            err.classList.remove('d-none');
-        }
-    }
-
-    document.querySelectorAll('.brigade-remarks-open').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openRemarks(btn.getAttribute('data-stoppage-id'));
-        });
-    });
-})();
-</script>
-}
