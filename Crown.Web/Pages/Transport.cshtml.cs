@@ -23,8 +23,11 @@ public sealed class TransportModel(CrownApiClient api) : PageModel
     public bool CanManageFleet =>
         User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
 
-    private bool CanAccess =>
+    /// <summary>Справочник стоянок/машин: staff или галочка «Транспорт».</summary>
+    public bool CanAddFleetCatalog =>
         CanManageFleet || User.FindFirst(CrownAuthHandler.CanViewTransportClaim)?.Value == "1";
+
+    private bool CanAccess => CanAddFleetCatalog;
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -162,7 +165,7 @@ public sealed class TransportModel(CrownApiClient api) : PageModel
 
     public async Task<IActionResult> OnPostAddParkingAsync(string name, string? address)
     {
-        if (!CanManageFleet)
+        if (!CanAddFleetCatalog)
         {
             return Forbid();
         }
@@ -188,7 +191,7 @@ public sealed class TransportModel(CrownApiClient api) : PageModel
         bool isInRepair,
         Guid? currentParkingId)
     {
-        if (!CanManageFleet)
+        if (!CanAddFleetCatalog)
         {
             return Forbid();
         }

@@ -30,6 +30,7 @@ public sealed class BrigadeRatingInspectionsModel : PageModel
     {
         BrigadeInspectionKind.Pdk => "/brigade-rating/inspections/pdk",
         BrigadeInspectionKind.Pbiot => "/brigade-rating/inspections/pbiot",
+        BrigadeInspectionKind.Ppk => "/brigade-rating/ppk",
         _ => "/brigade-rating/inspections/supervising"
     };
 
@@ -37,8 +38,13 @@ public sealed class BrigadeRatingInspectionsModel : PageModel
     {
         BrigadeInspectionKind.Pdk => "ПДК",
         BrigadeInspectionKind.Pbiot => "ПБиОТ",
+        BrigadeInspectionKind.Ppk => "ППК",
         _ => "Супервайзинг"
     };
+
+    /// <summary>Супервайзинг и ППК — один набор полей (П/З/О, стоп-пункт, объяснительная).</summary>
+    public static bool IsSupervisingProfile(BrigadeInspectionKind kind) =>
+        kind is BrigadeInspectionKind.Supervising or BrigadeInspectionKind.Ppk;
 
     public static string OutcomeLabel(BrigadeInspectionOutcome? outcome) => outcome switch
     {

@@ -57,4 +57,23 @@ public sealed class SpreadsheetImportCommitRequest
 
     /// <summary>Пункты акта: многострочная ячейка (как в экспорте «Анализ Остановок»).</summary>
     public int? RemarksColumn { get; set; }
+
+    // ---------- Импорт проверок / ППК (индексы с 0) ----------
+
+    /// <summary>Вид: Supervising / Pdk / Pbiot / Ppk. Для ППК UI шлёт Ppk.</summary>
+    public string? InspectionKind { get; set; }
+
+    public int? OutcomeColumn { get; set; }
+
+    public int? WellColumn { get; set; }
+
+    public int? CheckerColumn { get; set; }
+
+    public int? CheckerPositionColumn { get; set; }
+
+    public int? StopPointColumn { get; set; }
+
+    public int? HasExplanationColumn { get; set; }
+
+    public int? FixDateColumn { get; set; }
 }

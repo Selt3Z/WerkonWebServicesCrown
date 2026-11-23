@@ -18,7 +18,6 @@
     string Hid(string mode, string? kinds = null) =>
         mode == curMode && (kinds is null || kinds.Split(' ').Contains(curKind)) ? "" : "d-none";
 
-    var isSupervising = Model.IsInspection && Model.Input.Kind == BrigadeInspectionKind.Supervising;
     var brigadeSelected = Model.Input.BrigadeUserId != Guid.Empty;
     var workManual = Model.Input.IsWorkManual || Model.Input.WorkItemId is null;
     var locked = Model.IsEdit ? "1" : null;
@@ -59,10 +58,10 @@
         }
     }
 
-    async Task DepartmentOptions(Guid? selectedId, string emptyLabel)
+    async Task OrgOptions(IReadOnlyList<RequestAssignee> orgs, Guid? selectedId, string emptyLabel)
     {
         <option value="">@emptyLabel</option>
-        foreach (var u in Model.Departments)
+        foreach (var u in orgs)
         {
             if (selectedId == u.Id)
             {
@@ -79,7 +78,7 @@
 <div class="crown-page-head">
     <h1 class="section-title" id="page-title">@Model.PageTitle</h1>
     <div class="crown-page-head-actions d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="@Model.CancelUrl">@(Model.IsInspection ? "Проверки" : "Остановки")</a>
+        <a class="btn btn-outline-secondary" href="@Model.CancelUrl">@(Model.IsInspection ? (Model.Input.Kind == BrigadeInspectionKind.Ppk ? "ППК" : "Проверки") : "Остановки")</a>
         <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
     </div>
 </div>
@@ -136,7 +135,7 @@
 
     <div class="mb-2 d-flex flex-wrap align-items-center gap-3 @Hid("inspection")" data-mode="inspection" id="kind-block">
         <span class="form-label mb-0">Вид проверки</span>
-        @foreach (var (kindValue, kindLabel) in new[] { ("Supervising", "Супервайзинг"), ("Pdk", "ПДК"), ("Pbiot", "ПБиОТ") })
+        @foreach (var (kindValue, kindLabel) in new[] { ("Supervising", "Супервайзинг"), ("Pdk", "ПДК"), ("Pbiot", "ПБиОТ"), ("Ppk", "ППК") })
         {
             <div class="form-check form-check-inline m-0">
                 <input class="form-check-input" type="radio" name="Input.Kind" id="kind-@kindValue" value="@kindValue"
@@ -174,7 +173,7 @@
 
         <div class="mb-2">
             <label class="form-label" for="master-select">
-                <span class="form-label-line">ФИО мастера <span class="crown-req @(isSupervising ? "" : "d-none")" id="master-req">*</span></span>
+                <span class="form-label-line">ФИО мастера</span>
             </label>
             <input type="hidden" asp-for="Input.MasterName" id="master-name" data-reset />
             <select class="form-select" asp-for="Input.MasterPersonId" id="master-select">
@@ -211,7 +210,7 @@
         <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
             <label class="form-label" for="stopped-by-dept"><span class="form-label-line">Кто остановил <span class="crown-req">*</span></span></label>
             <select class="form-select" asp-for="Input.StoppedByUserId" id="stopped-by-dept" required>
-                @{ await DepartmentOptions(Model.Input.StoppedByUserId, "— выберите подразделение —"); }
+                @{ await OrgOptions(Model.StopperOrgs, Model.Input.StoppedByUserId, "— выберите подразделение / заказчика —"); }
             </select>
         </div>
         <div class="mb-2 @Hid("stoppage")" data-mode="stoppage">
@@ -261,7 +260,7 @@
         </div>
 
         @* ---------- Проверка ---------- *@
-        <div class="mb-2 @Hid("inspection", "Supervising Pbiot")" data-mode="inspection" data-kind="Supervising Pbiot">
+        <div class="mb-2 @Hid("inspection", "Supervising Ppk Pbiot")" data-mode="inspection" data-kind="Supervising Ppk Pbiot">
             <label class="form-label" for="well-input"><span class="form-label-line">Скважина</span></label>
             <input class="form-control" type="text" asp-for="Input.Well" id="well-input" maxlength="200" />
         </div>
@@ -269,7 +268,7 @@
         <div class="mb-2 @Hid("inspection")" data-mode="inspection">
             <label class="form-label" for="checker-dept"><span class="form-label-line">Подразделение проверяющего <span class="crown-req">*</span></span></label>
             <select class="form-select" asp-for="Input.DepartmentUserId" id="checker-dept" required>
-                @{ await DepartmentOptions(Model.Input.DepartmentUserId, "— выберите подразделение —"); }
+                @{ await OrgOptions(Model.Departments, Model.Input.DepartmentUserId, "— выберите подразделение —"); }
             </select>
         </div>
         <div class="mb-2 @Hid("inspection")" data-mode="inspection">
@@ -311,7 +310,7 @@
         </div>
 
         @* Супервайзинг: Предписание / Замечание / Остановка + флаги *@
-        <div class="mb-2 @Hid("inspection", "Supervising")" data-mode="inspection" data-kind="Supervising">
+        <div class="mb-2 @Hid("inspection", "Supervising Ppk")" data-mode="inspection" data-kind="Supervising Ppk">
             <label class="form-label d-block"><span class="form-label-line">Результат <span class="crown-req">*</span></span></label>
             <div class="d-flex flex-wrap gap-3">
                 @foreach (var (outValue, outLabel) in new[] { ("Prescription", "Предписание"), ("Remark", "Замечание"), ("Stoppage", "Остановка") })
@@ -324,7 +323,7 @@
                 }
             </div>
         </div>
-        <div class="mb-2 @Hid("inspection", "Supervising")" data-mode="inspection" data-kind="Supervising">
+        <div class="mb-2 @Hid("inspection", "Supervising Ppk")" data-mode="inspection" data-kind="Supervising Ppk">
             <label class="form-label d-block"><span class="form-label-line">Признаки</span></label>
             <div class="d-flex flex-wrap gap-3">
                 <div class="form-check m-0">
@@ -384,6 +383,11 @@
         <div class="mb-2 @Hid("inspection", "Pbiot")" data-mode="inspection" data-kind="Pbiot" style="grid-column: 1 / -1;">
             <label class="form-label" for="fix-report-text"><span class="form-label-line">Отчёт об устранении</span></label>
             <textarea class="form-control" asp-for="Input.FixReportText" id="fix-report-text" rows="2" maxlength="2000"></textarea>
+        </div>
+
+        <div class="mb-2" style="grid-column: 1 / -1;">
+            <label class="form-label" for="entry-notes"><span class="form-label-line">Заметка</span></label>
+            <textarea class="form-control" asp-for="Input.Notes" id="entry-notes" rows="2" maxlength="2000" data-reset></textarea>
         </div>
     </div>
 
@@ -490,9 +494,9 @@
                 el.disabled = !visible || el.dataset.locked === '1';
             });
         });
-        $('master-req').classList.toggle('d-none', !(mode === 'inspection' && kind === 'Supervising'));
         const inspList = kind === 'Pdk' ? '/brigade-rating/inspections/pdk'
             : kind === 'Pbiot' ? '/brigade-rating/inspections/pbiot'
+            : kind === 'Ppk' ? '/brigade-rating/ppk'
             : '/brigade-rating/inspections/supervising';
         $('cancel-link').setAttribute('href', mode === 'inspection' ? inspList : '/brigade-rating');
     }
@@ -719,13 +723,6 @@
     list.querySelectorAll('.brigade-remark-editor-row').forEach(wireRow);
 
     // ---------- Клиентская валидация (сервер проверяет то же самое) ----------
-    function masterFilled() {
-        const v = master.select.value;
-        if (v === ADD) return form.querySelector('[name="Input.NewMasterFullName"]').value.trim() !== '';
-        if (v) return true;
-        return $('master-name').value.trim() !== ''; // «(без привязки)» из сохранённой проверки
-    }
-
     function validate() {
         const mode = currentMode();
         const kind = currentKind();
@@ -738,7 +735,6 @@
             return mode === 'inspection' ? 'Добавьте хотя бы одно нарушение.' : 'Добавьте хотя бы один пункт акта.';
         }
         if (mode === 'inspection') {
-            if (kind === 'Supervising' && !masterFilled()) return 'Укажите мастера.';
             if (checker.select.value === ADD) {
                 if (form.querySelector('[name="Input.NewCheckerFullName"]').value.trim() === '') {
                     return 'Укажите ФИО проверяющего.';

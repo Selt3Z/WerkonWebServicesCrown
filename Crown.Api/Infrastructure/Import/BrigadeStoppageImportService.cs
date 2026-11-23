@@ -268,51 +268,113 @@ public sealed class BrigadeStoppageImportService
         return response;
     }
 
-    private async Task<Dictionary<string, BrigadeLite>> LoadBrigadeIndexAsync(CancellationToken cancellationToken)
+    /// <summary>Индекс бригад для импорта (остановки / ППК).</summary>
+    internal async Task<BrigadeLookupIndex> LoadBrigadeIndexAsync(CancellationToken cancellationToken)
     {
         var roleUsers = await _users.GetUsersInRoleAsync(AppRoles.Brigade);
-        var index = new Dictionary<string, BrigadeLite>(StringComparer.Ordinal);
+        var byKey = new Dictionary<string, BrigadeLite>(StringComparer.Ordinal);
+        var byNumber = new Dictionary<string, List<BrigadeLite>>(StringComparer.Ordinal);
 
         void AddKey(string? raw, BrigadeLite lite)
         {
             var key = CatalogTextLookup.NormKey(raw);
-            if (string.IsNullOrEmpty(key) || index.ContainsKey(key))
+            if (string.IsNullOrEmpty(key) || byKey.ContainsKey(key))
             {
                 return;
             }
 
-            index[key] = lite;
+            byKey[key] = lite;
+        }
+
+        void AddNumber(string num, BrigadeLite lite)
+        {
+            var nk = NormBrigadeNumber(num);
+            if (string.IsNullOrEmpty(nk))
+            {
+                return;
+            }
+
+            if (!byNumber.TryGetValue(nk, out var list))
+            {
+                list = [];
+                byNumber[nk] = list;
+            }
+
+            if (list.All(x => x.Id != lite.Id))
+            {
+                list.Add(lite);
+            }
         }
 
         foreach (var u in roleUsers.Where(x => x.IsActive))
         {
             var display = UserDisplay.FormatBrigadeDisplay(u);
-            var lite = new BrigadeLite(u.Id, display);
+            var types = ExpandTypeAliases(BrigadeTypeTokens(u.DisplayName, u.BrigadeWorkshop)).ToArray();
+            var lite = new BrigadeLite(u.Id, display, types, u.BrigadeWorkshop, u.BrigadeNumber);
             AddKey(display, lite);
             AddKey(u.DisplayName, lite);
             AddKey(u.UserName, lite);
             AddKey(u.BrigadeNumber, lite);
-            if (!string.IsNullOrWhiteSpace(u.BrigadeNumber))
-            {
-                var num = u.BrigadeNumber.Trim();
-                AddKey($"№{num}", lite);
-                AddKey($"#{num}", lite);
 
-                // Excel часто «КРС-219» / «ПРС-7», а в Users — «Бригада КРС» + BrigadeNumber=219.
-                foreach (var type in BrigadeTypeTokens(u.DisplayName, u.BrigadeWorkshop))
+            var indexedNums = new HashSet<string>(StringComparer.Ordinal);
+            void IndexNum(string? rawNum, string? typeHint = null)
+            {
+                if (string.IsNullOrWhiteSpace(rawNum))
                 {
-                    AddKey($"{type}-{num}", lite);
-                    AddKey($"{type}{num}", lite);
-                    AddKey($"{type} {num}", lite);
-                    AddKey($"{type}№{num}", lite);
+                    return;
                 }
+
+                var num = rawNum.Trim();
+                if (TryParseBrigadeCode(num, out var embeddedType, out var embeddedNum))
+                {
+                    num = embeddedNum;
+                    if (embeddedType.Length > 0)
+                    {
+                        typeHint ??= embeddedType;
+                    }
+                }
+
+                var nk = NormBrigadeNumber(num);
+                if (string.IsNullOrEmpty(nk) || !indexedNums.Add(nk))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(typeHint))
+                {
+                    types = ExpandTypeAliases(types.Append(typeHint)).ToArray();
+                    lite = new BrigadeLite(u.Id, display, types, u.BrigadeWorkshop, u.BrigadeNumber);
+                }
+
+                AddNumber(nk, lite);
+                // Чистый номер — только ByNumber (уникальность), не ByKey «первый победил».
+                AddKey($"№{nk}", lite);
+                AddKey($"#{nk}", lite);
+
+                // Excel: «КРС-219», «ПРС-7», «213К» ← Users «Бригада КРС» + BrigadeNumber=219.
+                foreach (var type in types)
+                {
+                    AddKey($"{type}-{nk}", lite);
+                    AddKey($"{type}{nk}", lite);
+                    AddKey($"{type} {nk}", lite);
+                    AddKey($"{type}№{nk}", lite);
+                    AddKey($"{nk}{type}", lite);
+                    AddKey($"{nk}-{type}", lite);
+                }
+            }
+
+            IndexNum(u.BrigadeNumber);
+            // Цифры из имени/логина («Бригада №219», «бр-7») — тоже в индекс по номеру.
+            foreach (Match m in BrigadeDigitsInText.Matches($"{u.DisplayName} {u.UserName} {display}"))
+            {
+                IndexNum(m.Groups["num"].Value);
             }
         }
 
-        return index;
+        return new BrigadeLookupIndex(byKey, byNumber);
     }
 
-    /// <summary>Токены типа бригады из «Бригада КРС» / цеха «ПРС» → КРС, ПРС.</summary>
+    /// <summary>Буквенные коды из «Бригада КРС» / цеха «ПРС» (все слова-аббревиатуры).</summary>
     private static IEnumerable<string> BrigadeTypeTokens(string? displayName, string? workshop)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -325,27 +387,60 @@ public sealed class BrigadeStoppageImportService
                 continue;
             }
 
-            // Последнее слово: «Бригада КРС» → КРС; цех «ПРС» → ПРС.
-            var parts = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var candidate = parts.Length == 0 ? raw.Trim() : parts[^1];
-            if (candidate.Length is < 2 or > 12 || !candidate.All(char.IsLetter))
+            foreach (var part in raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                continue;
-            }
+                if (part.Length is < 1 or > 12 || !part.All(char.IsLetter))
+                {
+                    continue;
+                }
 
-            if (string.Equals(candidate, "Бригада", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+                if (string.Equals(part, "Бригада", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
 
-            if (seen.Add(candidate))
-            {
-                list.Add(candidate);
+                if (seen.Add(part))
+                {
+                    list.Add(part);
+                }
             }
         }
 
         return list;
     }
+
+    /// <summary>К↔КРС, П↔ПРС, латиница krs/prs — Excel часто пишет коротко.</summary>
+    private static IEnumerable<string> ExpandTypeAliases(IEnumerable<string> types)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var t in types)
+        {
+            var key = CatalogTextLookup.NormKey(t);
+            if (string.IsNullOrEmpty(key) || !seen.Add(key))
+            {
+                continue;
+            }
+
+            yield return key;
+
+            foreach (var alias in TypeAliasGroup(key))
+            {
+                if (seen.Add(alias))
+                {
+                    yield return alias;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> TypeAliasGroup(string normType) =>
+        normType switch
+        {
+            "крс" or "к" or "k" or "krs" => ["крс", "к", "k", "krs"],
+            "прс" or "п" or "p" or "prs" => ["прс", "п", "p", "prs"],
+            "ткрс" or "т" or "t" or "tkrs" => ["ткрс", "т", "t", "tkrs"],
+            _ => []
+        };
 
     private async Task<HashSet<string>> LoadExistingKeysAsync(CancellationToken cancellationToken)
     {
@@ -366,53 +461,213 @@ public sealed class BrigadeStoppageImportService
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static readonly Regex BrigadeCodeNumber = new(
-        @"^\s*(?<type>[A-Za-zА-Яа-яЁё]{2,12})\s*[-–—№#.\s]+\s*(?<num>\d{1,6})\s*$",
+    // «КРС-219» / «ПРС 7» / «ПРС–7»
+    private static readonly Regex BrigadeTypeThenNumber = new(
+        @"^\s*(?<type>[A-Za-zА-Яа-яЁё]{1,12})\s*[-–—‐\-№#./\s]+\s*(?<num>\d{1,6})\s*$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static bool TryResolveBrigade(
-        IReadOnlyDictionary<string, BrigadeLite> index,
+    // «213К» / «7ПРС» / «7-П» — номер, потом тип (как в части листов остановок).
+    private static readonly Regex BrigadeNumberThenType = new(
+        @"^\s*(?<num>\d{1,6})\s*[-–—‐\-./\s]*\s*(?<type>[A-Za-zА-Яа-яЁё]{1,12})\s*$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex BrigadeNumberOnly = new(
+        @"^\s*(?<num>\d{1,6})\s*$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    // Любые 1–6 цифр внутри текста («Бригада 219», «бр.007»).
+    private static readonly Regex BrigadeDigitsInText = new(
+        @"(?<num>\d{1,6})",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>Нормализация номера: trim/lower + без ведущих нулей («007»→«7»).</summary>
+    private static string NormBrigadeNumber(string? raw)
+    {
+        var nk = CatalogTextLookup.NormKey(raw);
+        if (string.IsNullOrEmpty(nk))
+        {
+            return string.Empty;
+        }
+
+        // Оставляем только цифры на случай «№219» / мусора вокруг.
+        var digits = new string(nk.Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        digits = digits.TrimStart('0');
+        return digits.Length == 0 ? "0" : digits;
+    }
+
+    private static bool TryParseBrigadeCode(string raw, out string type, out string num)
+    {
+        var trimmed = raw.Trim();
+        var m = BrigadeTypeThenNumber.Match(trimmed);
+        if (m.Success)
+        {
+            type = m.Groups["type"].Value;
+            num = m.Groups["num"].Value;
+            return true;
+        }
+
+        m = BrigadeNumberThenType.Match(trimmed);
+        if (m.Success)
+        {
+            type = m.Groups["type"].Value;
+            num = m.Groups["num"].Value;
+            return true;
+        }
+
+        m = BrigadeNumberOnly.Match(trimmed);
+        if (m.Success)
+        {
+            type = string.Empty;
+            num = m.Groups["num"].Value;
+            return true;
+        }
+
+        type = string.Empty;
+        num = string.Empty;
+        return false;
+    }
+
+    internal static bool TryResolveBrigade(
+        BrigadeLookupIndex index,
         string raw,
         out BrigadeLite brigade)
     {
+        var trimmed = raw.Trim();
+
+        // Чистый номер («7», «007», «219») — только уникальный ByNumber.
+        if (TryParseBrigadeCode(trimmed, out var pureType, out var pureNum) && pureType.Length == 0)
+        {
+            return TryResolveByNumberAndType(index, pureNum, typeHint: null, out brigade);
+        }
+
         var key = CatalogTextLookup.NormKey(raw);
-        if (index.TryGetValue(key, out brigade!))
+        if (index.ByKey.TryGetValue(key, out brigade!))
         {
             return true;
         }
 
         // «Имя №12» / хвост с номером — пробуем номер отдельно.
-        var trimmed = raw.Trim();
         var noIdx = trimmed.LastIndexOf('№');
         if (noIdx >= 0 && noIdx < trimmed.Length - 1)
         {
-            var numKey = CatalogTextLookup.NormKey(trimmed[(noIdx + 1)..]);
-            if (index.TryGetValue(numKey, out brigade!))
+            var tail = trimmed[(noIdx + 1)..].Trim();
+            if (TryResolveByNumberAndType(index, tail, typeHint: null, out brigade!))
             {
                 return true;
             }
         }
 
-        // «КРС-219» / «ПРС 7» → ключи type-num и чистый номер.
-        var m = BrigadeCodeNumber.Match(trimmed);
-        if (m.Success)
+        // «КРС-219» / «ПРС-7» / «213К».
+        if (TryParseBrigadeCode(trimmed, out var type, out var num)
+            && TryResolveByNumberAndType(index, num, type, out brigade!))
         {
-            var type = m.Groups["type"].Value;
-            var num = m.Groups["num"].Value;
+            return true;
+        }
+
+        // Запасной путь: единственная уникальная группа цифр в ячейке.
+        var digitMatches = BrigadeDigitsInText.Matches(trimmed);
+        if (digitMatches.Count > 0)
+        {
+            BrigadeLite? found = null;
+            foreach (Match m in digitMatches)
+            {
+                if (!TryResolveByNumberAndType(index, m.Groups["num"].Value, typeHint: null, out var hit))
+                {
+                    continue;
+                }
+
+                if (found is not null && found.Id != hit.Id)
+                {
+                    brigade = null!;
+                    return false;
+                }
+
+                found = hit;
+            }
+
+            if (found is not null)
+            {
+                brigade = found;
+                return true;
+            }
+        }
+
+        brigade = null!;
+        return false;
+    }
+
+    private static bool TryResolveByNumberAndType(
+        BrigadeLookupIndex index,
+        string numRaw,
+        string? typeHint,
+        out BrigadeLite brigade)
+    {
+        var num = NormBrigadeNumber(numRaw);
+        if (string.IsNullOrEmpty(num))
+        {
+            brigade = null!;
+            return false;
+        }
+
+        var typeAliases = string.IsNullOrWhiteSpace(typeHint)
+            ? Array.Empty<string>()
+            : ExpandTypeAliases([typeHint!]).ToArray();
+
+        foreach (var type in typeAliases)
+        {
             foreach (var candidate in new[]
                      {
                          $"{type}-{num}",
                          $"{type}{num}",
                          $"{type} {num}",
-                         num
+                         $"{type}№{num}",
+                         $"{num}{type}",
+                         $"{num}-{type}"
                      })
             {
                 var ck = CatalogTextLookup.NormKey(candidate);
-                if (index.TryGetValue(ck, out brigade!))
+                if (index.ByKey.TryGetValue(ck, out brigade!))
                 {
                     return true;
                 }
             }
+        }
+
+        if (!index.ByNumber.TryGetValue(num, out var candidates) || candidates.Count == 0)
+        {
+            brigade = null!;
+            return false;
+        }
+
+        // Тип из Excel есть — оставляем только бригады с пересечением алиасов.
+        if (typeAliases.Length > 0)
+        {
+            var typed = candidates
+                .Where(c => c.TypeKeys.Any(t => typeAliases.Contains(t, StringComparer.Ordinal)))
+                .ToList();
+            if (typed.Count == 1)
+            {
+                brigade = typed[0];
+                return true;
+            }
+
+            if (typed.Count > 1)
+            {
+                brigade = null!;
+                return false;
+            }
+        }
+
+        // Без типа или тип не помог: уникальный номер в системе.
+        if (candidates.Count == 1)
+        {
+            brigade = candidates[0];
+            return true;
         }
 
         brigade = null!;
@@ -605,5 +860,14 @@ public sealed class BrigadeStoppageImportService
         }
     }
 
-    private sealed record BrigadeLite(Guid Id, string DisplayName);
+    internal sealed record BrigadeLite(
+        Guid Id,
+        string DisplayName,
+        IReadOnlyList<string> TypeKeys,
+        string? Workshop = null,
+        string? BrigadeNumber = null);
+
+    internal sealed record BrigadeLookupIndex(
+        IReadOnlyDictionary<string, BrigadeLite> ByKey,
+        IReadOnlyDictionary<string, List<BrigadeLite>> ByNumber);
 }

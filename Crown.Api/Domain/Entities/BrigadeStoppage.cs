@@ -44,6 +44,9 @@ public sealed class BrigadeStoppage
     /// <summary>true = текст вручную, без WorkItemId.</summary>
     public bool IsWorkManual { get; set; } = true;
 
+    /// <summary>Свободная заметка к остановке (не попадает в акт).</summary>
+    public string? Notes { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public Guid? CreatedByUserId { get; set; }

@@ -56,8 +56,11 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
 
     public List<BrigadeParticipant> Brigades { get; private set; } = [];
 
-    /// <summary>Подразделения для «Кто остановил» и проверяющего (assignees = Department).</summary>
+    /// <summary>Подразделения для проверяющего (assignees = Department).</summary>
     public List<RequestAssignee> Departments { get; private set; } = [];
+
+    /// <summary>Department + Customer для «Кто остановил».</summary>
+    public List<RequestAssignee> StopperOrgs { get; private set; } = [];
 
     public List<StoppageActItem> ActItems { get; private set; } = [];
 
@@ -413,6 +416,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             WorkDescription = Input.WorkDescription?.Trim() ?? string.Empty,
             WorkItemId = workManual ? null : Input.WorkItemId,
             IsWorkManual = workManual,
+            Notes = Clean(Input.Notes),
             Remarks = remarks
         };
 
@@ -482,11 +486,6 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         var masterNewName = masterAdd ? Clean(Input.NewMasterFullName) : null;
         Guid? masterPersonId = !masterAdd && Input.MasterPersonId is Guid mp && mp != Guid.Empty ? mp : null;
         var masterName = masterPersonId is null && masterNewName is null ? Clean(Input.MasterName) : null;
-        if (Input.Kind == BrigadeInspectionKind.Supervising
-            && masterPersonId is null && masterNewName is null && masterName is null)
-        {
-            return await FailAsync("Укажите мастера.");
-        }
 
         // ----- Проверяющий: подразделение + сотрудник (или «Добавить») -----
         if (Input.DepartmentUserId is null || Input.DepartmentUserId == Guid.Empty)
@@ -503,7 +502,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             return await FailAsync("Укажите проверяющего.");
         }
 
-        if (Input.Kind == BrigadeInspectionKind.Supervising && Input.Outcome is null)
+        if (BrigadeRatingInspectionsModel.IsSupervisingProfile(Input.Kind) && Input.Outcome is null)
         {
             return await FailAsync("Укажите: предписание, замечание или остановка.");
         }
@@ -527,6 +526,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             FixDateIsManual = Input.FixDateIsManual,
             FixDate = Input.FixDateIsManual ? null : Input.FixDate,
             FixDateManualText = Input.FixDateIsManual ? Clean(Input.FixDateManualText) : null,
+            Notes = Clean(Input.Notes),
             Remarks = remarks
         };
 
@@ -534,6 +534,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         switch (Input.Kind)
         {
             case BrigadeInspectionKind.Supervising:
+            case BrigadeInspectionKind.Ppk:
                 payload.Outcome = Input.Outcome;
                 payload.StopPoint = Input.StopPoint;
                 payload.HasExplanation = Input.HasExplanation;
@@ -593,7 +594,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
     /// <summary>Загрузка справочников и зависимых списков под текущий Input, затем отрисовка страницы.</summary>
     private async Task<IActionResult> RenderAsync()
     {
-        if (Brigades.Count == 0 && Departments.Count == 0)
+        if (Brigades.Count == 0 && Departments.Count == 0 && StopperOrgs.Count == 0)
         {
             await LoadLookupsAsync();
         }
@@ -666,6 +667,11 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
             "api/requests/assignees",
             HttpContext.RequestAborted);
         Departments = depts.Data ?? [];
+
+        var stoppers = await api.GetAsync<List<RequestAssignee>>(
+            "api/brigade-rating/stopper-orgs",
+            HttpContext.RequestAborted);
+        StopperOrgs = stoppers.Data ?? [];
     }
 
     private async Task LoadDependentAsync()
@@ -882,6 +888,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         WorkDescription = d.WorkDescription,
         WorkItemId = d.WorkItemId,
         IsWorkManual = d.IsWorkManual || d.WorkItemId is null,
+        Notes = d.Notes,
         Remarks = d.Remarks
             .OrderBy(r => r.SortOrder)
             .Select(r => new RemarkLineInput
@@ -920,6 +927,7 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         FixReportText = d.FixReportText,
         FixResponsiblePersonId = d.FixResponsiblePersonId,
         FixResponsibleName = d.FixResponsibleName,
+        Notes = d.Notes,
         Remarks = d.Remarks
             .OrderBy(r => r.SortOrder)
             .Select(r => new RemarkLineInput
@@ -960,6 +968,9 @@ public sealed class BrigadeRatingStoppageModel(CrownApiClient api, AppTime time)
         public string? WorkDescription { get; set; }
         public Guid? WorkItemId { get; set; }
         public bool IsWorkManual { get; set; } = true;
+
+        /// <summary>Общая заметка (остановка / проверка).</summary>
+        public string? Notes { get; set; }
 
         // ----- Проверка -----
         public string? Well { get; set; }

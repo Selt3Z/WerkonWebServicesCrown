@@ -26,23 +26,23 @@ public sealed class DocumentationTrashPurgeService
     {
         var retentionDays = await _settings.GetDocumentationTrashRetentionDaysAsync(cancellationToken);
         var cutoff = DateTimeOffset.UtcNow.AddDays(-retentionDays);
-        return await PurgeAsync(ownerUserId: null, olderThan: cutoff, cancellationToken);
+        return await PurgeAsync(libraryId: null, olderThan: cutoff, cancellationToken);
     }
 
-    public Task<int> PurgeSectionAsync(Guid ownerUserId, CancellationToken cancellationToken = default) =>
-        PurgeAsync(ownerUserId, olderThan: null, cancellationToken);
+    public Task<int> PurgeLibraryAsync(Guid libraryId, CancellationToken cancellationToken = default) =>
+        PurgeAsync(libraryId, olderThan: null, cancellationToken);
 
     private async Task<int> PurgeAsync(
-        Guid? ownerUserId,
+        Guid? libraryId,
         DateTimeOffset? olderThan,
         CancellationToken cancellationToken)
     {
         var filesQuery = _db.DocumentationFiles.Where(x => x.DeletedAt != null);
         var foldersQuery = _db.DocumentationFolders.Where(x => x.DeletedAt != null);
-        if (ownerUserId is Guid oid)
+        if (libraryId is Guid lid)
         {
-            filesQuery = filesQuery.Where(x => x.OwnerUserId == oid);
-            foldersQuery = foldersQuery.Where(x => x.OwnerUserId == oid);
+            filesQuery = filesQuery.Where(x => x.LibraryId == lid);
+            foldersQuery = foldersQuery.Where(x => x.LibraryId == lid);
         }
 
         if (olderThan is DateTimeOffset cutoff)

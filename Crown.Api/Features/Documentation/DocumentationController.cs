@@ -46,56 +46,398 @@ public sealed class DocumentationController : ControllerBase
         _inboxSync = inboxSync;
     }
 
-    /// <summary>Подразделы — только роль Department с включённой документацией.</summary>
-    [HttpGet("sections")]
-    public async Task<ActionResult<List<DocumentationSectionResponse>>> ListSections(
+    /// <summary>Каталоги: staff — все активные; остальные — DocumentationEnabled + членство.</summary>
+    [HttpGet("libraries")]
+    public async Task<ActionResult<List<DocumentationLibraryResponse>>> ListLibraries(
         CancellationToken cancellationToken)
     {
-        var me = GetUserId();
-        var isAdmin = User.IsInRole(AppRoles.Administrator);
-        var isDispatcher = User.IsInRole(AppRoles.Dispatcher);
-        var owners = await ListAccessibleOwnersAsync(cancellationToken);
+        var access = await ResolveCallerAccessAsync(cancellationToken);
+        if (access.Error is not null)
+        {
+            return access.Error;
+        }
 
-        var ownerIds = owners.Select(x => x.Id).ToList();
+        if (!access.IsStaff && !access.DocumentationEnabled)
+        {
+            return Ok(new List<DocumentationLibraryResponse>());
+        }
+
+        var me = access.UserId!.Value;
+        var libraries = await _db.DocumentationLibraries.AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        Dictionary<Guid, DocumentationLibraryMember>? membership = null;
+        if (!access.IsStaff)
+        {
+            membership = await _db.DocumentationLibraryMembers.AsNoTracking()
+                .Where(x => x.UserId == me)
+                .ToDictionaryAsync(x => x.LibraryId, cancellationToken);
+            libraries = libraries.Where(x => membership.ContainsKey(x.Id)).ToList();
+        }
+
+        var libraryIds = libraries.Select(x => x.Id).ToList();
         var stats = await _db.DocumentationFiles.AsNoTracking()
-            .Where(f => ownerIds.Contains(f.OwnerUserId) && f.DeletedAt == null)
-            .GroupBy(f => f.OwnerUserId)
-            .Select(g => new { OwnerUserId = g.Key, FileCount = g.Count(), TotalSizeBytes = g.Sum(x => x.SizeBytes) })
-            .ToDictionaryAsync(x => x.OwnerUserId, cancellationToken);
+            .Where(f => f.LibraryId != null
+                        && libraryIds.Contains(f.LibraryId.Value)
+                        && f.DeletedAt == null)
+            .GroupBy(f => f.LibraryId!.Value)
+            .Select(g => new { LibraryId = g.Key, FileCount = g.Count(), TotalSizeBytes = g.Sum(x => x.SizeBytes) })
+            .ToDictionaryAsync(x => x.LibraryId, cancellationToken);
 
-        // Свой раздел — всегда первым, дальше по заголовку.
-        return Ok(owners
-            .Select(x =>
+        var isAdmin = access.IsAdmin;
+        return Ok(libraries.Select(lib =>
+        {
+            stats.TryGetValue(lib.Id, out var st);
+            var member = membership?.GetValueOrDefault(lib.Id);
+            var canWrite = access.IsStaff || (member?.CanWrite ?? false);
+            return new DocumentationLibraryResponse
             {
-                stats.TryGetValue(x.Id, out var st);
-                return new DocumentationSectionResponse
+                Id = lib.Id,
+                Name = lib.Name,
+                CanWrite = canWrite,
+                CanManageMembers = isAdmin,
+                FileCount = st?.FileCount ?? 0,
+                TotalSizeBytes = st?.TotalSizeBytes ?? 0,
+                SortOrder = lib.SortOrder,
+                IsActive = lib.IsActive,
+                InboxFolderKey = lib.InboxFolderKey
+            };
+        }).ToList());
+    }
+
+    [HttpPost("libraries")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<ActionResult<DocumentationLibraryResponse>> CreateLibrary(
+        [FromBody] CreateDocumentationLibraryRequest request,
+        CancellationToken cancellationToken)
+    {
+        var name = NormalizeLibraryName(request.Name);
+        if (name is null)
+        {
+            return BadRequest(ApiErrors.FromCode("invalid_library_name"));
+        }
+
+        var inboxKey = NormalizeInboxKey(request.InboxFolderKey);
+        var library = new DocumentationLibrary
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            SortOrder = request.SortOrder,
+            IsActive = true,
+            InboxFolderKey = inboxKey,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByUserId = GetUserId()
+        };
+        _db.DocumentationLibraries.Add(library);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new DocumentationLibraryResponse
+        {
+            Id = library.Id,
+            Name = library.Name,
+            CanWrite = true,
+            CanManageMembers = true,
+            SortOrder = library.SortOrder,
+            IsActive = library.IsActive,
+            InboxFolderKey = library.InboxFolderKey
+        });
+    }
+
+    [HttpPut("libraries/{libraryId:guid}")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<ActionResult<DocumentationLibraryResponse>> UpdateLibrary(
+        Guid libraryId,
+        [FromBody] UpdateDocumentationLibraryRequest request,
+        CancellationToken cancellationToken)
+    {
+        var library = await _db.DocumentationLibraries
+            .SingleOrDefaultAsync(x => x.Id == libraryId, cancellationToken);
+        if (library is null)
+        {
+            return NotFound();
+        }
+
+        var name = NormalizeLibraryName(request.Name);
+        if (name is null)
+        {
+            return BadRequest(ApiErrors.FromCode("invalid_library_name"));
+        }
+
+        library.Name = name;
+        library.SortOrder = request.SortOrder;
+        library.IsActive = request.IsActive;
+        library.InboxFolderKey = NormalizeInboxKey(request.InboxFolderKey);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new DocumentationLibraryResponse
+        {
+            Id = library.Id,
+            Name = library.Name,
+            CanWrite = true,
+            CanManageMembers = true,
+            SortOrder = library.SortOrder,
+            IsActive = library.IsActive,
+            InboxFolderKey = library.InboxFolderKey
+        });
+    }
+
+    [HttpDelete("libraries/{libraryId:guid}")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<IActionResult> DeleteLibrary(Guid libraryId, CancellationToken cancellationToken)
+    {
+        var library = await _db.DocumentationLibraries
+            .SingleOrDefaultAsync(x => x.Id == libraryId, cancellationToken);
+        if (library is null)
+        {
+            return NotFound();
+        }
+
+        // Мягкое отключение: каталог скрывается, файлы остаются.
+        library.IsActive = false;
+        await _db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    [HttpGet("libraries/{libraryId:guid}/members")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<ActionResult<List<DocumentationLibraryMemberResponse>>> ListMembers(
+        Guid libraryId,
+        CancellationToken cancellationToken)
+    {
+        if (!await _db.DocumentationLibraries.AnyAsync(x => x.Id == libraryId, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        var members = await _db.DocumentationLibraryMembers.AsNoTracking()
+            .Where(x => x.LibraryId == libraryId)
+            .ToListAsync(cancellationToken);
+        var userIds = members.Select(x => x.UserId).ToList();
+        var users = await _users.Users.AsNoTracking()
+            .Where(x => userIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        return Ok(members
+            .Select(m =>
+            {
+                users.TryGetValue(m.UserId, out var u);
+                return new DocumentationLibraryMemberResponse
                 {
-                    UserId = x.Id,
-                    DisplayName = ResolveSectionTitle(x),
-                    UserName = string.Empty,
-                    CanWrite = isAdmin || isDispatcher || me == x.Id,
-                    FileCount = st?.FileCount ?? 0,
-                    TotalSizeBytes = st?.TotalSizeBytes ?? 0
+                    UserId = m.UserId,
+                    DisplayName = u is null
+                        ? "—"
+                        : UserDisplay.Format(u.DisplayName, u.UserName, u.BrigadeNumber),
+                    UserName = u?.UserName ?? string.Empty,
+                    CanWrite = m.CanWrite
                 };
             })
-            .OrderByDescending(x => x.UserId == me)
-            .ThenBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToList());
     }
 
-    private async Task<List<ApplicationUser>> ListAccessibleOwnersAsync(CancellationToken cancellationToken)
+    [HttpPut("libraries/{libraryId:guid}/members")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<IActionResult> UpdateMembers(
+        Guid libraryId,
+        [FromBody] UpdateLibraryMembersRequest request,
+        CancellationToken cancellationToken)
     {
-        // Только роль Department; админы/диспетчеры в список разделов не попадают.
-        var departmentUsers = await _users.GetUsersInRoleAsync(AppRoles.Department);
-        _ = cancellationToken;
-        return departmentUsers
-            .Where(x => x.IsActive && x.DocumentationEnabled)
-            .OrderBy(x => ResolveSectionTitle(x), StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(x => x.UserName)
-            .ToList();
+        if (!await _db.DocumentationLibraries.AnyAsync(x => x.Id == libraryId, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        var existing = await _db.DocumentationLibraryMembers
+            .Where(x => x.LibraryId == libraryId)
+            .ToListAsync(cancellationToken);
+        _db.DocumentationLibraryMembers.RemoveRange(existing);
+
+        var now = DateTimeOffset.UtcNow;
+        var seen = new HashSet<Guid>();
+        foreach (var item in request.Members)
+        {
+            if (!seen.Add(item.UserId))
+            {
+                continue;
+            }
+
+            _db.DocumentationLibraryMembers.Add(new DocumentationLibraryMember
+            {
+                Id = Guid.NewGuid(),
+                LibraryId = libraryId,
+                UserId = item.UserId,
+                CanWrite = item.CanWrite,
+                CreatedAt = now
+            });
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 
-    /// <summary>Поиск файлов/папок по всем разделам документации, доступным текущему пользователю.</summary>
+    /// <summary>Владельцы старых разделов без LibraryId (для one-shot переноса).</summary>
+    [HttpGet("admin/legacy-sources")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<ActionResult<DocumentationLegacySourcesResponse>> ListLegacySources(
+        CancellationToken cancellationToken)
+    {
+        var folderOwners = await _db.DocumentationFolders.AsNoTracking()
+            .Where(x => x.LibraryId == null && x.OwnerUserId != null)
+            .GroupBy(x => x.OwnerUserId!.Value)
+            .Select(g => new { OwnerUserId = g.Key, FolderCount = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var fileOwners = await _db.DocumentationFiles.AsNoTracking()
+            .Where(x => x.LibraryId == null && x.OwnerUserId != null)
+            .GroupBy(x => x.OwnerUserId!.Value)
+            .Select(g => new { OwnerUserId = g.Key, FileCount = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var ownerIds = folderOwners.Select(x => x.OwnerUserId)
+            .Concat(fileOwners.Select(x => x.OwnerUserId))
+            .Distinct()
+            .ToList();
+
+        var users = await _users.Users.AsNoTracking()
+            .Where(x => ownerIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var folderMap = folderOwners.ToDictionary(x => x.OwnerUserId, x => x.FolderCount);
+        var fileMap = fileOwners.ToDictionary(x => x.OwnerUserId, x => x.FileCount);
+
+        var items = ownerIds.Select(id =>
+        {
+            users.TryGetValue(id, out var u);
+            return new DocumentationLegacySourceItem
+            {
+                OwnerUserId = id,
+                DisplayName = u is null
+                    ? id.ToString("N")
+                    : UserDisplay.Format(u.DisplayName, u.UserName, u.BrigadeNumber),
+                UserName = u?.UserName ?? string.Empty,
+                FolderCount = folderMap.GetValueOrDefault(id),
+                FileCount = fileMap.GetValueOrDefault(id)
+            };
+        })
+        .OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+        .ToList();
+
+        return Ok(new DocumentationLegacySourcesResponse { Items = items });
+    }
+
+    [HttpPost("admin/migrate")]
+    [Authorize(Roles = AppRoles.Administrator)]
+    public async Task<ActionResult<MigrateDocumentationResponse>> Migrate(
+        [FromBody] MigrateDocumentationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = new MigrateDocumentationResponse();
+        if (request.Items.Count == 0)
+        {
+            return Ok(response);
+        }
+
+        foreach (var item in request.Items)
+        {
+            var library = await _db.DocumentationLibraries
+                .SingleOrDefaultAsync(x => x.Id == item.LibraryId, cancellationToken);
+            if (library is null)
+            {
+                response.Messages.Add($"Каталог {item.LibraryId:N} не найден.");
+                continue;
+            }
+
+            var folders = await _db.DocumentationFolders
+                .Where(x => x.OwnerUserId == item.OwnerUserId && x.LibraryId == null)
+                .ToListAsync(cancellationToken);
+            foreach (var folder in folders)
+            {
+                folder.LibraryId = item.LibraryId;
+            }
+
+            var files = await _db.DocumentationFiles
+                .Where(x => x.OwnerUserId == item.OwnerUserId && x.LibraryId == null)
+                .ToListAsync(cancellationToken);
+            foreach (var file in files)
+            {
+                file.LibraryId = item.LibraryId;
+            }
+
+            response.FoldersUpdated += folders.Count;
+            response.FilesUpdated += files.Count;
+
+            // Inbox key из логина владельца, если у каталога ещё нет.
+            if (string.IsNullOrWhiteSpace(library.InboxFolderKey))
+            {
+                var owner = await _users.Users.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.Id == item.OwnerUserId, cancellationToken);
+                if (owner is not null)
+                {
+                    var key = Crown.Infrastructure.Documentation.DocumentationInboxSyncService
+                        .ResolveFolderKey(owner);
+                    if (!string.IsNullOrWhiteSpace(key))
+                    {
+                        library.InboxFolderKey = key;
+                    }
+                }
+            }
+
+            var memberExists = await _db.DocumentationLibraryMembers.AnyAsync(
+                x => x.LibraryId == item.LibraryId && x.UserId == item.OwnerUserId,
+                cancellationToken);
+            if (!memberExists)
+            {
+                _db.DocumentationLibraryMembers.Add(new DocumentationLibraryMember
+                {
+                    Id = Guid.NewGuid(),
+                    LibraryId = item.LibraryId,
+                    UserId = item.OwnerUserId,
+                    CanWrite = true,
+                    CreatedAt = DateTimeOffset.UtcNow
+                });
+                response.MembersAdded++;
+            }
+
+            await _db.SaveChangesAsync(cancellationToken);
+            response.Messages.Add(
+                $"Owner {item.OwnerUserId:N} → {library.Name}: папок {folders.Count}, файлов {files.Count}.");
+        }
+
+        return Ok(response);
+    }
+
+    /// <summary>Кандидаты для ACL (активные пользователи).</summary>
+    [HttpGet("admin/users")]
+    [Authorize(Policy = AuthorizationPolicies.ManageUsers)]
+    public async Task<ActionResult<List<DocumentationAclUserResponse>>> AdminListUsers(
+        CancellationToken cancellationToken)
+    {
+        var rows = await _users.Users.AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.DisplayName)
+            .ThenBy(x => x.UserName)
+            .Select(x => new
+            {
+                x.Id,
+                x.DisplayName,
+                x.UserName,
+                x.BrigadeNumber,
+                x.IsActive
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(rows.Select(x => new DocumentationAclUserResponse
+        {
+            UserId = x.Id,
+            DisplayName = UserDisplay.Format(x.DisplayName, x.UserName, x.BrigadeNumber),
+            UserName = x.UserName ?? string.Empty,
+            IsActive = x.IsActive
+        }).ToList());
+    }
+
     [HttpGet("search")]
     public async Task<ActionResult<DocumentationGlobalSearchResponse>> GlobalSearch(
         [FromQuery] string? q,
@@ -107,24 +449,26 @@ public sealed class DocumentationController : ControllerBase
             return Ok(new DocumentationGlobalSearchResponse { Query = query, Hits = [] });
         }
 
-        var sections = await ListAccessibleOwnersAsync(cancellationToken);
-        if (sections.Count == 0)
+        var libraries = await ListAccessibleLibrariesAsync(cancellationToken);
+        if (libraries.Count == 0)
         {
             return Ok(new DocumentationGlobalSearchResponse { Query = query, Hits = [] });
         }
 
-        var ownerIds = sections.Select(x => x.Id).ToList();
-        var ownerNames = sections.ToDictionary(x => x.Id, ResolveSectionTitle);
+        var libraryIds = libraries.Select(x => x.Id).ToList();
+        var libraryNames = libraries.ToDictionary(x => x.Id, x => x.Name);
         var term = query.ToLowerInvariant();
         var like = $"%{EscapeLike(query)}%";
 
         var allFolders = await _db.DocumentationFolders.AsNoTracking()
-            .Where(x => ownerIds.Contains(x.OwnerUserId) && x.DeletedAt == null)
-            .Select(x => new { x.Id, x.Name, x.ParentFolderId, x.OwnerUserId, x.CreatedAt })
+            .Where(x => x.LibraryId != null
+                        && libraryIds.Contains(x.LibraryId.Value)
+                        && x.DeletedAt == null)
+            .Select(x => new { x.Id, x.Name, x.ParentFolderId, LibraryId = x.LibraryId!.Value, x.CreatedAt })
             .ToListAsync(cancellationToken);
         var byId = allFolders.ToDictionary(x => x.Id);
 
-        string PathOf(Guid? id, Guid ownerId)
+        string PathOf(Guid? id, Guid libraryId)
         {
             if (id is null)
             {
@@ -134,7 +478,8 @@ public sealed class DocumentationController : ControllerBase
             var parts = new List<string>();
             var guard = 0;
             var cur = id;
-            while (cur is Guid cid && byId.TryGetValue(cid, out var node) && node.OwnerUserId == ownerId && guard++ < 64)
+            while (cur is Guid cid && byId.TryGetValue(cid, out var node)
+                   && node.LibraryId == libraryId && guard++ < 64)
             {
                 parts.Add(node.Name);
                 cur = node.ParentFolderId;
@@ -150,39 +495,40 @@ public sealed class DocumentationController : ControllerBase
             .Take(100)
             .Select(x => new DocumentationGlobalSearchHitResponse
             {
-                OwnerUserId = x.OwnerUserId,
-                OwnerDisplayName = ownerNames.GetValueOrDefault(x.OwnerUserId, "—"),
+                LibraryId = x.LibraryId,
+                LibraryName = libraryNames.GetValueOrDefault(x.LibraryId, "—"),
                 IsFolder = true,
                 Id = x.Id,
                 Name = x.Name,
-                PathLabel = PathOf(x.ParentFolderId, x.OwnerUserId),
+                PathLabel = PathOf(x.ParentFolderId, x.LibraryId),
                 At = x.CreatedAt
             });
 
         var fileRows = await _db.DocumentationFiles.AsNoTracking()
-            .Where(x => ownerIds.Contains(x.OwnerUserId)
+            .Where(x => x.LibraryId != null
+                        && libraryIds.Contains(x.LibraryId.Value)
                         && x.DeletedAt == null
                         && EF.Functions.ILike(x.FileName, like))
             .OrderBy(x => x.FileName)
             .Take(100)
-            .Select(x => new { x.Id, x.FileName, x.OwnerUserId, x.FolderId, x.SizeBytes, x.UploadedAt })
+            .Select(x => new { x.Id, x.FileName, LibraryId = x.LibraryId!.Value, x.FolderId, x.SizeBytes, x.UploadedAt })
             .ToListAsync(cancellationToken);
 
         var fileHits = fileRows.Select(x => new DocumentationGlobalSearchHitResponse
         {
-            OwnerUserId = x.OwnerUserId,
-            OwnerDisplayName = ownerNames.GetValueOrDefault(x.OwnerUserId, "—"),
+            LibraryId = x.LibraryId,
+            LibraryName = libraryNames.GetValueOrDefault(x.LibraryId, "—"),
             IsFolder = false,
             Id = x.Id,
             Name = x.FileName,
             FolderId = x.FolderId,
-            PathLabel = PathOf(x.FolderId, x.OwnerUserId),
+            PathLabel = PathOf(x.FolderId, x.LibraryId),
             SizeBytes = x.SizeBytes,
             At = x.UploadedAt
         });
 
         var hits = folderHits.Concat(fileHits)
-            .OrderBy(x => x.OwnerDisplayName)
+            .OrderBy(x => x.LibraryName)
             .ThenBy(x => x.Name)
             .Take(150)
             .ToList();
@@ -190,32 +536,26 @@ public sealed class DocumentationController : ControllerBase
         return Ok(new DocumentationGlobalSearchResponse { Query = query, Hits = hits });
     }
 
-    [HttpGet("sections/{ownerUserId:guid}")]
+    [HttpGet("libraries/{libraryId:guid}")]
     public async Task<ActionResult<DocumentationBrowseResponse>> Browse(
-        Guid ownerUserId,
+        Guid libraryId,
         [FromQuery] Guid? folderId,
         [FromQuery] string? q,
         CancellationToken cancellationToken)
     {
-        var owner = await _users.Users.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == ownerUserId, cancellationToken);
-        if (owner is null || !owner.IsActive || !owner.DocumentationEnabled)
+        var read = await EnsureCanReadAsync(libraryId, cancellationToken);
+        if (read.Error is not null)
         {
-            return NotFound();
+            return read.Error;
         }
 
-        // Разделы — только у роли Department (админы/диспетчеры мимо).
-        if (!await _users.IsInRoleAsync(owner, AppRoles.Department))
-        {
-            return NotFound();
-        }
-
+        var library = read.Library!;
         DocumentationFolder? folder = null;
         if (folderId is Guid fid)
         {
             folder = await _db.DocumentationFolders.AsNoTracking()
                 .SingleOrDefaultAsync(
-                    x => x.Id == fid && x.OwnerUserId == ownerUserId && x.DeletedAt == null,
+                    x => x.Id == fid && x.LibraryId == libraryId && x.DeletedAt == null,
                     cancellationToken);
             if (folder is null)
             {
@@ -223,11 +563,7 @@ public sealed class DocumentationController : ControllerBase
             }
         }
 
-        var me = GetUserId();
-        var isAdmin = User.IsInRole(AppRoles.Administrator);
-        var isDispatcher = User.IsInRole(AppRoles.Dispatcher);
-        var canWrite = isAdmin || isDispatcher || me == ownerUserId;
-        var canViewTrash = isAdmin || me == ownerUserId;
+        var write = await ResolveWriteFlagsAsync(libraryId, cancellationToken);
         var search = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
 
         List<DocumentationFolderItemResponse> folders;
@@ -235,9 +571,8 @@ public sealed class DocumentationController : ControllerBase
 
         if (search is not null)
         {
-            // Поиск по всему разделу подразделения (не только текущая папка).
             var allFolders = await _db.DocumentationFolders.AsNoTracking()
-                .Where(x => x.OwnerUserId == ownerUserId && x.DeletedAt == null)
+                .Where(x => x.LibraryId == libraryId && x.DeletedAt == null)
                 .Select(x => new { x.Id, x.Name, x.ParentFolderId, x.CreatedAt })
                 .ToListAsync(cancellationToken);
             var byId = allFolders.ToDictionary(x => x.Id);
@@ -277,7 +612,7 @@ public sealed class DocumentationController : ControllerBase
 
             var like = $"%{EscapeLike(search)}%";
             files = await _db.DocumentationFiles.AsNoTracking()
-                .Where(x => x.OwnerUserId == ownerUserId
+                .Where(x => x.LibraryId == libraryId
                             && x.DeletedAt == null
                             && EF.Functions.ILike(x.FileName, like))
                 .OrderBy(x => x.FileName)
@@ -302,7 +637,7 @@ public sealed class DocumentationController : ControllerBase
         else
         {
             folders = await _db.DocumentationFolders.AsNoTracking()
-                .Where(x => x.OwnerUserId == ownerUserId
+                .Where(x => x.LibraryId == libraryId
                             && x.ParentFolderId == folderId
                             && x.DeletedAt == null)
                 .OrderBy(x => x.Name)
@@ -317,7 +652,7 @@ public sealed class DocumentationController : ControllerBase
                 .ToListAsync(cancellationToken);
 
             files = await _db.DocumentationFiles.AsNoTracking()
-                .Where(x => x.OwnerUserId == ownerUserId
+                .Where(x => x.LibraryId == libraryId
                             && x.FolderId == folderId
                             && x.DeletedAt == null)
                 .OrderBy(x => x.FileName)
@@ -336,39 +671,38 @@ public sealed class DocumentationController : ControllerBase
 
         return Ok(new DocumentationBrowseResponse
         {
-            OwnerUserId = ownerUserId,
-            OwnerDisplayName = ResolveSectionTitle(owner),
+            LibraryId = libraryId,
+            LibraryName = library.Name,
             FolderId = folderId,
             FolderName = folder?.Name,
             ParentFolderId = folder?.ParentFolderId,
-            CanWrite = canWrite,
-            DeletesPermanently = isAdmin,
-            CanViewTrash = canViewTrash,
-            CanClearTrash = isAdmin,
+            CanWrite = write.CanWrite,
+            DeletesPermanently = write.IsAdmin,
+            CanViewTrash = write.CanViewTrash,
+            CanClearTrash = write.IsAdmin,
             SearchQuery = search,
             Folders = folders,
             Files = files
         });
     }
 
-    [HttpGet("sections/{ownerUserId:guid}/trash")]
+    [HttpGet("libraries/{libraryId:guid}/trash")]
     public async Task<ActionResult<DocumentationTrashResponse>> ListTrash(
-        Guid ownerUserId,
+        Guid libraryId,
         CancellationToken cancellationToken)
     {
-        var access = await EnsureCanViewTrashAsync(ownerUserId, cancellationToken);
+        var access = await EnsureCanViewTrashAsync(libraryId, cancellationToken);
         if (access.Error is not null)
         {
             return access.Error;
         }
 
-        var owner = access.Owner!;
+        var library = access.Library!;
         var isAdmin = User.IsInRole(AppRoles.Administrator);
         var retentionDays = await _settings.GetDocumentationTrashRetentionDaysAsync(cancellationToken);
 
-        // Все папки раздела (в т.ч. удалённые) — для PathLabel и «верхнего уровня» корзины.
         var allFolders = await _db.DocumentationFolders.AsNoTracking()
-            .Where(x => x.OwnerUserId == ownerUserId)
+            .Where(x => x.LibraryId == libraryId)
             .Select(x => new { x.Id, x.Name, x.ParentFolderId, x.DeletedAt, x.CreatedAt })
             .ToListAsync(cancellationToken);
         var byId = allFolders.ToDictionary(x => x.Id);
@@ -397,7 +731,6 @@ public sealed class DocumentationController : ControllerBase
 
         foreach (var folder in allFolders.Where(x => x.DeletedAt is not null))
         {
-            // В корзине показываем только корень удалённого поддерева.
             if (folder.ParentFolderId is Guid pid
                 && byId.TryGetValue(pid, out var parent)
                 && parent.DeletedAt is not null)
@@ -417,14 +750,13 @@ public sealed class DocumentationController : ControllerBase
         }
 
         var deletedFiles = await _db.DocumentationFiles.AsNoTracking()
-            .Where(x => x.OwnerUserId == ownerUserId && x.DeletedAt != null)
+            .Where(x => x.LibraryId == libraryId && x.DeletedAt != null)
             .OrderByDescending(x => x.DeletedAt)
             .Select(x => new { x.Id, x.FileName, x.SizeBytes, x.FolderId, x.DeletedAt })
             .ToListAsync(cancellationToken);
 
         foreach (var file in deletedFiles)
         {
-            // Файл, удалённый вместе с папкой, в списке корзины не дублируем.
             if (file.FolderId is Guid fid
                 && byId.TryGetValue(fid, out var parentFolder)
                 && parentFolder.DeletedAt is not null)
@@ -450,44 +782,35 @@ public sealed class DocumentationController : ControllerBase
 
         return Ok(new DocumentationTrashResponse
         {
-            OwnerUserId = ownerUserId,
-            OwnerDisplayName = ResolveSectionTitle(owner),
+            LibraryId = libraryId,
+            LibraryName = library.Name,
             CanClearTrash = isAdmin,
             RetentionDays = retentionDays,
             Items = items
         });
     }
 
-    [HttpPost("sections/{ownerUserId:guid}/trash/restore-folder/{folderId:guid}")]
+    [HttpPost("libraries/{libraryId:guid}/trash/restore-folder/{folderId:guid}")]
     public async Task<IActionResult> RestoreFolder(
-        Guid ownerUserId,
+        Guid libraryId,
         Guid folderId,
         CancellationToken cancellationToken)
     {
-        var access = await EnsureCanViewTrashAsync(ownerUserId, cancellationToken);
+        var access = await EnsureCanViewTrashAsync(libraryId, cancellationToken);
         if (access.Error is not null)
         {
             return access.Error;
         }
 
-        // Восстанавливать может только владелец раздела (не диспетчер «чужой» корзины).
-        // Админ — тоже, чтобы помочь.
-        var me = GetUserId();
-        if (me != ownerUserId && !User.IsInRole(AppRoles.Administrator))
-        {
-            return Forbid();
-        }
-
         var folder = await _db.DocumentationFolders
             .SingleOrDefaultAsync(
-                x => x.Id == folderId && x.OwnerUserId == ownerUserId && x.DeletedAt != null,
+                x => x.Id == folderId && x.LibraryId == libraryId && x.DeletedAt != null,
                 cancellationToken);
         if (folder is null)
         {
             return NotFound();
         }
 
-        // Если родитель тоже в корзине — поднимаем в корень, иначе конфликт/невидимость.
         if (folder.ParentFolderId is Guid parentId)
         {
             var parent = await _db.DocumentationFolders.AsNoTracking()
@@ -499,7 +822,7 @@ public sealed class DocumentationController : ControllerBase
         }
 
         folder.Name = await EnsureUniqueFolderNameAsync(
-            ownerUserId,
+            libraryId,
             folder.ParentFolderId,
             folder.Name,
             folder.Id,
@@ -531,27 +854,21 @@ public sealed class DocumentationController : ControllerBase
         return NoContent();
     }
 
-    [HttpPost("sections/{ownerUserId:guid}/trash/restore-file/{fileId:guid}")]
+    [HttpPost("libraries/{libraryId:guid}/trash/restore-file/{fileId:guid}")]
     public async Task<IActionResult> RestoreFile(
-        Guid ownerUserId,
+        Guid libraryId,
         Guid fileId,
         CancellationToken cancellationToken)
     {
-        var access = await EnsureCanViewTrashAsync(ownerUserId, cancellationToken);
+        var access = await EnsureCanViewTrashAsync(libraryId, cancellationToken);
         if (access.Error is not null)
         {
             return access.Error;
         }
 
-        var me = GetUserId();
-        if (me != ownerUserId && !User.IsInRole(AppRoles.Administrator))
-        {
-            return Forbid();
-        }
-
         var file = await _db.DocumentationFiles
             .SingleOrDefaultAsync(
-                x => x.Id == fileId && x.OwnerUserId == ownerUserId && x.DeletedAt != null,
+                x => x.Id == fileId && x.LibraryId == libraryId && x.DeletedAt != null,
                 cancellationToken);
         if (file is null)
         {
@@ -564,7 +881,6 @@ public sealed class DocumentationController : ControllerBase
                 .SingleOrDefaultAsync(x => x.Id == folderId, cancellationToken);
             if (folder is null || folder.DeletedAt is not null)
             {
-                // Родитель в корзине/удалён — файл в корень раздела.
                 file.FolderId = null;
             }
         }
@@ -575,10 +891,10 @@ public sealed class DocumentationController : ControllerBase
         return NoContent();
     }
 
-    [HttpPost("sections/{ownerUserId:guid}/trash/clear")]
+    [HttpPost("libraries/{libraryId:guid}/trash/clear")]
     [Authorize(Roles = AppRoles.Administrator)]
     public async Task<IActionResult> ClearTrash(
-        Guid ownerUserId,
+        Guid libraryId,
         [FromBody] ClearDocumentationTrashRequest? request,
         CancellationToken cancellationToken)
     {
@@ -587,23 +903,22 @@ public sealed class DocumentationController : ControllerBase
             return BadRequest(ApiErrors.FromCode(ApiErrorCodes.TrashClearConfirmRequired));
         }
 
-        var ownerOk = await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
-        if (ownerOk is not null)
+        if (!await _db.DocumentationLibraries.AnyAsync(x => x.Id == libraryId, cancellationToken))
         {
-            return ownerOk;
+            return NotFound();
         }
 
-        await _trashPurge.PurgeSectionAsync(ownerUserId, cancellationToken);
+        await _trashPurge.PurgeLibraryAsync(libraryId, cancellationToken);
         return NoContent();
     }
 
-    [HttpPost("sections/{ownerUserId:guid}/folders")]
+    [HttpPost("libraries/{libraryId:guid}/folders")]
     public async Task<ActionResult<DocumentationFolderItemResponse>> CreateFolder(
-        Guid ownerUserId,
+        Guid libraryId,
         [FromBody] CreateDocumentationFolderRequest request,
         CancellationToken cancellationToken)
     {
-        var writeError = await EnsureCanWriteAsync(ownerUserId, cancellationToken);
+        var writeError = await EnsureCanWriteAsync(libraryId, cancellationToken);
         if (writeError is not null)
         {
             return writeError;
@@ -618,7 +933,7 @@ public sealed class DocumentationController : ControllerBase
         if (request.ParentFolderId is Guid parentId)
         {
             var parentOk = await _db.DocumentationFolders.AnyAsync(
-                x => x.Id == parentId && x.OwnerUserId == ownerUserId && x.DeletedAt == null,
+                x => x.Id == parentId && x.LibraryId == libraryId && x.DeletedAt == null,
                 cancellationToken);
             if (!parentOk)
             {
@@ -627,7 +942,7 @@ public sealed class DocumentationController : ControllerBase
         }
 
         var duplicate = await _db.DocumentationFolders.AnyAsync(
-            x => x.OwnerUserId == ownerUserId
+            x => x.LibraryId == libraryId
                  && x.ParentFolderId == request.ParentFolderId
                  && x.Name == name
                  && x.DeletedAt == null,
@@ -640,7 +955,7 @@ public sealed class DocumentationController : ControllerBase
         var folder = new DocumentationFolder
         {
             Id = Guid.NewGuid(),
-            OwnerUserId = ownerUserId,
+            LibraryId = libraryId,
             ParentFolderId = request.ParentFolderId,
             Name = name,
             CreatedAt = DateTimeOffset.UtcNow
@@ -657,20 +972,19 @@ public sealed class DocumentationController : ControllerBase
         });
     }
 
-    /// <summary>Плоский список живых папок раздела (для выбора цели перемещения).</summary>
-    [HttpGet("sections/{ownerUserId:guid}/folders")]
+    [HttpGet("libraries/{libraryId:guid}/folders")]
     public async Task<ActionResult<List<DocumentationFolderItemResponse>>> ListAllFolders(
-        Guid ownerUserId,
+        Guid libraryId,
         CancellationToken cancellationToken)
     {
-        var sectionError = await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
-        if (sectionError is not null)
+        var read = await EnsureCanReadAsync(libraryId, cancellationToken);
+        if (read.Error is not null)
         {
-            return sectionError;
+            return read.Error;
         }
 
         var folders = await _db.DocumentationFolders.AsNoTracking()
-            .Where(x => x.OwnerUserId == ownerUserId && x.DeletedAt == null)
+            .Where(x => x.LibraryId == libraryId && x.DeletedAt == null)
             .Select(x => new { x.Id, x.Name, x.ParentFolderId, x.CreatedAt })
             .ToListAsync(cancellationToken);
 
@@ -720,12 +1034,13 @@ public sealed class DocumentationController : ControllerBase
     {
         var folder = await _db.DocumentationFolders
             .SingleOrDefaultAsync(x => x.Id == folderId && x.DeletedAt == null, cancellationToken);
-        if (folder is null)
+        if (folder is null || folder.LibraryId is null)
         {
             return NotFound();
         }
 
-        var writeError = await EnsureCanWriteAsync(folder.OwnerUserId, cancellationToken);
+        var libraryId = folder.LibraryId.Value;
+        var writeError = await EnsureCanWriteAsync(libraryId, cancellationToken);
         if (writeError is not null)
         {
             return writeError;
@@ -741,14 +1056,13 @@ public sealed class DocumentationController : ControllerBase
         {
             var target = await _db.DocumentationFolders.AsNoTracking()
                 .SingleOrDefaultAsync(
-                    x => x.Id == tid && x.OwnerUserId == folder.OwnerUserId && x.DeletedAt == null,
+                    x => x.Id == tid && x.LibraryId == libraryId && x.DeletedAt == null,
                     cancellationToken);
             if (target is null)
             {
                 return NotFound();
             }
 
-            // Нельзя перенести папку в саму себя или в потомка.
             var descendants = await CollectFolderTreeIdsAsync(folder.Id, includeDeleted: false, cancellationToken);
             if (descendants.Contains(tid))
             {
@@ -768,7 +1082,7 @@ public sealed class DocumentationController : ControllerBase
         }
 
         folder.Name = await EnsureUniqueFolderNameAsync(
-            folder.OwnerUserId,
+            libraryId,
             targetParentId,
             folder.Name,
             folder.Id,
@@ -793,12 +1107,13 @@ public sealed class DocumentationController : ControllerBase
     {
         var file = await _db.DocumentationFiles
             .SingleOrDefaultAsync(x => x.Id == fileId && x.DeletedAt == null, cancellationToken);
-        if (file is null)
+        if (file is null || file.LibraryId is null)
         {
             return NotFound();
         }
 
-        var writeError = await EnsureCanWriteAsync(file.OwnerUserId, cancellationToken);
+        var libraryId = file.LibraryId.Value;
+        var writeError = await EnsureCanWriteAsync(libraryId, cancellationToken);
         if (writeError is not null)
         {
             return writeError;
@@ -808,7 +1123,7 @@ public sealed class DocumentationController : ControllerBase
         if (targetFolderId is Guid fid)
         {
             var folderOk = await _db.DocumentationFolders.AnyAsync(
-                x => x.Id == fid && x.OwnerUserId == file.OwnerUserId && x.DeletedAt == null,
+                x => x.Id == fid && x.LibraryId == libraryId && x.DeletedAt == null,
                 cancellationToken);
             if (!folderOk)
             {
@@ -835,12 +1150,12 @@ public sealed class DocumentationController : ControllerBase
     {
         var folder = await _db.DocumentationFolders
             .SingleOrDefaultAsync(x => x.Id == folderId && x.DeletedAt == null, cancellationToken);
-        if (folder is null)
+        if (folder is null || folder.LibraryId is null)
         {
             return NotFound();
         }
 
-        var writeError = await EnsureCanWriteAsync(folder.OwnerUserId, cancellationToken);
+        var writeError = await EnsureCanWriteAsync(folder.LibraryId.Value, cancellationToken);
         if (writeError is not null)
         {
             return writeError;
@@ -862,7 +1177,6 @@ public sealed class DocumentationController : ControllerBase
             return NoContent();
         }
 
-        // Подразделение / диспетчер — в корзину (всё поддерево).
         var now = DateTimeOffset.UtcNow;
         var actor = GetUserId();
         var treeIds = await CollectFolderTreeIdsAsync(folder.Id, includeDeleted: false, cancellationToken);
@@ -890,30 +1204,23 @@ public sealed class DocumentationController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Путь inbox на диске — только админ.</summary>
-    [HttpGet("sections/{ownerUserId:guid}/inbox")]
+    [HttpGet("libraries/{libraryId:guid}/inbox")]
     [Authorize(Roles = AppRoles.Administrator)]
     public async Task<ActionResult<DocumentationInboxInfoResponse>> GetInboxInfo(
-        Guid ownerUserId,
+        Guid libraryId,
         CancellationToken cancellationToken)
     {
-        var sectionError = await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
-        if (sectionError is not null)
-        {
-            return sectionError;
-        }
-
-        var owner = await _users.Users.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == ownerUserId, cancellationToken);
-        if (owner is null)
+        var library = await _db.DocumentationLibraries.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == libraryId, cancellationToken);
+        if (library is null)
         {
             return NotFound();
         }
 
-        var info = _inboxSync.GetInboxInfo(owner);
+        var info = _inboxSync.GetInboxInfo(library);
         return Ok(new DocumentationInboxInfoResponse
         {
-            OwnerUserId = info.OwnerUserId,
+            LibraryId = info.LibraryId,
             FolderKey = info.FolderKey,
             HostInboxPath = info.HostInboxPath,
             RelativeInboxPath = info.RelativeInboxPath,
@@ -922,24 +1229,21 @@ public sealed class DocumentationController : ControllerBase
         });
     }
 
-    /// <summary>Ручной импорт из docs-inbox/{логин}/ — только админ.</summary>
-    [HttpPost("sections/{ownerUserId:guid}/sync-inbox")]
+    [HttpPost("libraries/{libraryId:guid}/sync-inbox")]
     [Authorize(Roles = AppRoles.Administrator)]
     public async Task<ActionResult<DocumentationInboxSyncResponse>> SyncInbox(
-        Guid ownerUserId,
+        Guid libraryId,
         CancellationToken cancellationToken)
     {
-        var sectionError = await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
-        if (sectionError is not null)
+        if (!await _db.DocumentationLibraries.AnyAsync(x => x.Id == libraryId, cancellationToken))
         {
-            return sectionError;
+            return NotFound();
         }
 
-        var result = await _inboxSync.SyncOwnerAsync(ownerUserId, GetUserId(), cancellationToken);
+        var result = await _inboxSync.SyncLibraryAsync(libraryId, GetUserId(), cancellationToken);
         return Ok(ToInboxSyncResponse(result));
     }
 
-    /// <summary>Админ: прогнать inbox по всем разделам сразу.</summary>
     [HttpPost("sync-inbox")]
     [Authorize(Roles = AppRoles.Administrator)]
     public async Task<ActionResult<DocumentationInboxSyncResponse>> SyncAllInbox(
@@ -953,7 +1257,7 @@ public sealed class DocumentationController : ControllerBase
         Crown.Infrastructure.Documentation.DocumentationInboxSyncResult result) =>
         new()
         {
-            OwnerUserId = result.OwnerUserId,
+            LibraryId = result.LibraryId,
             FolderKey = result.FolderKey,
             HostInboxPath = result.HostInboxPath,
             Imported = result.Imported,
@@ -965,15 +1269,15 @@ public sealed class DocumentationController : ControllerBase
             Messages = result.Messages
         };
 
-    [HttpPost("sections/{ownerUserId:guid}/files")]
+    [HttpPost("libraries/{libraryId:guid}/files")]
     [RequestSizeLimit(25_000_000)]
     public async Task<ActionResult<DocumentationFileItemResponse>> UploadFile(
-        Guid ownerUserId,
+        Guid libraryId,
         [FromQuery] Guid? folderId,
         IFormFile file,
         CancellationToken cancellationToken)
     {
-        var writeError = await EnsureCanWriteAsync(ownerUserId, cancellationToken);
+        var writeError = await EnsureCanWriteAsync(libraryId, cancellationToken);
         if (writeError is not null)
         {
             return writeError;
@@ -982,7 +1286,7 @@ public sealed class DocumentationController : ControllerBase
         if (folderId is Guid fid)
         {
             var folderOk = await _db.DocumentationFolders.AnyAsync(
-                x => x.Id == fid && x.OwnerUserId == ownerUserId && x.DeletedAt == null,
+                x => x.Id == fid && x.LibraryId == libraryId && x.DeletedAt == null,
                 cancellationToken);
             if (!folderOk)
             {
@@ -1002,7 +1306,7 @@ public sealed class DocumentationController : ControllerBase
 
         await using var stream = file.OpenReadStream();
         var (relative, size) = await _storage.SaveDocumentationAsync(
-            ownerUserId,
+            libraryId,
             folderId,
             file.FileName,
             stream,
@@ -1011,7 +1315,7 @@ public sealed class DocumentationController : ControllerBase
         var entity = new DocumentationFile
         {
             Id = Guid.NewGuid(),
-            OwnerUserId = ownerUserId,
+            LibraryId = libraryId,
             FolderId = folderId,
             FileName = Path.GetFileName(file.FileName),
             ContentType = string.IsNullOrWhiteSpace(file.ContentType)
@@ -1089,12 +1393,12 @@ public sealed class DocumentationController : ControllerBase
     {
         var file = await _db.DocumentationFiles
             .SingleOrDefaultAsync(x => x.Id == fileId && x.DeletedAt == null, cancellationToken);
-        if (file is null)
+        if (file is null || file.LibraryId is null)
         {
             return NotFound();
         }
 
-        var writeError = await EnsureCanWriteAsync(file.OwnerUserId, cancellationToken);
+        var writeError = await EnsureCanWriteAsync(file.LibraryId.Value, cancellationToken);
         if (writeError is not null)
         {
             return writeError;
@@ -1115,152 +1419,28 @@ public sealed class DocumentationController : ControllerBase
         return NoContent();
     }
 
-    [HttpGet("admin/users")]
-    [Authorize(Policy = AuthorizationPolicies.ManageUsers)]
-    public async Task<ActionResult<List<DocumentationAdminUserResponse>>> AdminListUsers(
-        CancellationToken cancellationToken)
-    {
-        var rows = await _users.Users.AsNoTracking()
-            .OrderBy(x => x.DisplayName)
-            .ThenBy(x => x.UserName)
-            .Select(x => new
-            {
-                x.Id,
-                x.DisplayName,
-                x.UserName,
-                x.BrigadeNumber,
-                x.DocumentationEnabled
-            })
-            .ToListAsync(cancellationToken);
-
-        var users = rows
-            .Select(x => new DocumentationAdminUserResponse
-            {
-                UserId = x.Id,
-                DisplayName = UserDisplay.Format(x.DisplayName, x.UserName, x.BrigadeNumber),
-                UserName = x.UserName ?? string.Empty,
-                DocumentationEnabled = x.DocumentationEnabled
-            })
-            .ToList();
-
-        return Ok(users);
-    }
-
-    [HttpPut("admin/users")]
-    [Authorize(Policy = AuthorizationPolicies.ManageUsers)]
-    public async Task<IActionResult> AdminUpdateUsers(
-        [FromBody] UpdateDocumentationSettingsRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (request.Users.Count == 0)
-        {
-            return NoContent();
-        }
-
-        var ids = request.Users.Select(x => x.UserId).Distinct().ToList();
-        var users = await _users.Users
-            .Where(x => ids.Contains(x.Id))
-            .ToListAsync(cancellationToken);
-
-        var map = request.Users.ToDictionary(x => x.UserId, x => x.DocumentationEnabled);
-        foreach (var user in users)
-        {
-            if (map.TryGetValue(user.Id, out var enabled))
-            {
-                user.DocumentationEnabled = enabled;
-            }
-        }
-
-        await _db.SaveChangesAsync(cancellationToken);
-        return NoContent();
-    }
-
     private async Task<DocumentationFile?> LoadReadableFileAsync(Guid fileId, CancellationToken cancellationToken)
     {
         var file = await _db.DocumentationFiles.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == fileId && x.DeletedAt == null, cancellationToken);
-        if (file is null)
+        if (file is null || file.LibraryId is null)
         {
             return null;
         }
 
-        // Читать можно, если раздел владельца (Department) включён.
-        var owner = await _users.Users.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == file.OwnerUserId, cancellationToken);
-        if (owner is null || !owner.IsActive || !owner.DocumentationEnabled)
-        {
-            return null;
-        }
-
-        if (!await _users.IsInRoleAsync(owner, AppRoles.Department))
-        {
-            return null;
-        }
-
-        return file;
+        var read = await EnsureCanReadAsync(file.LibraryId.Value, cancellationToken);
+        return read.Error is null ? file : null;
     }
 
-    private async Task<ActionResult?> EnsureCanWriteAsync(Guid ownerUserId, CancellationToken cancellationToken)
+    private async Task<ActionResult?> EnsureCanWriteAsync(Guid libraryId, CancellationToken cancellationToken)
     {
-        var me = GetUserId();
-        if (me is null)
-        {
-            return Forbid();
-        }
-
-        // Админ и диспетчер пишут во все разделы; подразделение — только в свой.
-        var isAdmin = User.IsInRole(AppRoles.Administrator);
-        var isDispatcher = User.IsInRole(AppRoles.Dispatcher);
-        if (!isAdmin && !isDispatcher && me != ownerUserId)
-        {
-            return Forbid();
-        }
-
-        return await EnsureSectionExistsAsync(ownerUserId, cancellationToken);
-    }
-
-    private async Task<(ApplicationUser? Owner, ActionResult? Error)> EnsureCanViewTrashAsync(
-        Guid ownerUserId,
-        CancellationToken cancellationToken)
-    {
-        var me = GetUserId();
-        if (me is null)
-        {
-            return (null, Forbid());
-        }
-
-        // Корзина видна только самому подразделению и админу (для очистки).
-        var isAdmin = User.IsInRole(AppRoles.Administrator);
-        if (!isAdmin && me != ownerUserId)
-        {
-            return (null, Forbid());
-        }
-
-        var owner = await _users.Users.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == ownerUserId, cancellationToken);
-        if (owner is null || !owner.IsActive || !owner.DocumentationEnabled)
-        {
-            return (null, NotFound());
-        }
-
-        if (!await _users.IsInRoleAsync(owner, AppRoles.Department))
-        {
-            return (null, NotFound());
-        }
-
-        return (owner, null);
-    }
-
-    private async Task<ActionResult?> EnsureSectionExistsAsync(Guid ownerUserId, CancellationToken cancellationToken)
-    {
-        var owner = await _users.Users.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == ownerUserId, cancellationToken);
-        if (owner is null || !owner.IsActive || !owner.DocumentationEnabled)
+        var flags = await ResolveWriteFlagsAsync(libraryId, cancellationToken);
+        if (flags.Library is null)
         {
             return NotFound();
         }
 
-        if (!await _users.IsInRoleAsync(owner, AppRoles.Department))
+        if (!flags.CanWrite)
         {
             return Forbid();
         }
@@ -1268,8 +1448,172 @@ public sealed class DocumentationController : ControllerBase
         return null;
     }
 
+    private async Task<(DocumentationLibrary? Library, ActionResult? Error)> EnsureCanReadAsync(
+        Guid libraryId,
+        CancellationToken cancellationToken)
+    {
+        var access = await ResolveCallerAccessAsync(cancellationToken);
+        if (access.Error is not null)
+        {
+            return (null, access.Error);
+        }
+
+        var library = await _db.DocumentationLibraries.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == libraryId && x.IsActive, cancellationToken);
+        if (library is null)
+        {
+            return (null, NotFound());
+        }
+
+        if (access.IsStaff)
+        {
+            return (library, null);
+        }
+
+        if (!access.DocumentationEnabled)
+        {
+            return (null, Forbid());
+        }
+
+        var isMember = await _db.DocumentationLibraryMembers.AsNoTracking()
+            .AnyAsync(x => x.LibraryId == libraryId && x.UserId == access.UserId, cancellationToken);
+        if (!isMember)
+        {
+            return (null, Forbid());
+        }
+
+        return (library, null);
+    }
+
+    private async Task<(DocumentationLibrary? Library, ActionResult? Error)> EnsureCanViewTrashAsync(
+        Guid libraryId,
+        CancellationToken cancellationToken)
+    {
+        var flags = await ResolveWriteFlagsAsync(libraryId, cancellationToken);
+        if (flags.Library is null)
+        {
+            return (null, NotFound());
+        }
+
+        // Корзина: админ или участник с CanWrite.
+        if (!flags.CanViewTrash)
+        {
+            return (null, Forbid());
+        }
+
+        return (flags.Library, null);
+    }
+
+    private async Task<(
+        DocumentationLibrary? Library,
+        bool CanWrite,
+        bool CanViewTrash,
+        bool IsAdmin)> ResolveWriteFlagsAsync(Guid libraryId, CancellationToken cancellationToken)
+    {
+        var access = await ResolveCallerAccessAsync(cancellationToken);
+        if (access.UserId is null)
+        {
+            return (null, false, false, false);
+        }
+
+        var library = await _db.DocumentationLibraries.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == libraryId && x.IsActive, cancellationToken);
+        if (library is null)
+        {
+            return (null, false, false, false);
+        }
+
+        if (access.IsAdmin)
+        {
+            return (library, true, true, true);
+        }
+
+        if (access.IsDispatcher)
+        {
+            return (library, true, false, false);
+        }
+
+        if (!access.DocumentationEnabled)
+        {
+            return (library, false, false, false);
+        }
+
+        var member = await _db.DocumentationLibraryMembers.AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.LibraryId == libraryId && x.UserId == access.UserId,
+                cancellationToken);
+        var canWrite = member?.CanWrite ?? false;
+        return (library, canWrite, canWrite, false);
+    }
+
+    private async Task<(
+        Guid? UserId,
+        bool IsAdmin,
+        bool IsDispatcher,
+        bool IsStaff,
+        bool DocumentationEnabled,
+        ActionResult? Error)> ResolveCallerAccessAsync(CancellationToken cancellationToken)
+    {
+        var me = GetUserId();
+        if (me is null)
+        {
+            return (null, false, false, false, false, Forbid());
+        }
+
+        var isAdmin = User.IsInRole(AppRoles.Administrator);
+        var isDispatcher = User.IsInRole(AppRoles.Dispatcher);
+        if (isAdmin || isDispatcher)
+        {
+            return (me, isAdmin, isDispatcher, true, true, null);
+        }
+
+        var user = await _users.Users.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == me, cancellationToken);
+        if (user is null || !user.IsActive)
+        {
+            return (me, false, false, false, false, Forbid());
+        }
+
+        return (me, false, false, false, user.DocumentationEnabled, null);
+    }
+
+    private async Task<List<DocumentationLibrary>> ListAccessibleLibrariesAsync(
+        CancellationToken cancellationToken)
+    {
+        var access = await ResolveCallerAccessAsync(cancellationToken);
+        if (access.UserId is null)
+        {
+            return [];
+        }
+
+        if (access.IsStaff)
+        {
+            return await _db.DocumentationLibraries.AsNoTracking()
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.SortOrder)
+                .ThenBy(x => x.Name)
+                .ToListAsync(cancellationToken);
+        }
+
+        if (!access.DocumentationEnabled)
+        {
+            return [];
+        }
+
+        var memberIds = await _db.DocumentationLibraryMembers.AsNoTracking()
+            .Where(x => x.UserId == access.UserId)
+            .Select(x => x.LibraryId)
+            .ToListAsync(cancellationToken);
+
+        return await _db.DocumentationLibraries.AsNoTracking()
+            .Where(x => x.IsActive && memberIds.Contains(x.Id))
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+    }
+
     private async Task<string> EnsureUniqueFolderNameAsync(
-        Guid ownerUserId,
+        Guid libraryId,
         Guid? parentFolderId,
         string desiredName,
         Guid selfId,
@@ -1278,7 +1622,7 @@ public sealed class DocumentationController : ControllerBase
         var name = desiredName;
         var suffix = 2;
         while (await _db.DocumentationFolders.AnyAsync(
-                   x => x.OwnerUserId == ownerUserId
+                   x => x.LibraryId == libraryId
                         && x.ParentFolderId == parentFolderId
                         && x.Name == name
                         && x.DeletedAt == null
@@ -1307,59 +1651,22 @@ public sealed class DocumentationController : ControllerBase
             .Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
 
-    /// <summary>Кастомный заголовок раздела или очищенное DisplayName.</summary>
-    private static string ResolveSectionTitle(ApplicationUser user)
-    {
-        var custom = (user.DocumentationTitle ?? string.Empty).Trim();
-        if (!string.IsNullOrWhiteSpace(custom))
-        {
-            return custom;
-        }
-
-        return CleanSectionTitle(user.DisplayName);
-    }
-
-    /// <summary>Без логина и хвоста « / пользователь».</summary>
-    private static string CleanSectionTitle(string? displayName)
-    {
-        var name = (displayName ?? string.Empty).Trim();
-        const string userSuffix = " / пользователь";
-        if (name.EndsWith(userSuffix, StringComparison.OrdinalIgnoreCase))
-        {
-            name = name[..^userSuffix.Length].Trim();
-        }
-
-        var slashIdx = name.LastIndexOf(" / ", StringComparison.Ordinal);
-        if (slashIdx > 0)
-        {
-            var tail = name[(slashIdx + 3)..].Trim();
-            // хвост похож на логин (без пробелов) — отрезаем
-            if (tail.Length > 0 && !tail.Contains(' ', StringComparison.Ordinal))
-            {
-                name = name[..slashIdx].Trim();
-            }
-        }
-
-        return string.IsNullOrWhiteSpace(name) ? "Подразделение" : name;
-    }
-
     private async Task<List<Guid>> CollectFolderTreeIdsAsync(
         Guid rootFolderId,
         bool includeDeleted,
         CancellationToken cancellationToken)
     {
-        // Один SELECT всех папок owner'а + BFS в памяти (не N запросов по глубине).
         var root = await _db.DocumentationFolders.AsNoTracking()
             .Where(x => x.Id == rootFolderId)
-            .Select(x => new { x.Id, x.OwnerUserId })
+            .Select(x => new { x.Id, x.LibraryId })
             .FirstOrDefaultAsync(cancellationToken);
-        if (root is null)
+        if (root is null || root.LibraryId is null)
         {
             return [];
         }
 
         var all = await _db.DocumentationFolders.AsNoTracking()
-            .Where(x => x.OwnerUserId == root.OwnerUserId
+            .Where(x => x.LibraryId == root.LibraryId
                         && (includeDeleted || x.DeletedAt == null))
             .Select(x => new { x.Id, x.ParentFolderId })
             .ToListAsync(cancellationToken);
@@ -1450,6 +1757,24 @@ public sealed class DocumentationController : ControllerBase
         }
 
         return name;
+    }
+
+    private static string? NormalizeLibraryName(string? raw)
+    {
+        var name = (raw ?? string.Empty).Trim();
+        return name.Length is 0 or > 200 ? null : name;
+    }
+
+    private static string? NormalizeInboxKey(string? raw)
+    {
+        var key = AttachmentStorageService.SanitizeFolderSegment(raw ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(key)
+            || string.Equals(key, "unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return key.Length > 100 ? key[..100] : key;
     }
 
     private Guid? GetUserId()

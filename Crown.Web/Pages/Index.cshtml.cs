@@ -34,7 +34,11 @@ public sealed class IndexModel(CrownApiClient api) : PageModel
 
     public List<ServiceRequestListItem> Items { get; private set; } = [];
 
+    /// <summary>Исполнители (Department).</summary>
     public List<RequestAssignee> Assignees { get; private set; } = [];
+
+    /// <summary>Инициаторы: Department + Brigade + Customer.</summary>
+    public List<RequestAssignee> Initiators { get; private set; } = [];
 
     public bool HasMore { get; private set; }
 
@@ -150,6 +154,14 @@ public sealed class IndexModel(CrownApiClient api) : PageModel
         if (result.Ok && result.Data is not null)
         {
             Assignees = result.Data;
+        }
+
+        var initiators = await api.GetAsync<List<RequestAssignee>>(
+            "api/requests/initiators",
+            HttpContext.RequestAborted);
+        if (initiators.Ok && initiators.Data is not null)
+        {
+            Initiators = initiators.Data;
         }
     }
 

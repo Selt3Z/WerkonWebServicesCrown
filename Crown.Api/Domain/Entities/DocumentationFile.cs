@@ -1,13 +1,17 @@
 namespace Crown.Domain.Entities;
 
-/// <summary>Файл в разделе документации (диск — тот же ATTACHMENTS_HOST_PATH).</summary>
+/// <summary>Файл в каталоге документации (диск — тот же ATTACHMENTS_HOST_PATH).</summary>
 public sealed class DocumentationFile
 {
     public Guid Id { get; set; }
 
-    public Guid OwnerUserId { get; set; }
+    /// <summary>Каталог (после миграции обязателен).</summary>
+    public Guid? LibraryId { get; set; }
 
-    /// <summary>null — корень раздела владельца.</summary>
+    /// <summary>Legacy OwnerUserId старого раздела.</summary>
+    public Guid? OwnerUserId { get; set; }
+
+    /// <summary>null — корень каталога.</summary>
     public Guid? FolderId { get; set; }
 
     public DocumentationFolder? Folder { get; set; }

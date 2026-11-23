@@ -10,7 +10,7 @@ namespace Crown.Web.Pages;
 public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
 {
     [BindProperty(SupportsGet = true)]
-    public Guid OwnerUserId { get; set; }
+    public Guid LibraryId { get; set; }
 
     [BindProperty(SupportsGet = true)]
     public Guid? FolderId { get; set; }
@@ -50,7 +50,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
         }
 
         var result = await api.PostAsync<DocumentationInboxSyncResult>(
-            $"api/documentation/sections/{OwnerUserId}/sync-inbox",
+            $"api/documentation/libraries/{LibraryId}/sync-inbox",
             body: null,
             HttpContext.RequestAborted);
         if (result.IsUnauthorized)
@@ -82,7 +82,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
     public async Task<IActionResult> OnPostCreateFolderAsync()
     {
         var result = await api.PostAsync<DocumentationFolderItem>(
-            $"api/documentation/sections/{OwnerUserId}/folders",
+            $"api/documentation/libraries/{LibraryId}/folders",
             new { Name = NewFolderName, ParentFolderId = FolderId },
             HttpContext.RequestAborted);
         if (result.IsUnauthorized)
@@ -97,7 +97,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+        return RedirectToPage(new { LibraryId, FolderId, Q });
     }
 
     public async Task<IActionResult> OnPostUploadAsync()
@@ -110,7 +110,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
         }
 
         var url = UiHelpers.BuildUrl(
-            $"api/documentation/sections/{OwnerUserId}/files",
+            $"api/documentation/libraries/{LibraryId}/files",
             ("folderId", FolderId?.ToString()));
         var result = await api.UploadFileAsync<DocumentationFileItem>(
             url,
@@ -129,7 +129,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+        return RedirectToPage(new { LibraryId, FolderId, Q });
     }
 
     // targetFolderId — не путать с FolderId (текущая папка в URL); form binder case-insensitive.
@@ -150,7 +150,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+        return RedirectToPage(new { LibraryId, FolderId, Q });
     }
 
     public async Task<IActionResult> OnPostDeleteFileAsync(Guid targetFileId)
@@ -170,7 +170,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+        return RedirectToPage(new { LibraryId, FolderId, Q });
     }
 
     public async Task<IActionResult> OnPostMoveFolderAsync(Guid targetFolderId, Guid? moveToParentId)
@@ -191,7 +191,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+        return RedirectToPage(new { LibraryId, FolderId, Q });
     }
 
     public async Task<IActionResult> OnPostMoveFileAsync(Guid targetFileId, Guid? moveToFolderId)
@@ -212,7 +212,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        return RedirectToPage(new { OwnerUserId, FolderId, Q });
+        return RedirectToPage(new { LibraryId, FolderId, Q });
     }
 
     public async Task<IActionResult> OnGetDownloadAsync(Guid fileId, bool inline = false)
@@ -248,7 +248,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
     private async Task<IActionResult> LoadAsync()
     {
         var url = UiHelpers.BuildUrl(
-            $"api/documentation/sections/{OwnerUserId}",
+            $"api/documentation/libraries/{LibraryId}",
             ("folderId", FolderId?.ToString()),
             ("q", string.IsNullOrWhiteSpace(Q) ? null : Q.Trim()));
         var result = await api.GetAsync<DocumentationBrowse>(url, HttpContext.RequestAborted);
@@ -268,7 +268,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
         if (Browse.CanWrite)
         {
             var folders = await api.GetAsync<List<DocumentationFolderItem>>(
-                $"api/documentation/sections/{OwnerUserId}/folders",
+                $"api/documentation/libraries/{LibraryId}/folders",
                 HttpContext.RequestAborted);
             if (folders.Ok && folders.Data is not null)
             {
@@ -279,7 +279,7 @@ public sealed class DocumentationBrowseModel(CrownApiClient api) : PageModel
         if (IsAdmin)
         {
             var inbox = await api.GetAsync<DocumentationInboxInfo>(
-                $"api/documentation/sections/{OwnerUserId}/inbox",
+                $"api/documentation/libraries/{LibraryId}/inbox",
                 HttpContext.RequestAborted);
             if (inbox.Ok)
             {

@@ -74,6 +74,7 @@
             <tr>
                 <th style="width:3.5rem;">№</th>
                 <th>Текст</th>
+                <th style="width:4.5rem;" title="Использований в остановках и проверках">Исп.</th>
                 <th style="width:14rem;"></th>
             </tr>
             </thead>
@@ -91,6 +92,7 @@
                             <input class="form-control act-item-text" name="EditText" value="@item.Text" required />
                         </form>
                     </td>
+                    <td class="text-muted text-center">@(item.UsageCount is > 0 ? item.UsageCount.ToString() : "")</td>
                     <td class="text-end text-nowrap">
                         <button type="submit" form="act-save-@item.Id" class="btn btn-outline-secondary btn-sm">Сохранить</button>
                         <form method="post" asp-page-handler="Delete" class="crown-op-form d-inline">
@@ -107,7 +109,7 @@
             }
             @if (Model.Items.Count == 0)
             {
-                <tr><td colspan="3" class="text-muted text-center">@(string.IsNullOrWhiteSpace(q) ? "Пока пусто — добавьте типовые пункты сверху." : "Ничего не найдено.")</td></tr>
+                <tr><td colspan="4" class="text-muted text-center">@(string.IsNullOrWhiteSpace(q) ? "Пока пусто — добавьте типовые пункты сверху." : "Ничего не найдено.")</td></tr>
             }
             </tbody>
         </table>
@@ -125,6 +127,10 @@
                 <div class="schedule-card act-item-card @(!item.IsActive ? "text-muted" : null)">
                     <div class="schedule-card-header">
                         <span class="schedule-card-time">№ @item.SortOrder</span>
+                        @if (item.UsageCount is > 0)
+                        {
+                            <span class="text-muted small">исп. @item.UsageCount</span>
+                        }
                     </div>
                     <form method="post" asp-page-handler="Save" id="act-save-m-@item.Id" class="crown-op-form act-item-card-form">
                         <input type="hidden" name="Q" value="@q" />

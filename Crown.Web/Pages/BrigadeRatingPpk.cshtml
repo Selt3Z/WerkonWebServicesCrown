@@ -1,0 +1,160 @@
+@page "/brigade-rating/ppk"
+@model BrigadeRatingPpkModel
+@{
+    ViewData["Title"] = "ППК";
+    var exportHref = UiHelpers.BuildUrl(
+        "/brigade-rating/ppk",
+        ("handler", "Export"),
+        ("period", Model.Period),
+        ("from", Model.Period == "custom" ? Model.From?.ToString("yyyy-MM-dd") : null),
+        ("to", Model.Period == "custom" ? Model.To?.ToString("yyyy-MM-dd") : null),
+        ("year", Model.Period is "month" or "year" ? Model.Year?.ToString() : null),
+        ("month", Model.Period == "month" ? Model.Month?.ToString() : null));
+    var moreUrl = UiHelpers.BuildUrl(
+        "/brigade-rating/ppk",
+        ("handler", "More"),
+        ("period", Model.Period),
+        ("from", Model.Period == "custom" ? Model.From?.ToString("yyyy-MM-dd") : null),
+        ("to", Model.Period == "custom" ? Model.To?.ToString("yyyy-MM-dd") : null),
+        ("year", Model.Period is "month" or "year" ? Model.Year?.ToString() : null),
+        ("month", Model.Period == "month" ? Model.Month?.ToString() : null));
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">ППК</h1>
+    <div class="crown-page-head-actions">
+        @if (Model.CanEnter)
+        {
+            <a class="btn btn-outline-primary btn-sm" href="/brigade-rating/ppk/import" title="xlsx с сопоставлением столбцов">Импорт</a>
+            <a class="btn btn-success btn-sm crown-head-icon-btn" href="@Model.AddUrl" title="Добавить ППК" aria-label="Добавить ППК">+</a>
+        }
+        <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating">К рейтингу</a>
+        <a class="btn btn-outline-secondary btn-sm crown-head-icon-btn"
+           href="@exportHref"
+           title="Выгрузить Excel за период"
+           aria-label="Выгрузить Excel">
+            <span class="crown-xlsx-icon" aria-hidden="true"><span class="crown-xlsx-label">xlsx</span></span>
+        </a>
+    </div>
+</div>
+
+<div class="brigade-rating-period-bar">
+    <div class="summary-period-switch" role="group" aria-label="Период">
+        <a class="btn btn-sm @(Model.Period == "today" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("today")">Сегодня</a>
+        <a class="btn btn-sm @(Model.Period == "month" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("month")">Месяц</a>
+        <a class="btn btn-sm @(Model.Period == "year" ? "btn-primary" : "btn-outline-secondary")" href="@Model.PeriodUrl("year")">Год</a>
+        <a class="btn btn-sm @(Model.Period == "custom" ? "btn-primary" : "btn-outline-secondary")"
+           href="@UiHelpers.BuildUrl("/brigade-rating/ppk", ("period", "custom"), ("from", Model.From?.ToString("yyyy-MM-dd")), ("to", Model.To?.ToString("yyyy-MM-dd")))">Период</a>
+    </div>
+
+    @if (Model.Period == "month")
+    {
+        <form method="get" class="list-filters summary-period-picker mb-0">
+            <input type="hidden" name="period" value="month" />
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="ppk-month">Месяц</label>
+                <select id="ppk-month" class="form-select" name="month" onchange="this.form.requestSubmit()">
+                    @for (var m = 1; m <= 12; m++)
+                    {
+                        <option value="@m" selected="@(Model.Month == m)">@System.Globalization.CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(m)</option>
+                    }
+                </select>
+            </div>
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="ppk-year-m">Год</label>
+                <select id="ppk-year-m" class="form-select" name="year" onchange="this.form.requestSubmit()">
+                    @foreach (var y in Model.AvailableYears)
+                    {
+                        <option value="@y" selected="@(Model.Year == y)">@y</option>
+                    }
+                </select>
+            </div>
+        </form>
+    }
+    else if (Model.Period == "year")
+    {
+        <form method="get" class="list-filters summary-period-picker mb-0">
+            <input type="hidden" name="period" value="year" />
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="ppk-year">Год</label>
+                <select id="ppk-year" class="form-select" name="year" onchange="this.form.requestSubmit()">
+                    @foreach (var y in Model.AvailableYears)
+                    {
+                        <option value="@y" selected="@(Model.Year == y)">@y</option>
+                    }
+                </select>
+            </div>
+        </form>
+    }
+    else if (Model.Period == "custom")
+    {
+        <form method="get" class="list-filters summary-period-picker mb-0">
+            <input type="hidden" name="period" value="custom" />
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="ppk-from">С</label>
+                <input id="ppk-from" class="form-control" type="date" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+            </div>
+            <div class="filter-field filter-field-inline">
+                <label class="form-label" for="ppk-to">По</label>
+                <input id="ppk-to" class="form-control" type="date" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+            </div>
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Показать</button>
+        </form>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<section class="entity-panel">
+    <div class="crown-table-wrap inspections-table-wrap">
+        <table class="table crown-table inspections-table">
+            <thead>
+            <tr>
+                <th>№</th>
+                <th>Дата</th>
+                <th>Цех</th>
+                <th>Бригада №</th>
+                <th>ФИО Мастера</th>
+                <th>П/З/О</th>
+                <th>Скважина</th>
+                <th>Нарушения</th>
+                <th>Должность</th>
+                <th>ФИО Проверяющего</th>
+                <th>Остановочный пункт</th>
+                <th>Объяснительная</th>
+                <th>Дата устранения</th>
+            </tr>
+            </thead>
+            <tbody data-infinite-scroll
+                   data-more-url="@moreUrl"
+                   data-skip="@Model.Items.Count"
+                   data-has-more="@(Model.HasMore ? "true" : "false")">
+            @if (Model.Items.Count == 0 && string.IsNullOrEmpty(Model.Error))
+            {
+                <tr class="crown-empty-row"><td colspan="13" class="text-muted text-center">Нет записей ППК.</td></tr>
+            }
+            else
+            {
+                <partial name="_InspectionListRows" model="(BrigadeInspectionKind.Ppk, Model.CanEnter, Model.Items)" />
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
+<div class="infinite-scroll-sentinel" hidden></div>
+
+@section Scripts {
+<script>
+(() => {
+    document.querySelector('[data-infinite-scroll]')?.addEventListener('click', (e) => {
+        const tr = e.target.closest('tr.crown-row-link');
+        if (!tr || e.target.closest('button, a, input, select, label')) return;
+        const href = tr.getAttribute('data-href');
+        if (href) window.location.href = href;
+    });
+})();
+</script>
+}

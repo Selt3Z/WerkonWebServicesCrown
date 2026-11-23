@@ -55,7 +55,7 @@
         <label class="form-label" for="initiatorUserId">Инициатор</label>
         <select id="initiatorUserId" class="form-select" name="initiatorUserId">
             <option value="">Все</option>
-            @foreach (var u in Model.Assignees)
+            @foreach (var u in Model.Initiators)
             {
                 if (Model.InitiatorUserId == u.Id)
                 {

@@ -8,7 +8,7 @@
 {
     var href = canEnter ? $"/brigade-rating/stoppage?inspectionId={i.Id}" : null;
     <tr class="@(canEnter ? "crown-row-link" : null)" data-href="@href">
-        @if (kind == BrigadeInspectionKind.Supervising)
+        @if (kind == BrigadeInspectionKind.Supervising || kind == BrigadeInspectionKind.Ppk)
         {
             <td>@i.SequenceNo</td>
             <td class="text-nowrap">@i.ReportDate.ToString("dd.MM.yyyy")</td>

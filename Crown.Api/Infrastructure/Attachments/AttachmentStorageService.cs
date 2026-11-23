@@ -81,9 +81,9 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
         return (relative.Replace('\\', '/'), size);
     }
 
-    /// <summary>Документация: docs/{ownerUserId}/{folderOrRoot}/{guid}_{name}.</summary>
+    /// <summary>Документация: docs/{libraryId}/{folderOrRoot}/{guid}_{name}.</summary>
     public async Task<(string RelativePath, long Size)> SaveDocumentationAsync(
-        Guid ownerUserId,
+        Guid libraryId,
         Guid? folderId,
         string originalFileName,
         Stream content,
@@ -92,7 +92,7 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
         Directory.CreateDirectory(_options.RootPath);
         var safeName = SanitizeFileName(originalFileName);
         var folderKey = folderId?.ToString("N") ?? "root";
-        var relative = Path.Combine("docs", ownerUserId.ToString("N"), folderKey, $"{Guid.NewGuid():N}_{safeName}");
+        var relative = Path.Combine("docs", libraryId.ToString("N"), folderKey, $"{Guid.NewGuid():N}_{safeName}");
         var absolute = GetAbsolutePath(relative);
         Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
 

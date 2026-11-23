@@ -14,7 +14,11 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
     [BindProperty]
     public List<IFormFile> Files { get; set; } = [];
 
+    /// <summary>Исполнители (Department + CanBeExecutor).</summary>
     public List<RequestAssignee> Assignees { get; private set; } = [];
+
+    /// <summary>Инициаторы для админа: Department + Brigade + Customer.</summary>
+    public List<RequestAssignee> Initiators { get; private set; } = [];
 
     public List<EquipmentRequestCategory> EquipmentCategories { get; private set; } = [];
 
@@ -161,12 +165,6 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
                 return Page();
             }
 
-            if (string.IsNullOrWhiteSpace(Input.SpecOperation))
-            {
-                Error = "Укажите операцию.";
-                return Page();
-            }
-
             if (!time.TryParseInput(Input.SpecPlannedAt, out var planned))
             {
                 Error = "Укажите плановое время.";
@@ -298,9 +296,27 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
 
         Assignees = assignees.Data ?? [];
 
-        if (CanPickInitiator && Assignees.Count == 0)
+        if (CanPickInitiator)
         {
-            Error ??= "Нет активных пользователей с ролью «Подразделение».";
+            var initiators = await api.GetAsync<List<RequestAssignee>>(
+                "api/requests/initiators",
+                HttpContext.RequestAborted);
+            if (initiators.IsUnauthorized)
+            {
+                return Challenge();
+            }
+
+            if (!initiators.Ok)
+            {
+                Error = initiators.Error;
+                return null;
+            }
+
+            Initiators = initiators.Data ?? [];
+            if (Initiators.Count == 0)
+            {
+                Error ??= "Нет активных инициаторов (подразделение / бригада / заказчик).";
+            }
         }
 
         var cats = await api.GetAsync<List<EquipmentRequestCategory>>(

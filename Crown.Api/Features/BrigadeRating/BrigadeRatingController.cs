@@ -4,6 +4,7 @@ using ClosedXML.Excel;
 using Crown.Contracts.BrigadeRating;
 using Crown.Contracts.Common;
 using Crown.Contracts.Import;
+using Crown.Contracts.Requests;
 using Crown.Domain.Entities;
 using Crown.Infrastructure.Api;
 using Crown.Infrastructure.Audit;
@@ -70,6 +71,35 @@ public sealed class BrigadeRatingController(
         return Ok(items);
     }
 
+    /// <summary>Активные Department + Customer — для селекта «Кто остановил».</summary>
+    [HttpGet("stopper-orgs")]
+    public async Task<ActionResult<List<RequestAssigneeResponse>>> ListStopperOrgs(
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var dept = await users.GetUsersInRoleAsync(AppRoles.Department);
+        var cust = await users.GetUsersInRoleAsync(AppRoles.Customer);
+        var items = dept.Concat(cust)
+            .Where(u => u.IsActive)
+            .GroupBy(u => u.Id)
+            .Select(g => g.First())
+            .OrderBy(u => DisplayOf(u, isBrigade: false))
+            .ThenBy(u => u.UserName)
+            .Select(u => new RequestAssigneeResponse
+            {
+                Id = u.Id,
+                UserName = u.UserName ?? string.Empty,
+                DisplayName = DisplayOf(u, isBrigade: false)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
     // ---------- Справочник пунктов акта ----------
 
     [HttpGet("act-items")]
@@ -111,6 +141,7 @@ public sealed class BrigadeRatingController(
                     SortOrder = x.SortOrder
                 })
                 .ToListAsync(cancellationToken);
+            await FillActItemUsageCountsAsync(byIds, cancellationToken);
             return Ok(new StoppageActItemsListResponse { Items = byIds, Total = byIds.Count });
         }
 
@@ -144,7 +175,53 @@ public sealed class BrigadeRatingController(
             })
             .ToListAsync(cancellationToken);
 
+        await FillActItemUsageCountsAsync(items, cancellationToken);
         return Ok(new StoppageActItemsListResponse { Items = items, Total = total });
+    }
+
+    /// <summary>
+    /// Счётчики использования пунктов акта только для ids текущей страницы.
+    /// Skiena: Dictionary (hash) — O(1) merge двух GroupBy.
+    /// </summary>
+    private async Task FillActItemUsageCountsAsync(
+        List<StoppageActItemResponse> items,
+        CancellationToken cancellationToken)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        var pageIds = items.Select(x => x.Id).ToList();
+        var stopCounts = await db.StoppageRemarks.AsNoTracking()
+            .Where(r => r.ActItemId != null && pageIds.Contains(r.ActItemId.Value))
+            .GroupBy(r => r.ActItemId!.Value)
+            .Select(g => new { Id = g.Key, Cnt = g.Count() })
+            .ToListAsync(cancellationToken);
+        var inspCounts = await db.BrigadeInspectionRemarks.AsNoTracking()
+            .Where(r => r.ActItemId != null && pageIds.Contains(r.ActItemId.Value))
+            .GroupBy(r => r.ActItemId!.Value)
+            .Select(g => new { Id = g.Key, Cnt = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var usage = new Dictionary<Guid, int>(pageIds.Count);
+        foreach (var row in stopCounts)
+        {
+            usage[row.Id] = row.Cnt;
+        }
+
+        foreach (var row in inspCounts)
+        {
+            usage[row.Id] = usage.TryGetValue(row.Id, out var prev) ? prev + row.Cnt : row.Cnt;
+        }
+
+        foreach (var item in items)
+        {
+            if (usage.TryGetValue(item.Id, out var cnt) && cnt > 0)
+            {
+                item.UsageCount = cnt;
+            }
+        }
     }
 
     [HttpPost("act-items")]
@@ -754,9 +831,12 @@ public sealed class BrigadeRatingController(
         }
 
         var liveNames = await LoadBrigadeDisplayNamesAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
+        var livePeople = await LoadPersonnelLiveAsync(
+            rows.SelectMany(x => new Guid?[] { x.MasterPersonId, x.StoppedByPersonId }),
+            cancellationToken);
         return Ok(new BrigadeStoppagesPageResponse
         {
-            Items = rows.Select(x => MapListItem(x, liveNames)).ToList(),
+            Items = rows.Select(x => MapListItem(x, liveNames, livePeople)).ToList(),
             HasMore = hasMore,
             Period = periodKey,
             PeriodStart = start,
@@ -849,7 +929,10 @@ public sealed class BrigadeRatingController(
         }
 
         var liveNames = await LoadBrigadeDisplayNamesAsync([entity.BrigadeUserId], cancellationToken);
-        return Ok(MapDetail(entity, liveNames));
+        var livePeople = await LoadPersonnelLiveAsync(
+            [entity.MasterPersonId, entity.StoppedByPersonId],
+            cancellationToken);
+        return Ok(MapDetail(entity, liveNames, livePeople));
     }
 
     [HttpPost("stoppages")]
@@ -882,7 +965,10 @@ public sealed class BrigadeRatingController(
         DetachTrackedUsers();
         await db.SaveChangesAsync(cancellationToken);
         var createdNames = await LoadBrigadeDisplayNamesAsync([entity.BrigadeUserId], cancellationToken);
-        return CreatedAtAction(nameof(GetStoppage), new { id = entity.Id }, MapDetail(entity, createdNames));
+        var createdPeople = await LoadPersonnelLiveAsync(
+            [entity.MasterPersonId, entity.StoppedByPersonId],
+            cancellationToken);
+        return CreatedAtAction(nameof(GetStoppage), new { id = entity.Id }, MapDetail(entity, createdNames, createdPeople));
     }
 
     [HttpPut("stoppages/{id:guid}")]
@@ -928,7 +1014,10 @@ public sealed class BrigadeRatingController(
             .Include(x => x.Remarks)
             .FirstAsync(x => x.Id == id, cancellationToken);
         var savedNames = await LoadBrigadeDisplayNamesAsync([saved.BrigadeUserId], cancellationToken);
-        return Ok(MapDetail(saved, savedNames));
+        var savedPeople = await LoadPersonnelLiveAsync(
+            [saved.MasterPersonId, saved.StoppedByPersonId],
+            cancellationToken);
+        return Ok(MapDetail(saved, savedNames, savedPeople));
     }
 
     [HttpPatch("remarks/{id:guid}/resolved")]
@@ -1006,9 +1095,15 @@ public sealed class BrigadeRatingController(
         // Полный рейтинг / список: любой с доступом к разделу видит все бригады.
         var seeAll = true;
 
-        var earliestDate = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking(), seeAll)
+        var earliestStop = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking(), seeAll)
             .Select(x => (DateOnly?)x.ReportDate)
             .MinAsync(cancellationToken);
+        var earliestInsp = await db.BrigadeInspections.AsNoTracking()
+            .Select(x => (DateOnly?)x.ReportDate)
+            .MinAsync(cancellationToken);
+        var earliestDate = earliestStop is null ? earliestInsp
+            : earliestInsp is null ? earliestStop
+            : earliestStop < earliestInsp ? earliestStop : earliestInsp;
         var earliestYear = earliestDate?.Year ?? time.GetToday().Year;
 
         var rows = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
@@ -1046,27 +1141,80 @@ public sealed class BrigadeRatingController(
         var unresolved = remarkFlat.Count(x => !x.IsResolved);
         var totalHours = rows.Sum(x => x.Hours);
 
-        // Имя бригады для UI — всегда live (снимок в строке остановки мог быть без №).
-        var liveNames = await LoadBrigadeDisplayNamesAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
+        // Проверки + ППК (закрытие претензии = FixDate / manual на родителе).
+        var inspections = await db.BrigadeInspections.AsNoTracking()
+            .Include(x => x.Remarks)
+            .Where(x => x.ReportDate >= start && x.ReportDate <= end)
+            .ToListAsync(cancellationToken);
+        var prevInspections = await db.BrigadeInspections.AsNoTracking()
+            .Include(x => x.Remarks)
+            .Where(x => x.ReportDate >= prevStart && x.ReportDate <= prevEnd)
+            .ToListAsync(cancellationToken);
 
-        var ranking = rows
-            .GroupBy(x => x.BrigadeUserId)
-            .Select(g =>
+        static bool InspectionClaimResolved(BrigadeInspection insp) =>
+            insp.FixDate is not null || insp.FixDateIsManual;
+
+        // Претензии = пункты остановок + замечания всех проверок/ППК.
+        var inspClaimTexts = inspections
+            .SelectMany(insp => insp.Remarks.Select(r => (Text: r.Text, Resolved: InspectionClaimResolved(insp))))
+            .ToList();
+        var stopClaimTexts = remarkFlat
+            .Select(r => (Text: r.Text, Resolved: r.IsResolved))
+            .ToList();
+        var allClaimTexts = stopClaimTexts.Concat(inspClaimTexts).ToList();
+        var claimCount = allClaimTexts.Count;
+        var resolvedClaims = allClaimTexts.Count(x => x.Resolved);
+        var unresolvedClaims = claimCount - resolvedClaims;
+
+        var prevInspClaimTexts = prevInspections
+            .SelectMany(insp => insp.Remarks.Select(r => (Text: r.Text, Resolved: InspectionClaimResolved(insp))))
+            .ToList();
+        // Предыдущий период по остановкам уже посчитан (prevRemarkCount / prevResolved).
+        var prevClaimCount = prevRemarkCount + prevInspClaimTexts.Count;
+        var prevResolvedClaims = prevResolved + prevInspClaimTexts.Count(x => x.Resolved);
+        var prevUnresolvedClaims = prevClaimCount - prevResolvedClaims;
+
+        // Имя бригады для UI — всегда live (снимок в строке остановки мог быть без №).
+        var liveNames = await LoadBrigadeDisplayNamesAsync(
+            rows.Select(x => x.BrigadeUserId).Concat(inspections.Select(x => x.BrigadeUserId)),
+            cancellationToken);
+
+        var stoppageByBrigade = rows.GroupBy(x => x.BrigadeUserId).ToDictionary(g => g.Key, g => g.ToList());
+        var claimsByBrigade = inspections.GroupBy(x => x.BrigadeUserId).ToDictionary(g => g.Key, g => g.ToList());
+        var allBrigadeIds = stoppageByBrigade.Keys.Union(claimsByBrigade.Keys).ToList();
+
+        var ranking = allBrigadeIds
+            .Select(id =>
             {
-                var first = g.First();
-                var remarks = g.SelectMany(x => x.Remarks).ToList();
-                var open = remarks.Count(r => !r.IsResolved);
-                var hours = g.Sum(x => x.Hours);
-                var stoppages = g.Count();
-                var score = open * 10m + hours + stoppages;
+                stoppageByBrigade.TryGetValue(id, out var stops);
+                claimsByBrigade.TryGetValue(id, out var insps);
+                stops ??= [];
+                insps ??= [];
+
+                var stopRemarks = stops.SelectMany(x => x.Remarks).ToList();
+                var openStop = stopRemarks.Count(r => !r.IsResolved);
+                var hours = stops.Sum(x => x.Hours);
+                var stoppages = stops.Count;
+                var inspRemarks = insps.SelectMany(x => x.Remarks).ToList();
+                var openInsp = insps.Sum(i => InspectionClaimResolved(i) ? 0 : i.Remarks.Count);
+                var claimTotal = stopRemarks.Count + inspRemarks.Count;
+                var openClaim = openStop + openInsp;
+                var master = stops.FirstOrDefault()?.MasterName
+                    ?? insps.FirstOrDefault()?.MasterName
+                    ?? string.Empty;
+                var snapshotName = stops.FirstOrDefault()?.BrigadeName
+                    ?? string.Empty;
+                var score = openClaim * 10m + hours + stoppages;
                 return new BrigadeRankItemResponse
                 {
-                    BrigadeUserId = g.Key,
-                    BrigadeName = ResolveBrigadeDisplayName(g.Key, first.BrigadeName, liveNames),
-                    MasterName = first.MasterName,
+                    BrigadeUserId = id,
+                    BrigadeName = ResolveBrigadeDisplayName(id, snapshotName, liveNames),
+                    MasterName = master,
                     StoppageCount = stoppages,
-                    RemarkCount = remarks.Count,
-                    UnresolvedRemarkCount = open,
+                    RemarkCount = stopRemarks.Count,
+                    UnresolvedRemarkCount = openStop,
+                    ClaimCount = claimTotal,
+                    UnresolvedClaimCount = openClaim,
                     TotalHours = hours,
                     Score = score
                 };
@@ -1075,8 +1223,9 @@ public sealed class BrigadeRatingController(
             .ThenBy(x => x.BrigadeName)
             .ToList();
 
-        // Топ по тексту пункта (без комментария) — справочник даёт повторяемость.
-        var top = remarkFlat
+        // Топ претензий — остановки + проверки + ППК.
+        var topClaims = allClaimTexts
+            .Where(x => !string.IsNullOrWhiteSpace(x.Text))
             .GroupBy(x => x.Text.Trim(), StringComparer.OrdinalIgnoreCase)
             .Select(g => new RemarkTopItemResponse
             {
@@ -1129,6 +1278,11 @@ public sealed class BrigadeRatingController(
             TotalHours = totalHours,
             ResolutionRatePercent = Percent(resolved, remarkFlat.Count),
             AverageHours = AverageHours(rows),
+            ClaimCount = claimCount,
+            ResolvedClaimCount = resolvedClaims,
+            UnresolvedClaimCount = unresolvedClaims,
+            ClaimResolutionRatePercent = Percent(resolvedClaims, claimCount),
+            InspectionCount = inspections.Count,
             PeriodComparison = new BrigadeRatingPeriodComparisonResponse
             {
                 PreviousPeriodStart = prevStart,
@@ -1139,12 +1293,18 @@ public sealed class BrigadeRatingController(
                 PreviousUnresolvedRemarkCount = prevUnresolved,
                 PreviousTotalHours = prevHours,
                 PreviousResolutionRatePercent = Percent(prevResolved, prevRemarkCount),
-                PreviousAverageHours = prevAverageHours
+                PreviousAverageHours = prevAverageHours,
+                PreviousClaimCount = prevClaimCount,
+                PreviousResolvedClaimCount = prevResolvedClaims,
+                PreviousUnresolvedClaimCount = prevUnresolvedClaims,
+                PreviousClaimResolutionRatePercent = Percent(prevResolvedClaims, prevClaimCount),
+                PreviousInspectionCount = prevInspections.Count
             },
             DailyTrend = BuildDailyTrend(periodKey, start, end, rows),
             TopStoppers = topStoppers,
             BrigadeRanking = ranking,
-            TopRemarks = top,
+            TopClaims = topClaims,
+            TopRemarks = topClaims,
             TopWorks = topWorks,
             // Список остановок — отдельная страница /brigade-rating/stoppages.
             Stoppages = []
@@ -1333,9 +1493,12 @@ public sealed class BrigadeRatingController(
                 return (null, null, "Подразделение «кто остановил» не найдено.", "stopped_by_invalid");
             }
 
-            if (!await users.IsInRoleAsync(stopperDept, AppRoles.Department))
+            // Department или Customer (заказчик тоже может остановить бригаду).
+            var isDept = await users.IsInRoleAsync(stopperDept, AppRoles.Department);
+            var isCustomer = await users.IsInRoleAsync(stopperDept, AppRoles.Customer);
+            if (!isDept && !isCustomer)
             {
-                return (null, null, "«Кто остановил» — только подразделение.", "stopped_by_not_department");
+                return (null, null, "«Кто остановил» — подразделение или заказчик.", "stopped_by_not_org");
             }
 
             stoppedById = sid;
@@ -1378,6 +1541,12 @@ public sealed class BrigadeRatingController(
             }
         }
 
+        var notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        if (notes is { Length: > 2000 })
+        {
+            return (null, null, "Заметка длиннее 2000 символов.", "notes_too_long");
+        }
+
         var builtRemarks = await BuildRemarksAsync(request.Remarks, cancellationToken);
         if (builtRemarks.Error is not null)
         {
@@ -1405,6 +1574,7 @@ public sealed class BrigadeRatingController(
         entity.WorkDescription = workDescription;
         entity.WorkItemId = workItemId;
         entity.IsWorkManual = isWorkManual;
+        entity.Notes = notes;
         entity.LastModifiedAt = DateTimeOffset.UtcNow;
         entity.LastModifiedByUserId = CurrentUserId();
 
@@ -1563,15 +1733,16 @@ public sealed class BrigadeRatingController(
 
     private static BrigadeStoppageListItemResponse MapListItem(
         BrigadeStoppage x,
-        IReadOnlyDictionary<Guid, string>? liveBrigadeNames = null) => new()
+        IReadOnlyDictionary<Guid, string>? liveBrigadeNames = null,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople = null) => new()
     {
         Id = x.Id,
         ReportDate = x.ReportDate,
         BrigadeUserId = x.BrigadeUserId,
         BrigadeName = ResolveBrigadeDisplayName(x.BrigadeUserId, x.BrigadeName, liveBrigadeNames),
-        MasterName = x.MasterName,
+        MasterName = ResolvePersonName(x.MasterPersonId, x.MasterName, livePeople),
         MasterPersonId = x.MasterPersonId,
-        StoppedByName = x.StoppedByName,
+        StoppedByName = ResolvePersonName(x.StoppedByPersonId, x.StoppedByName, livePeople),
         StoppedByUserId = x.StoppedByUserId,
         StoppedByPersonId = x.StoppedByPersonId,
         StoppedAt = x.StoppedAt,
@@ -1580,15 +1751,17 @@ public sealed class BrigadeRatingController(
         WorkDescription = x.WorkDescription,
         WorkItemId = x.WorkItemId,
         IsWorkManual = x.IsWorkManual,
+        Notes = x.Notes,
         RemarkCount = x.Remarks.Count,
         UnresolvedRemarkCount = x.Remarks.Count(r => !r.IsResolved)
     };
 
     private static BrigadeStoppageDetailResponse MapDetail(
         BrigadeStoppage x,
-        IReadOnlyDictionary<Guid, string>? liveBrigadeNames = null)
+        IReadOnlyDictionary<Guid, string>? liveBrigadeNames = null,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople = null)
     {
-        var item = MapListItem(x, liveBrigadeNames);
+        var item = MapListItem(x, liveBrigadeNames, livePeople);
         return new BrigadeStoppageDetailResponse
         {
             Id = item.Id,
@@ -1606,6 +1779,7 @@ public sealed class BrigadeRatingController(
             WorkDescription = item.WorkDescription,
             WorkItemId = item.WorkItemId,
             IsWorkManual = item.IsWorkManual,
+            Notes = item.Notes,
             RemarkCount = item.RemarkCount,
             UnresolvedRemarkCount = item.UnresolvedRemarkCount,
             Remarks = x.Remarks
@@ -1614,6 +1788,49 @@ public sealed class BrigadeRatingController(
                 .Select(MapRemark)
                 .ToList()
         };
+    }
+
+    private sealed record PersonnelLive(string FullName, string? Position);
+
+    /// <summary>Живые ФИО/должности по PersonId; нет в справочнике → оставляем снимок.</summary>
+    private async Task<Dictionary<Guid, PersonnelLive>> LoadPersonnelLiveAsync(
+        IEnumerable<Guid?> personIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = personIds
+            .Where(x => x is Guid g && g != Guid.Empty)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, PersonnelLive>();
+        }
+
+        var rows = await db.PersonnelPeople.AsNoTracking()
+            .Where(x => ids.Contains(x.Id))
+            .Select(x => new { x.Id, x.FullName, x.Position })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(
+            x => x.Id,
+            x => new PersonnelLive(x.FullName, x.Position));
+    }
+
+    private static string ResolvePersonName(
+        Guid? personId,
+        string snapshot,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople)
+    {
+        if (personId is Guid id
+            && livePeople is not null
+            && livePeople.TryGetValue(id, out var live)
+            && !string.IsNullOrWhiteSpace(live.FullName))
+        {
+            return live.FullName.Trim();
+        }
+
+        return snapshot;
     }
 
     /// <summary>Актуальные «Имя №N» по BrigadeUserId (снимок в БД мог быть без номера).</summary>

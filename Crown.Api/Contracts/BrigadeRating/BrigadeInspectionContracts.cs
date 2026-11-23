@@ -46,6 +46,8 @@ public class BrigadeInspectionListItemResponse
     public Guid? FixResponsiblePersonId { get; set; }
     public string? FixResponsibleName { get; set; }
 
+    public string? Notes { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 
@@ -131,6 +133,8 @@ public sealed class SaveBrigadeInspectionRequest
     public string? FixReportText { get; set; }
     public Guid? FixResponsiblePersonId { get; set; }
     public string? FixResponsibleName { get; set; }
+
+    public string? Notes { get; set; }
 
     public List<SaveInspectionRemarkRequest> Remarks { get; set; } = [];
 }

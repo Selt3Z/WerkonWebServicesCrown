@@ -20,6 +20,9 @@ public sealed class StoppageActItemResponse
     public string Text { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public int SortOrder { get; set; }
+
+    /// <summary>Сколько раз пункт использован в остановках + проверках (только на list page).</summary>
+    public int? UsageCount { get; set; }
 }
 
 public sealed class SaveStoppageActItemRequest
@@ -110,6 +113,7 @@ public class BrigadeStoppageListItemResponse
     public string WorkDescription { get; set; } = string.Empty;
     public Guid? WorkItemId { get; set; }
     public bool IsWorkManual { get; set; } = true;
+    public string? Notes { get; set; }
     public int RemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
 }
@@ -159,6 +163,7 @@ public sealed class SaveBrigadeStoppageRequest
     public string WorkDescription { get; set; } = string.Empty;
     public Guid? WorkItemId { get; set; }
     public bool IsWorkManual { get; set; } = true;
+    public string? Notes { get; set; }
     public List<SaveStoppageRemarkRequest> Remarks { get; set; } = [];
 }
 
@@ -178,22 +183,37 @@ public sealed class BrigadeRatingDashboardResponse
     public DateOnly PeriodStart { get; set; }
     public DateOnly PeriodEnd { get; set; }
     public int StoppageCount { get; set; }
+
+    /// <summary>Пункты акта по остановкам (не путать с Claim*).</summary>
     public int RemarkCount { get; set; }
     public int ResolvedRemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
     public decimal TotalHours { get; set; }
 
-    /// <summary>Доля устранённых пунктов, 0–100.</summary>
+    /// <summary>Доля устранённых пунктов остановок, 0–100.</summary>
     public decimal ResolutionRatePercent { get; set; }
 
     /// <summary>Средняя длительность остановки (часы), только со временем пуска.</summary>
     public decimal AverageHours { get; set; }
 
+    /// <summary>Претензии: пункты остановок + замечания всех проверок/ППК.</summary>
+    public int ClaimCount { get; set; }
+    public int ResolvedClaimCount { get; set; }
+    public int UnresolvedClaimCount { get; set; }
+    public decimal ClaimResolutionRatePercent { get; set; }
+    public int InspectionCount { get; set; }
+
     public BrigadeRatingPeriodComparisonResponse PeriodComparison { get; set; } = new();
     public List<BrigadeDailyTrendPointResponse> DailyTrend { get; set; } = [];
     public List<StopperTopItemResponse> TopStoppers { get; set; } = [];
     public List<BrigadeRankItemResponse> BrigadeRanking { get; set; } = [];
+
+    /// <summary>Топ претензий (остановки + проверки + ППК).</summary>
+    public List<RemarkTopItemResponse> TopClaims { get; set; } = [];
+
+    /// <summary>Устарело: то же, что TopClaims (совместимость).</summary>
     public List<RemarkTopItemResponse> TopRemarks { get; set; } = [];
+
     public List<WorkTopItemResponse> TopWorks { get; set; } = [];
     public List<BrigadeStoppageListItemResponse> Stoppages { get; set; } = [];
 }
@@ -209,6 +229,11 @@ public sealed class BrigadeRatingPeriodComparisonResponse
     public decimal PreviousTotalHours { get; set; }
     public decimal PreviousResolutionRatePercent { get; set; }
     public decimal PreviousAverageHours { get; set; }
+    public int PreviousClaimCount { get; set; }
+    public int PreviousResolvedClaimCount { get; set; }
+    public int PreviousUnresolvedClaimCount { get; set; }
+    public decimal PreviousClaimResolutionRatePercent { get; set; }
+    public int PreviousInspectionCount { get; set; }
 }
 
 public sealed class BrigadeDailyTrendPointResponse
@@ -234,10 +259,17 @@ public sealed class BrigadeRankItemResponse
     public string BrigadeName { get; set; } = string.Empty;
     public string MasterName { get; set; } = string.Empty;
     public int StoppageCount { get; set; }
+
+    /// <summary>Пункты остановок.</summary>
     public int RemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
+
+    /// <summary>Все претензии: пункты остановок + проверки/ППК.</summary>
+    public int ClaimCount { get; set; }
+    public int UnresolvedClaimCount { get; set; }
+
     public decimal TotalHours { get; set; }
-    /// <summary>Меньше = лучше (для сортировки рейтинга).</summary>
+    /// <summary>Меньше = лучше: openClaims*10 + hours + stoppages.</summary>
     public decimal Score { get; set; }
 }
 

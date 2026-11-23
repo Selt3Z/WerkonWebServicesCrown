@@ -1,16 +1,86 @@
 namespace Crown.Contracts.Documentation;
 
-public sealed class DocumentationSectionResponse
+public sealed class DocumentationLibraryResponse
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool CanWrite { get; set; }
+    public bool CanManageMembers { get; set; }
+    public int FileCount { get; set; }
+    public long TotalSizeBytes { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; }
+    public string? InboxFolderKey { get; set; }
+}
+
+public sealed class CreateDocumentationLibraryRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public string? InboxFolderKey { get; set; }
+}
+
+public sealed class UpdateDocumentationLibraryRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string? InboxFolderKey { get; set; }
+}
+
+public sealed class DocumentationLibraryMemberResponse
 {
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
     public bool CanWrite { get; set; }
-    public int FileCount { get; set; }
-    public long TotalSizeBytes { get; set; }
 }
 
-/// <summary>Глобальный поиск по файлам/папкам всех доступных разделов.</summary>
+public sealed class UpdateLibraryMembersRequest
+{
+    public List<LibraryMemberToggle> Members { get; set; } = [];
+}
+
+public sealed class LibraryMemberToggle
+{
+    public Guid UserId { get; set; }
+    public bool CanWrite { get; set; }
+}
+
+public sealed class MigrateDocumentationRequest
+{
+    public List<MigrateDocumentationItem> Items { get; set; } = [];
+}
+
+public sealed class MigrateDocumentationItem
+{
+    public Guid OwnerUserId { get; set; }
+    public Guid LibraryId { get; set; }
+}
+
+public sealed class DocumentationLegacySourcesResponse
+{
+    public List<DocumentationLegacySourceItem> Items { get; set; } = [];
+}
+
+public sealed class DocumentationLegacySourceItem
+{
+    public Guid OwnerUserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public int FolderCount { get; set; }
+    public int FileCount { get; set; }
+}
+
+public sealed class MigrateDocumentationResponse
+{
+    public int FoldersUpdated { get; set; }
+    public int FilesUpdated { get; set; }
+    public int MembersAdded { get; set; }
+    public List<string> Messages { get; set; } = [];
+}
+
+/// <summary>Глобальный поиск по файлам/папкам доступных каталогов.</summary>
 public sealed class DocumentationGlobalSearchResponse
 {
     public string Query { get; set; } = string.Empty;
@@ -19,8 +89,8 @@ public sealed class DocumentationGlobalSearchResponse
 
 public sealed class DocumentationGlobalSearchHitResponse
 {
-    public Guid OwnerUserId { get; set; }
-    public string OwnerDisplayName { get; set; } = string.Empty;
+    public Guid LibraryId { get; set; }
+    public string LibraryName { get; set; } = string.Empty;
     public bool IsFolder { get; set; }
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -54,19 +124,19 @@ public sealed class DocumentationFileItemResponse
 
 public sealed class DocumentationBrowseResponse
 {
-    public Guid OwnerUserId { get; set; }
-    public string OwnerDisplayName { get; set; } = string.Empty;
+    public Guid LibraryId { get; set; }
+    public string LibraryName { get; set; } = string.Empty;
     public Guid? FolderId { get; set; }
     public string? FolderName { get; set; }
     public Guid? ParentFolderId { get; set; }
     public bool CanWrite { get; set; }
-    /// <summary>Админ удаляет безвозвратно; подразделение/диспетчер — в корзину.</summary>
+    /// <summary>Админ удаляет безвозвратно; остальные с записью — в корзину.</summary>
     public bool DeletesPermanently { get; set; }
-    /// <summary>Корзина раздела: владелец-подразделение или админ.</summary>
+    /// <summary>Корзина: админ или участник с CanWrite.</summary>
     public bool CanViewTrash { get; set; }
     /// <summary>Очистка корзины — только админ.</summary>
     public bool CanClearTrash { get; set; }
-    /// <summary>Непустой — режим поиска по разделу подразделения.</summary>
+    /// <summary>Непустой — режим поиска по каталогу.</summary>
     public string? SearchQuery { get; set; }
     public List<DocumentationFolderItemResponse> Folders { get; set; } = [];
     public List<DocumentationFileItemResponse> Files { get; set; } = [];
@@ -84,8 +154,8 @@ public sealed class DocumentationTrashItemResponse
 
 public sealed class DocumentationTrashResponse
 {
-    public Guid OwnerUserId { get; set; }
-    public string OwnerDisplayName { get; set; } = string.Empty;
+    public Guid LibraryId { get; set; }
+    public string LibraryName { get; set; } = string.Empty;
     public bool CanClearTrash { get; set; }
     public int RetentionDays { get; set; }
     public List<DocumentationTrashItemResponse> Items { get; set; } = [];
@@ -105,38 +175,28 @@ public sealed class CreateDocumentationFolderRequest
 
 public sealed class MoveDocumentationFolderRequest
 {
-    /// <summary>null — корень раздела.</summary>
+    /// <summary>null — корень каталога.</summary>
     public Guid? TargetParentFolderId { get; set; }
 }
 
 public sealed class MoveDocumentationFileRequest
 {
-    /// <summary>null — корень раздела.</summary>
+    /// <summary>null — корень каталога.</summary>
     public Guid? TargetFolderId { get; set; }
 }
 
-public sealed class DocumentationAdminUserResponse
+/// <summary>Кандидаты для ACL каталога (настройки).</summary>
+public sealed class DocumentationAclUserResponse
 {
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
-    public bool DocumentationEnabled { get; set; }
-}
-
-public sealed class UpdateDocumentationSettingsRequest
-{
-    public List<DocumentationAdminUserToggle> Users { get; set; } = [];
-}
-
-public sealed class DocumentationAdminUserToggle
-{
-    public Guid UserId { get; set; }
-    public bool DocumentationEnabled { get; set; }
+    public bool IsActive { get; set; }
 }
 
 public sealed class DocumentationInboxInfoResponse
 {
-    public Guid OwnerUserId { get; set; }
+    public Guid LibraryId { get; set; }
     public string FolderKey { get; set; } = string.Empty;
     public string HostInboxPath { get; set; } = string.Empty;
     public string RelativeInboxPath { get; set; } = string.Empty;
@@ -146,7 +206,7 @@ public sealed class DocumentationInboxInfoResponse
 
 public sealed class DocumentationInboxSyncResponse
 {
-    public Guid? OwnerUserId { get; set; }
+    public Guid? LibraryId { get; set; }
     public string? FolderKey { get; set; }
     public string HostInboxPath { get; set; } = string.Empty;
     public int Imported { get; set; }

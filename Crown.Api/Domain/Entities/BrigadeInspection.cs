@@ -1,7 +1,7 @@
 namespace Crown.Domain.Entities;
 
 /// <summary>
-/// Проверка бригады (надзорная / ПДК / ПБиОТ). Одна таблица на все виды:
+/// Проверка бригады (надзорная / ПДК / ПБиОТ / ППК). Одна таблица на все виды:
 /// поля вида-специфичные (Outcome, FixResponsibleText, FixReportText…) заполняются только для своего Kind.
 /// Имена и цех/номер — снимки на момент записи.
 /// </summary>
@@ -79,6 +79,9 @@ public sealed class BrigadeInspection
     public Guid? FixResponsiblePersonId { get; set; }
 
     public string? FixResponsibleName { get; set; }
+
+    /// <summary>Свободная заметка к проверке/ППК.</summary>
+    public string? Notes { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 

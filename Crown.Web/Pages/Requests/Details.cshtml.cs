@@ -27,11 +27,22 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
 
     public List<RequestAssignee> Assignees { get; private set; } = [];
 
+    public List<EquipmentRequestCategory> EquipmentCategories { get; private set; } = [];
+
+    public List<SpecialVehicleTypeAvailability> SpecTypeAvailability { get; private set; } = [];
+
     /// <summary>Свободные единицы под запрошенную категорию/тип — для назначения при accept.</summary>
     public List<EquipmentAsset> AssignableEquipment { get; private set; } = [];
 
     public List<SpecialVehicleUnit> AssignableSpecUnits { get; private set; } = [];
 
+    [BindProperty]
+    public EditInputModel EditInput { get; set; } = new();
+
+    public bool CanCreateTransport =>
+        User.IsInRole(AppRoles.Administrator)
+        || User.IsInRole(AppRoles.Dispatcher)
+        || User.FindFirst(CrownAuthHandler.CanCreateTransportClaim)?.Value == "1";
     public bool NeedsEquipmentAssignment =>
         CanManage
         && Item is { Kind: ServiceRequestKind.Equipment, EquipmentAssetId: null }
@@ -91,13 +102,25 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
     public bool CanResubmit =>
         IsInitiatorOfItem && Item?.Status == ServiceRequestStatus.Returned;
 
+    /// <summary>Ручная правка полей (не workflow). Staff / инициатор; не архив.</summary>
+    public bool CanEdit =>
+        Item is not null
+        && !Item.IsArchived
+        && (User.IsInRole(AppRoles.Administrator)
+            || User.IsInRole(AppRoles.Dispatcher)
+            || IsInitiatorOfItem)
+        && (User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher)
+            ? Item.Status is ServiceRequestStatus.Submitted
+                or ServiceRequestStatus.Returned
+                or ServiceRequestStatus.InProgress
+            : Item.Status is ServiceRequestStatus.Submitted or ServiceRequestStatus.Returned);
+
     /// <summary>Перенаправление: Подана / Возвращена / В работе, у кого есть доступ к карточке.</summary>
     public bool CanReassign =>
         Item is not null
         && Item.Status is ServiceRequestStatus.Submitted
             or ServiceRequestStatus.Returned
             or ServiceRequestStatus.InProgress;
-
     public bool CanSpecArrive =>
         CanManage
         && Item is
@@ -153,9 +176,110 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             return redirect;
         }
 
+        if (Item is not null)
+        {
+            SeedEditInput();
+        }
+
         return Item is null && Error is null ? NotFound() : Page();
     }
 
+    public async Task<IActionResult> OnPostEditAsync(long id)
+    {
+        var redirect = await LoadAsync(id);
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        if (Item is null)
+        {
+            return Error is null ? NotFound() : Page();
+        }
+
+        if (!CanEdit)
+        {
+            Error = "Редактирование недоступно.";
+            SeedEditInput();
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(EditInput.EditReason))
+        {
+            Error = "Укажите причину редактирования.";
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(EditInput.Phone))
+        {
+            Error = "Телефон обязателен.";
+            return Page();
+        }
+
+        if (!time.TryParseInput(EditInput.DueAt, out var dueAt))
+        {
+            Error = "Укажите срок исполнения.";
+            return Page();
+        }
+
+        DateTimeOffset? specPlanned = null;
+        if (EditInput.Kind == ServiceRequestKind.SpecTech)
+        {
+            if (!CanCreateTransport
+                && Item.Kind != ServiceRequestKind.SpecTech)
+            {
+                Error = "Нет права на заявки спецтехники.";
+                return Page();
+            }
+
+            if (!time.TryParseInput(EditInput.SpecPlannedAt, out var planned))
+            {
+                Error = "Укажите плановое время.";
+                return Page();
+            }
+
+            specPlanned = planned;
+        }
+
+        var result = await api.PutAsync<ServiceRequestDetail>(
+            $"api/requests/{id}",
+            new EditServiceRequestRequest
+            {
+                Phone = EditInput.Phone!.Trim(),
+                DueAt = dueAt,
+                Body = EditInput.Body?.Trim() ?? string.Empty,
+                IsUrgent = EditInput.IsUrgent,
+                Kind = EditInput.Kind,
+                RequestedEquipmentCategory = EditInput.Kind == ServiceRequestKind.Equipment
+                    ? EditInput.RequestedEquipmentCategory
+                    : null,
+                RequestedSpecialVehicleType = EditInput.Kind == ServiceRequestKind.SpecTech
+                    ? EditInput.RequestedSpecialVehicleType
+                    : null,
+                SpecOperation = EditInput.Kind == ServiceRequestKind.SpecTech
+                    ? EditInput.SpecOperation
+                    : null,
+                SpecPlannedAt = specPlanned,
+                EditReason = EditInput.EditReason.Trim(),
+                RowVersion = Item.RowVersion
+            },
+            HttpContext.RequestAborted);
+
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            Error = result.Error ?? "Не удалось сохранить.";
+            return Page();
+        }
+
+        Item = result.Data;
+        SeedEditInput();
+        return RedirectToPage(new { id });
+    }
     public async Task<IActionResult> OnPostTransitionAsync(
         long id,
         string action,
@@ -589,7 +713,8 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             return null;
         }
 
-        Item = result.Data;
+        var item = result.Data!;
+        Item = item;
 
         var assignees = await api.GetAsync<List<RequestAssignee>>("api/requests/assignees", HttpContext.RequestAborted);
         if (assignees.Ok && assignees.Data is not null)
@@ -597,15 +722,31 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             Assignees = assignees.Data;
         }
 
-        if (Item.Kind == ServiceRequestKind.Equipment
-            && Item.EquipmentAssetId is null
-            && !string.IsNullOrWhiteSpace(Item.RequestedEquipmentCategory))
+        var cats = await api.GetAsync<List<EquipmentRequestCategory>>(
+            "api/equipment/request-categories",
+            HttpContext.RequestAborted);
+        if (cats.Ok && cats.Data is not null)
+        {
+            EquipmentCategories = cats.Data;
+        }
+
+        var avail = await api.GetAsync<SpecialVehicleAvailabilityPayload>(
+            "api/special-vehicles/availability",
+            HttpContext.RequestAborted);
+        if (avail.Ok && avail.Data is not null)
+        {
+            SpecTypeAvailability = avail.Data.Types;
+        }
+
+        if (item.Kind == ServiceRequestKind.Equipment
+            && item.EquipmentAssetId is null
+            && !string.IsNullOrWhiteSpace(item.RequestedEquipmentCategory))
         {
             var eq = await api.GetAsync<PagedResponse<EquipmentAsset>>(
                 UiHelpers.BuildUrl(
                     "api/equipment",
                     ("freeOnly", "true"),
-                    ("category", Item.RequestedEquipmentCategory),
+                    ("category", item.RequestedEquipmentCategory),
                     ("skip", "0"),
                     ("take", "200")),
                 HttpContext.RequestAborted);
@@ -615,15 +756,15 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
             }
         }
 
-        if (Item.Kind == ServiceRequestKind.SpecTech
-            && Item.SpecialVehicleUnitId is null
-            && !string.IsNullOrWhiteSpace(Item.RequestedSpecialVehicleType))
+        if (item.Kind == ServiceRequestKind.SpecTech
+            && item.SpecialVehicleUnitId is null
+            && !string.IsNullOrWhiteSpace(item.RequestedSpecialVehicleType))
         {
             var units = await api.GetAsync<PagedResponse<SpecialVehicleUnit>>(
                 UiHelpers.BuildUrl(
                     "api/special-vehicles",
                     ("freeOnly", "true"),
-                    ("typeName", Item.RequestedSpecialVehicleType),
+                    ("typeName", item.RequestedSpecialVehicleType),
                     ("skip", "0"),
                     ("take", "200")),
                 HttpContext.RequestAborted);
@@ -634,5 +775,41 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
         }
 
         return null;
+    }
+
+    private void SeedEditInput()
+    {
+        if (Item is null)
+        {
+            return;
+        }
+
+        EditInput = new EditInputModel
+        {
+            Phone = Item.Phone,
+            DueAt = time.ToInput(Item.DueAt),
+            Body = Item.Body,
+            IsUrgent = Item.IsUrgent,
+            Kind = Item.Kind,
+            RequestedEquipmentCategory = Item.RequestedEquipmentCategory,
+            RequestedSpecialVehicleType = Item.RequestedSpecialVehicleType,
+            SpecOperation = Item.SpecOperation,
+            SpecPlannedAt = Item.SpecPlannedAt is DateTimeOffset spa ? time.ToInput(spa) : null,
+            EditReason = string.Empty
+        };
+    }
+
+    public sealed class EditInputModel
+    {
+        public string? Phone { get; set; }
+        public string? DueAt { get; set; }
+        public string? Body { get; set; }
+        public bool IsUrgent { get; set; }
+        public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
+        public string? RequestedEquipmentCategory { get; set; }
+        public string? RequestedSpecialVehicleType { get; set; }
+        public string? SpecOperation { get; set; }
+        public string? SpecPlannedAt { get; set; }
+        public string? EditReason { get; set; }
     }
 }

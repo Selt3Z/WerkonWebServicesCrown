@@ -1,0 +1,278 @@
+@page "/brigade-rating/ppk/import"
+@model BrigadeRatingPpkImportModel
+@{
+    ViewData["Title"] = "Импорт ППК";
+}
+
+@Html.AntiForgeryToken()
+
+<div class="crown-page-head">
+    <h1 class="section-title">Импорт ППК</h1>
+    <div class="crown-page-head-actions">
+        <a class="btn btn-outline-secondary" href="/brigade-rating/ppk">К ППК</a>
+        <a class="btn btn-outline-secondary" href="/brigade-rating">К рейтингу</a>
+    </div>
+</div>
+
+<div class="entity-panel" id="ppk-import-panel">
+    <p class="form-text mb-2">
+        Файл .xlsx (колонки как у экспорта Супервайзинга): первая строка — заголовки.
+        Обязательны дата, бригада, мастер, результат (П/З/О), нарушения и проверяющий.
+        Бригада: «КРС-219», «ПРС-7», «213К» или номер. Нарушения «1. 2. 3.» режутся; в справочник акта новые строки не добавляются.
+    </p>
+    <div class="mb-2 filter-field">
+        <label class="form-label" for="ppk-import-file">Файл</label>
+        <input class="form-control" type="file" id="ppk-import-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    </div>
+    <div id="ppk-import-map" class="transport-form-grid" hidden>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-date">Дата <span class="crown-req">*</span></label>
+            <select class="form-select" id="ppk-map-date"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-brigade">Бригада <span class="crown-req">*</span></label>
+            <select class="form-select" id="ppk-map-brigade"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-master">Мастер</label>
+            <select class="form-select" id="ppk-map-master"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-outcome">П/З/О <span class="crown-req">*</span></label>
+            <select class="form-select" id="ppk-map-outcome"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-well">Скважина</label>
+            <select class="form-select" id="ppk-map-well"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-remarks">Нарушения <span class="crown-req">*</span></label>
+            <select class="form-select" id="ppk-map-remarks"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-checker-pos">Должность</label>
+            <select class="form-select" id="ppk-map-checker-pos"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-checker">ФИО проверяющего <span class="crown-req">*</span></label>
+            <select class="form-select" id="ppk-map-checker"></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-stop">Остановочный пункт</label>
+            <select class="form-select" id="ppk-map-stop"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-expl">Объяснительная</label>
+            <select class="form-select" id="ppk-map-expl"><option value="">— не импортировать —</option></select>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" for="ppk-map-fix">Дата устранения</label>
+            <select class="form-select" id="ppk-map-fix"><option value="">— не импортировать —</option></select>
+        </div>
+    </div>
+    <div id="ppk-import-sample" class="table-responsive mb-2" hidden></div>
+    <div class="d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="ppk-import-preview">Прочитать файл</button>
+        <button type="button" class="btn btn-save btn-sm" id="ppk-import-commit" hidden>Импортировать</button>
+    </div>
+    <div id="ppk-import-status" class="form-text mt-2"></div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const fileInput = document.getElementById('ppk-import-file');
+    const mapWrap = document.getElementById('ppk-import-map');
+    const sample = document.getElementById('ppk-import-sample');
+    const previewBtn = document.getElementById('ppk-import-preview');
+    const commitBtn = document.getElementById('ppk-import-commit');
+    const status = document.getElementById('ppk-import-status');
+    const antiforgery = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+    let fileB64 = null;
+    let headers = [];
+
+    const errLabel = {
+        date_required: 'нет даты',
+        date_invalid: 'некорректная дата',
+        brigade_required: 'нет бригады',
+        brigade_unknown: 'бригада не найдена',
+        checker_required: 'нет проверяющего',
+        outcome_required: 'нет П/З/О',
+        outcome_invalid: 'некорректный П/З/О',
+        remarks_required: 'нет нарушений',
+        duplicate: 'дубликат'
+    };
+
+    function fillSelect(sel, withEmpty) {
+        sel.innerHTML = withEmpty ? '<option value="">— не импортировать —</option>' : '';
+        headers.forEach(function (h, i) {
+            const opt = document.createElement('option');
+            opt.value = String(i);
+            opt.textContent = h || ('Столбец ' + (i + 1));
+            sel.appendChild(opt);
+        });
+    }
+
+    function guess() {
+        const aliases = [
+            ['ppk-map-date', ['дата']],
+            ['ppk-map-brigade', ['бригад']],
+            ['ppk-map-master', ['мастер']],
+            ['ppk-map-outcome', ['предписан', 'замечан', 'п/з/о', 'результат']],
+            ['ppk-map-well', ['скважин']],
+            ['ppk-map-remarks', ['нарушен', 'пункт']],
+            ['ppk-map-checker-pos', ['должность']],
+            ['ppk-map-checker', ['проверяющ']],
+            ['ppk-map-stop', ['остановочн']],
+            ['ppk-map-expl', ['объяснит']],
+            ['ppk-map-fix', ['устранени']]
+        ];
+        aliases.forEach(function (pair) {
+            const id = pair[0];
+            const keys = pair[1];
+            let found = -1;
+            for (let i = 0; i < headers.length && found < 0; i++) {
+                const h = (headers[i] || '').toLowerCase().replace(/\s+/g, ' ');
+                for (let k = 0; k < keys.length; k++) {
+                    if (h.indexOf(keys[k]) >= 0) { found = i; break; }
+                }
+            }
+            if (found >= 0) {
+                const el = document.getElementById(id);
+                if (el) el.value = String(found);
+            }
+        });
+    }
+
+    function opt(id) {
+        const v = document.getElementById(id).value;
+        return v === '' ? null : parseInt(v, 10);
+    }
+
+    previewBtn.addEventListener('click', function () {
+        const f = fileInput.files && fileInput.files[0];
+        if (!f) { status.textContent = 'Выберите файл.'; return; }
+        status.textContent = 'Читаю…';
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('__RequestVerificationToken', antiforgery);
+        fetch('/brigade-rating/ppk/import?handler=ImportPreview', {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin'
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+                if (!res.ok) {
+                    status.textContent = (res.j && (res.j.message || res.j.error)) || 'Ошибка чтения файла.';
+                    return;
+                }
+                headers = res.j.headers || [];
+                fillSelect(document.getElementById('ppk-map-date'), false);
+                fillSelect(document.getElementById('ppk-map-brigade'), false);
+                fillSelect(document.getElementById('ppk-map-master'), true);
+                fillSelect(document.getElementById('ppk-map-outcome'), false);
+                fillSelect(document.getElementById('ppk-map-well'), true);
+                fillSelect(document.getElementById('ppk-map-remarks'), false);
+                fillSelect(document.getElementById('ppk-map-checker-pos'), true);
+                fillSelect(document.getElementById('ppk-map-checker'), false);
+                fillSelect(document.getElementById('ppk-map-stop'), true);
+                fillSelect(document.getElementById('ppk-map-expl'), true);
+                fillSelect(document.getElementById('ppk-map-fix'), true);
+                guess();
+                mapWrap.hidden = false;
+                commitBtn.hidden = false;
+                const rows = res.j.sampleRows || [];
+                let html = '<table class="table crown-table"><thead><tr>';
+                headers.forEach(function (h) { html += '<th>' + (h || '') + '</th>'; });
+                html += '</tr></thead><tbody>';
+                rows.slice(0, 5).forEach(function (row) {
+                    html += '<tr>';
+                    (row || []).forEach(function (c) { html += '<td>' + (c || '') + '</td>'; });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                sample.innerHTML = html;
+                sample.hidden = false;
+                status.textContent = 'Строк данных: ' + (res.j.totalRows || 0) + '. Сопоставьте столбцы и нажмите «Импортировать».';
+                const reader = new FileReader();
+                reader.onload = function () {
+                    const s = String(reader.result || '');
+                    const i = s.indexOf(',');
+                    fileB64 = i >= 0 ? s.slice(i + 1) : s;
+                };
+                reader.readAsDataURL(f);
+            })
+            .catch(function () { status.textContent = 'Сеть/сервер недоступны.'; });
+    });
+
+    commitBtn.addEventListener('click', function () {
+        if (!fileB64) { status.textContent = 'Сначала прочитайте файл.'; return; }
+        const dateCol = opt('ppk-map-date');
+        const brigadeCol = opt('ppk-map-brigade');
+        const masterCol = opt('ppk-map-master');
+        const outcomeCol = opt('ppk-map-outcome');
+        const remarksCol = opt('ppk-map-remarks');
+        const checkerCol = opt('ppk-map-checker');
+        if (dateCol === null || brigadeCol === null || outcomeCol === null || remarksCol === null || checkerCol === null) {
+            status.textContent = 'Укажите обязательные столбцы.';
+            return;
+        }
+        const required = [dateCol, brigadeCol, outcomeCol, remarksCol, checkerCol];
+        if (new Set(required).size !== required.length) {
+            status.textContent = 'Обязательные поля должны ссылаться на разные столбцы.';
+            return;
+        }
+        if (masterCol !== null && required.indexOf(masterCol) >= 0) {
+            status.textContent = 'Столбец мастера совпадает с обязательным полем.';
+            return;
+        }
+        status.textContent = 'Импорт…';
+        fetch('/brigade-rating/ppk/import?handler=ImportCommit', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': antiforgery
+            },
+            body: JSON.stringify({
+                fileBase64: fileB64,
+                inspectionKind: 'Ppk',
+                reportDateColumn: dateCol,
+                brigadeColumn: brigadeCol,
+                masterColumn: masterCol,
+                outcomeColumn: outcomeCol,
+                wellColumn: opt('ppk-map-well'),
+                remarksColumn: remarksCol,
+                checkerPositionColumn: opt('ppk-map-checker-pos'),
+                checkerColumn: checkerCol,
+                stopPointColumn: opt('ppk-map-stop'),
+                hasExplanationColumn: opt('ppk-map-expl'),
+                fixDateColumn: opt('ppk-map-fix')
+            })
+        })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+                if (!res.ok) {
+                    status.textContent = (res.j && (res.j.message || res.j.error)) || 'Ошибка импорта.';
+                    return;
+                }
+                const created = res.j.created || 0;
+                const errors = res.j.errors || 0;
+                const rows = res.j.errorRows || [];
+                let msg = 'Готово: создано ' + created + (errors ? ', ошибок ' + errors : '') + '.';
+                if (rows.length) {
+                    msg += ' Примеры: ' + rows.slice(0, 5).map(function (e) {
+                        return 'стр.' + e.rowNumber + ' — ' + (errLabel[e.code] || e.code);
+                    }).join('; ');
+                }
+                status.textContent = msg;
+                if (created > 0) {
+                    setTimeout(function () { location.href = '/brigade-rating/ppk'; }, 900);
+                }
+            })
+            .catch(function () { status.textContent = 'Сеть/сервер недоступны.'; });
+    });
+})();
+</script>
+}

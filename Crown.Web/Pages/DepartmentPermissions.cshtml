@@ -28,32 +28,46 @@
         <li><strong>Исполнитель</strong> — в списке исполнителей заявок.</li>
         <li><strong>Заявки на спецтехнику</strong> — может подавать заявки на спецтехнику.</li>
         <li><strong>Своё оборудование</strong> — CRUD своих единиц. Без галочки: можно запрашивать единицы и держать чужие на балансе.</li>
-        <li><strong>Транспорт</strong> — просмотр страницы «Транспорт».</li>
+        <li><strong>Транспорт</strong> — просмотр страницы «Транспорт» и добавление стоянок/машин в справочник.</li>
         <li><strong>Спецтехника</strong> — просмотр страницы «Спецтехника».</li>
         <li><strong>Склад</strong> — просмотр страницы «Склад».</li>
         <li><strong>Сводка</strong> — просмотр страницы «Сводка».</li>
         <li><strong>Рейтинг бригад</strong> — только просмотр: раздел, рейтинг и таблицы остановок/проверок.</li>
-        <li><strong>Оператор рейтинга</strong> — работа с разделом: добавление, правка и удаление остановок, проверок, пунктов акта и выполняемых работ.</li>        <li><strong>Документация</strong> — свой раздел в общем списке и право записи/удаления в нём (по умолчанию вкл.).</li>
+        <li><strong>Оператор рейтинга</strong> — работа с разделом: добавление, правка и удаление остановок, проверок, пунктов акта и выполняемых работ.</li>
+        <li><strong>Документация</strong> — общий доступ к разделу Документация (меню). Конкретные каталоги и запись — в «Доступ к документации».</li>
 
     </ul>
 </div>
 
+<div class="list-filters mb-3">
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="perm-role-filter">Роль</label>
+        <select class="form-select" id="perm-role-filter">
+            <option value="">Все</option>
+            @foreach (var role in AppRoles.Switchable)
+            {
+                <option value="@role">@AppRoles.Display(role)</option>
+            }
+        </select>
+    </div>
+</div>
+
 <form method="post" class="department-permissions-form">
     <div class="crown-table-wrap department-permissions-wrap mb-3">
-        <table class="table crown-table department-permissions-table">
+        <table class="table crown-table department-permissions-table" id="perm-matrix-table">
             <thead>
             <tr>
                 <th>Пользователь</th>
                 <th class="text-center" title="В списке исполнителей заявок">Исполн.</th>
                 <th class="text-center" title="Может подавать заявки на спецтехнику">Заявки на СТ</th>
                 <th class="text-center" title="CRUD единиц оборудования">Своё оборуд.</th>
-                <th class="text-center" title="Просмотр страницы Транспорт">Трансп.</th>
+                <th class="text-center" title="Просмотр Транспорта + добавление стоянок и машин">Трансп.</th>
                 <th class="text-center" title="Просмотр страницы Спецтехника">СТ</th>
                 <th class="text-center" title="Просмотр страницы Склад">Склад</th>
                 <th class="text-center" title="Просмотр страницы Сводка">Сводка</th>
                 <th class="text-center" title="Просмотр рейтинга бригад: рейтинг и таблицы остановок/проверок">РБ</th>
                 <th class="text-center" title="Работа с рейтингом бригад: остановки, проверки, пункты акта, выполняемые работы">Оп. РБ</th>
-                <th class="text-center" title="Свой раздел документации + запись/удаление">Док.</th>
+                <th class="text-center" title="Общий доступ к Документации (меню); каталоги — в настройках ACL">Док.</th>
             </tr>
             </thead>
             <tbody>
@@ -61,7 +75,7 @@
             {
                 var u = Model.Users[i];
                 var row = Model.Rows.ElementAtOrDefault(i) ?? new DepartmentPermissionsModel.DepartmentPermissionRowInput { UserId = u.UserId };
-                <tr class="@(!u.IsActive ? "crown-row-archived" : null)">
+                <tr class="@(!u.IsActive ? "crown-row-archived" : null)" data-role="@u.Role">
                     <td title="@u.DisplayName">
                         @u.DisplayName
                         <span class="badge @RoleBadgeClass(u.Role) ms-1">@AppRoles.Display(u.Role)</span>
@@ -127,3 +141,23 @@
     </div>
     <button type="submit" class="btn btn-save">Сохранить</button>
 </form>
+
+@section Scripts {
+<script>
+(() => {
+    const select = document.getElementById('perm-role-filter');
+    const table = document.getElementById('perm-matrix-table');
+    if (!select || !table) return;
+    const rows = table.querySelectorAll('tbody tr[data-role]');
+    const apply = () => {
+        const role = select.value;
+        rows.forEach(tr => {
+            // Скрытые строки остаются в форме — Save не затирает чужие роли.
+            tr.hidden = role !== '' && tr.getAttribute('data-role') !== role;
+        });
+    };
+    select.addEventListener('change', apply);
+    apply();
+})();
+</script>
+}

@@ -158,6 +158,10 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("MasterPersonId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<int?>("Outcome")
                         .HasColumnType("integer");
 
@@ -278,6 +282,10 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("MasterPersonId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<DateOnly>("ReportDate")
                         .HasColumnType("date");
@@ -410,7 +418,10 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
-                    b.Property<Guid>("OwnerUserId")
+                    b.Property<Guid?>("LibraryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("OwnerUserId")
                         .HasColumnType("uuid");
 
                     b.Property<long>("SizeBytes")
@@ -433,11 +444,13 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("FolderId");
 
+                    b.HasIndex("LibraryId");
+
                     b.HasIndex("OwnerUserId");
 
-                    b.HasIndex("OwnerUserId", "InboxSourceKey")
+                    b.HasIndex("LibraryId", "InboxSourceKey")
                         .IsUnique()
-                        .HasFilter("\"InboxSourceKey\" IS NOT NULL AND \"DeletedAt\" IS NULL");
+                        .HasFilter("\"InboxSourceKey\" IS NOT NULL AND \"DeletedAt\" IS NULL AND \"LibraryId\" IS NOT NULL");
 
                     b.ToTable("DocumentationFiles");
                 });
@@ -457,12 +470,15 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("DeletedByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("LibraryId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<Guid>("OwnerUserId")
+                    b.Property<Guid?>("OwnerUserId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("ParentFolderId")
@@ -472,15 +488,83 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("DeletedAt");
 
+                    b.HasIndex("LibraryId");
+
                     b.HasIndex("OwnerUserId");
 
                     b.HasIndex("ParentFolderId");
 
-                    b.HasIndex("OwnerUserId", "ParentFolderId", "Name")
+                    b.HasIndex("LibraryId", "ParentFolderId", "Name")
                         .IsUnique()
-                        .HasFilter("\"DeletedAt\" IS NULL");
+                        .HasFilter("\"DeletedAt\" IS NULL AND \"LibraryId\" IS NOT NULL");
 
                     b.ToTable("DocumentationFolders");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationLibrary", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InboxFolderKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InboxFolderKey");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("SortOrder");
+
+                    b.ToTable("DocumentationLibraries");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationLibraryMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("CanWrite")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("LibraryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("LibraryId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("DocumentationLibraryMembers");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.EquipmentAsset", b =>
@@ -778,6 +862,16 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Kind")
                         .HasColumnType("integer");
+
+                    b.Property<string>("LastEditReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset?>("LastEditedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LastEditedByUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset?>("LastModifiedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1690,22 +1784,30 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .HasForeignKey("FolderId")
                         .OnDelete(DeleteBehavior.Cascade);
 
+                    b.HasOne("Crown.Domain.Entities.DocumentationLibrary", null)
+                        .WithMany()
+                        .HasForeignKey("LibraryId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Folder");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.DocumentationFolder", b =>
                 {
+                    b.HasOne("Crown.Domain.Entities.DocumentationLibrary", null)
+                        .WithMany()
+                        .HasForeignKey("LibraryId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("Crown.Domain.Entities.DocumentationFolder", "ParentFolder")
                         .WithMany("Children")
@@ -1713,6 +1815,23 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("ParentFolder");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationLibraryMember", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.DocumentationLibrary", "Library")
+                        .WithMany("Members")
+                        .HasForeignKey("LibraryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Crown.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Library");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.EquipmentAsset", b =>
@@ -1929,6 +2048,11 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.Navigation("Children");
 
                     b.Navigation("Files");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.DocumentationLibrary", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.EquipmentAsset", b =>

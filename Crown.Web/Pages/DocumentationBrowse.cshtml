@@ -1,19 +1,19 @@
-@page "/documentation/{ownerUserId:guid}"
+@page "/documentation/{libraryId:guid}"
 @model DocumentationBrowseModel
 @inject AppTime Time
 @{
     ViewData["Title"] = "Документация";
     var b = Model.Browse;
     var isSearch = !string.IsNullOrWhiteSpace(b?.SearchQuery);
-    var backHere = $"/documentation/{Model.OwnerUserId}"
+    var backHere = $"/documentation/{Model.LibraryId}"
         + (Model.FolderId is Guid f ? $"?folderId={f}" : "")
         + (!string.IsNullOrWhiteSpace(Model.Q)
             ? $"{(Model.FolderId is null ? "?" : "&")}q={Uri.EscapeDataString(Model.Q)}"
             : "");
-    var resetHref = $"/documentation/{Model.OwnerUserId}"
+    var resetHref = $"/documentation/{Model.LibraryId}"
         + (Model.FolderId is Guid rf ? $"?folderId={rf}" : "");
-    var deptName = b?.OwnerDisplayName ?? "Подразделение";
-    var inDeptSubtree = b is not null && (b.FolderId is not null || isSearch);
+    var libName = b?.LibraryName ?? "Каталог";
+    var inLibrarySubtree = b is not null && (b.FolderId is not null || isSearch);
 }
 
 <div class="crown-page-head">
@@ -21,7 +21,7 @@
     <div class="d-flex gap-2 flex-wrap">
         @if (b?.CanViewTrash == true)
         {
-            <a class="btn btn-outline-secondary" href="/documentation/@Model.OwnerUserId/trash">Корзина</a>
+            <a class="btn btn-outline-secondary" href="/documentation/@Model.LibraryId/trash">Корзина</a>
         }
         <a class="btn btn-outline-secondary" href="/documentation">К списку</a>
     </div>
@@ -39,22 +39,22 @@
 @if (b is not null)
 {
     <nav class="mb-3" aria-label="Путь">
-        <a href="/documentation">Список подразделений</a>
+        <a href="/documentation">Каталоги</a>
         <span class="text-muted"> / </span>
-        @if (inDeptSubtree)
+        @if (inLibrarySubtree)
         {
-            <a href="/documentation/@b.OwnerUserId">@deptName</a>
+            <a href="/documentation/@b.LibraryId">@libName</a>
         }
         else
         {
-            <span>@deptName</span>
+            <span>@libName</span>
         }
         @if (b.FolderId is Guid && !isSearch)
         {
             <span class="text-muted"> / </span>
             @if (b.ParentFolderId is Guid parentId)
             {
-                <a href="/documentation/@b.OwnerUserId?folderId=@parentId">↑ вверх</a>
+                <a href="/documentation/@b.LibraryId?folderId=@parentId">↑ вверх</a>
                 <span class="text-muted"> / </span>
             }
             <span>@(b.FolderName ?? "Папка")</span>
@@ -81,7 +81,7 @@
     {
         <div class="list-filters documentation-toolbar mb-3">
             <form method="post" asp-page-handler="CreateFolder" class="filter-field filter-field-inline">
-                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                 <input type="hidden" name="FolderId" value="@Model.FolderId" />
                 <label class="form-label" for="new-folder">Новая папка</label>
                 <div class="d-flex gap-2 flex-nowrap align-items-center">
@@ -90,7 +90,7 @@
                 </div>
             </form>
             <form method="post" enctype="multipart/form-data" asp-page-handler="Upload" class="filter-field filter-field-inline">
-                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                 <input type="hidden" name="FolderId" value="@Model.FolderId" />
                 <label class="form-label" for="doc-file">Загрузить файл</label>
                 <div class="d-flex gap-2 flex-nowrap align-items-center">
@@ -101,7 +101,7 @@
             @if (Model.IsAdmin)
             {
                 <form method="post" asp-page-handler="SyncInbox" class="filter-field filter-field-inline">
-                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                    <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                     <input type="hidden" name="FolderId" value="@Model.FolderId" />
                     <label class="form-label" for="sync-inbox-btn">С диска</label>
                     <div class="d-flex gap-2 flex-nowrap align-items-center">
@@ -149,7 +149,7 @@
             }
             @foreach (var folder in b.Folders)
             {
-                <tr class="table-row-action" data-href="/documentation/@b.OwnerUserId?folderId=@folder.Id" tabindex="0" role="link"
+                <tr class="table-row-action" data-href="/documentation/@b.LibraryId?folderId=@folder.Id" tabindex="0" role="link"
                     aria-label="Папка: @folder.Name">
                     <td>
                         <span class="doc-entry-link">
@@ -168,12 +168,12 @@
                         <td class="col-actions doc-row-actions" onclick="event.stopPropagation()">
                             <div class="doc-row-actions-inner">
                                 <form method="post" asp-page-handler="MoveFolder" class="documentation-move-form">
-                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                                     <input type="hidden" name="FolderId" value="@Model.FolderId" />
                                     <input type="hidden" name="targetFolderId" value="@folder.Id" />
                                     <label class="form-label" for="move-folder-@folder.Id">Переместить в</label>
                                     <select id="move-folder-@folder.Id" class="form-select" name="moveToParentId">
-                                        <option value="">Корень раздела</option>
+                                        <option value="">Корень каталога</option>
                                         @foreach (var dest in Model.MoveTargets.Where(x => x.Id != folder.Id))
                                         {
                                             <option value="@dest.Id">@(dest.PathLabel ?? dest.Name)</option>
@@ -182,7 +182,7 @@
                                     <button type="submit" class="btn btn-outline-secondary btn-sm">OK</button>
                                 </form>
                                 <form method="post" asp-page-handler="DeleteFolder" class="documentation-row-form">
-                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                                     <input type="hidden" name="FolderId" value="@Model.FolderId" />
                                     <input type="hidden" name="targetFolderId" value="@folder.Id" />
                                     <button type="submit" class="btn-icon-delete" title="Удалить"
@@ -211,7 +211,7 @@
                             <span>@file.FileName</span>
                         </span>
                         <a class="ms-2 text-muted"
-                           href="/documentation/@b.OwnerUserId?handler=Download&amp;fileId=@file.Id"
+                           href="/documentation/@b.LibraryId?handler=Download&amp;fileId=@file.Id"
                            download title="Скачать">↓</a>
                     </td>
                     @if (isSearch)
@@ -219,11 +219,11 @@
                         <td>
                             @if (file.FolderId is Guid fileFolderId)
                             {
-                                <a class="text-muted" href="/documentation/@b.OwnerUserId?folderId=@fileFolderId">@(file.PathLabel ?? "Папка")</a>
+                                <a class="text-muted" href="/documentation/@b.LibraryId?folderId=@fileFolderId">@(file.PathLabel ?? "Папка")</a>
                             }
                             else
                             {
-                                <a class="text-muted" href="/documentation/@b.OwnerUserId">Корень</a>
+                                <a class="text-muted" href="/documentation/@b.LibraryId">Корень</a>
                             }
                         </td>
                     }
@@ -234,12 +234,12 @@
                         <td class="col-actions doc-row-actions" onclick="event.stopPropagation()">
                             <div class="doc-row-actions-inner">
                                 <form method="post" asp-page-handler="MoveFile" class="documentation-move-form">
-                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                                     <input type="hidden" name="FolderId" value="@Model.FolderId" />
                                     <input type="hidden" name="targetFileId" value="@file.Id" />
                                     <label class="form-label" for="move-file-@file.Id">Переместить в</label>
                                     <select id="move-file-@file.Id" class="form-select" name="moveToFolderId">
-                                        <option value="">Корень раздела</option>
+                                        <option value="">Корень каталога</option>
                                         @foreach (var dest in Model.MoveTargets)
                                         {
                                             <option value="@dest.Id">@(dest.PathLabel ?? dest.Name)</option>
@@ -248,7 +248,7 @@
                                     <button type="submit" class="btn btn-outline-secondary btn-sm">OK</button>
                                 </form>
                                 <form method="post" asp-page-handler="DeleteFile" class="documentation-row-form">
-                                    <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                    <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                                     <input type="hidden" name="FolderId" value="@Model.FolderId" />
                                     <input type="hidden" name="targetFileId" value="@file.Id" />
                                     <button type="submit" class="btn-icon-delete" title="Удалить"

@@ -48,7 +48,7 @@ public sealed class RequestsController : ControllerBase
         _reservations = reservations;
     }
 
-    /// <summary>Активные пользователи с ролью Department — выбор исполнителя и фильтры.</summary>
+    /// <summary>Активные Department + CanBeExecutor — исполнитель / фильтр исполнителя.</summary>
     [HttpGet("assignees")]
     public async Task<ActionResult<List<RequestAssigneeResponse>>> GetAssignees(
         CancellationToken cancellationToken)
@@ -57,6 +57,35 @@ public sealed class RequestsController : ControllerBase
         var items = users
             .Where(x => x.IsActive && x.CanBeExecutor)
             .OrderBy(x => x.DisplayName)
+            .ThenBy(x => x.UserName)
+            .Select(x => new RequestAssigneeResponse
+            {
+                Id = x.Id,
+                UserName = x.UserName ?? string.Empty,
+                DisplayName = UserDisplay.Format(x)
+            })
+            .ToList();
+
+        return Ok(items);
+    }
+
+    /// <summary>
+    /// Кто может быть инициатором заявки: Подразделение, Бригада, Заказчик.
+    /// Отдельно от assignees — иначе бригады пропадают после сплита ролей.
+    /// </summary>
+    [HttpGet("initiators")]
+    public async Task<ActionResult<List<RequestAssigneeResponse>>> GetInitiators(
+        CancellationToken cancellationToken)
+    {
+        var dept = await _userManager.GetUsersInRoleAsync(AppRoles.Department);
+        var brigade = await _userManager.GetUsersInRoleAsync(AppRoles.Brigade);
+        var customer = await _userManager.GetUsersInRoleAsync(AppRoles.Customer);
+
+        var items = dept.Concat(brigade).Concat(customer)
+            .Where(x => x.IsActive)
+            .GroupBy(x => x.Id)
+            .Select(g => g.First())
+            .OrderBy(x => UserDisplay.Format(x))
             .ThenBy(x => x.UserName)
             .Select(x => new RequestAssigneeResponse
             {
@@ -158,7 +187,12 @@ public sealed class RequestsController : ControllerBase
                 Status = x.Status,
                 StatusLabel = StatusLabel(x.Status),
                 Kind = x.Kind,
-                KindLabel = KindLabel(x.Kind),
+                // SpecOperation в подписи — EF-friendly inline (без C#-хелпера).
+                KindLabel = x.Kind == ServiceRequestKind.SpecTech
+                    ? (x.SpecOperation != null && x.SpecOperation != ""
+                        ? "Спецтехника (" + x.SpecOperation + ")"
+                        : "Спецтехника")
+                    : (x.Kind == ServiceRequestKind.Equipment ? "Оборудование" : "Другое"),
                 IsUrgent = x.IsUrgent,
                 Acknowledged = x.Acknowledged,
                 AcknowledgedAt = x.AcknowledgedAt,
@@ -261,7 +295,11 @@ public sealed class RequestsController : ControllerBase
             Status = x.Status,
             StatusLabel = StatusLabel(x.Status),
             Kind = x.Kind,
-            KindLabel = KindLabel(x.Kind),
+            KindLabel = x.Kind == ServiceRequestKind.SpecTech
+                ? (x.SpecOperation != null && x.SpecOperation != ""
+                    ? "Спецтехника (" + x.SpecOperation + ")"
+                    : "Спецтехника")
+                : (x.Kind == ServiceRequestKind.Equipment ? "Оборудование" : "Другое"),
             IsUrgent = x.IsUrgent,
             Acknowledged = x.Acknowledged,
             AcknowledgedAt = x.AcknowledgedAt,
@@ -388,10 +426,31 @@ public sealed class RequestsController : ControllerBase
             }
         }
 
-        var kindError = await ValidateKindSelectionAsync(kind, request, cancellationToken);
+        var kindError = await ValidateKindSelectionAsync(
+            kind,
+            request.RequestedEquipmentCategory,
+            request.RequestedSpecialVehicleType,
+            request.SpecOperation,
+            request.SpecPlannedAt,
+            cancellationToken);
         if (kindError is not null)
         {
             return BadRequest(new { error = "kind_invalid", message = kindError });
+        }
+
+        // Бригада + плановая: подавать можно только в окнах локального времени AppTimeZone.
+        // Срочные не ограничиваем. Проверяем момент подачи, не DueAt/SpecPlannedAt.
+        if (User.IsInRole(AppRoles.Brigade) && !request.IsUrgent)
+        {
+            var localTime = _time.GetNowLocal().Time;
+            if (!IsBrigadePlannedWindow(localTime))
+            {
+                return BadRequest(new
+                {
+                    error = "brigade_planned_window",
+                    message = "Плановые заявки бригада может подавать только с 04:00 до 07:00 и с 15:00 до 18:00."
+                });
+            }
         }
 
         var initiatorName = DisplayOf(initiatorUser);
@@ -439,6 +498,157 @@ public sealed class RequestsController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
 
         return CreatedAtAction(nameof(GetById), new { id = entity.Id }, await MapDetailAsync(entity, cancellationToken));
+    }
+
+    /// <summary>
+    /// Правка полей заявки (не workflow). Admin/Dispatcher/инициатор;
+    /// не архив; Submitted|Returned (+ InProgress для staff).
+    /// </summary>
+    [HttpPut("{id:long}")]
+    public async Task<ActionResult<ServiceRequestDetailResponse>> Edit(
+        long id,
+        [FromBody] EditServiceRequestRequest request,
+        CancellationToken cancellationToken)
+    {
+        var entity = await _db.ServiceRequests
+            .Include(x => x.Attachments)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        if (!CanAccess(entity))
+        {
+            return Forbid();
+        }
+
+        if (entity.IsArchived)
+        {
+            return BadRequest(new { error = "archived", message = "Архивную заявку нельзя редактировать." });
+        }
+
+        var isStaff = User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
+        var userId = GetUserId();
+        var isInitiator = userId is Guid uid && entity.InitiatorUserId == uid;
+        if (!isStaff && !isInitiator)
+        {
+            return Forbid();
+        }
+
+        var statusOk = isStaff
+            ? entity.Status is ServiceRequestStatus.Submitted
+                or ServiceRequestStatus.Returned
+                or ServiceRequestStatus.InProgress
+            : entity.Status is ServiceRequestStatus.Submitted or ServiceRequestStatus.Returned;
+        if (!statusOk)
+        {
+            return BadRequest(new
+            {
+                error = "edit_status",
+                message = $"Редактирование недоступно в статусе «{StatusLabel(entity.Status)}»."
+            });
+        }
+
+        var reason = (request.EditReason ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return BadRequest(new { error = "edit_reason_required", message = "Укажите причину редактирования." });
+        }
+
+        if (reason.Length > 2000)
+        {
+            return BadRequest(new { error = "edit_reason_too_long", message = "Причина длиннее 2000 символов." });
+        }
+
+        if (!PhoneNumberNormalizer.TryNormalize(request.Phone, out var phone, out var phoneError))
+        {
+            return BadRequest(new { error = "phone_invalid", message = phoneError });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Body))
+        {
+            return BadRequest(new { error = "body_required", message = "Текст заявки обязателен." });
+        }
+
+        var kind = Enum.IsDefined(typeof(ServiceRequestKind), request.Kind)
+            ? request.Kind
+            : ServiceRequestKind.Other;
+
+        if (kind == ServiceRequestKind.SpecTech
+            && !User.IsInRole(AppRoles.Administrator)
+            && !User.IsInRole(AppRoles.Dispatcher))
+        {
+            var actor = await _userManager.GetUserAsync(User);
+            if (actor is null || !actor.CanCreateTransportRequests)
+            {
+                return BadRequest(new
+                {
+                    error = "transport_forbidden",
+                    message = "Нет права на заявки спецтехники."
+                });
+            }
+        }
+
+        var kindError = await ValidateKindSelectionAsync(
+            kind,
+            request.RequestedEquipmentCategory,
+            request.RequestedSpecialVehicleType,
+            request.SpecOperation,
+            request.SpecPlannedAt,
+            cancellationToken);
+        if (kindError is not null)
+        {
+            return BadRequest(new { error = "kind_invalid", message = kindError });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RowVersion)
+            && uint.TryParse(request.RowVersion, out var expected)
+            && entity.Xmin != expected)
+        {
+            return Conflict(new { error = "concurrency", message = "Заявка уже изменена. Обновите страницу." });
+        }
+
+        entity.Phone = phone;
+        entity.DueAt = request.DueAt.ToUniversalTime();
+        entity.Body = request.Body.Trim();
+        entity.IsUrgent = request.IsUrgent;
+        entity.Kind = kind;
+        entity.RequestedEquipmentCategory = kind == ServiceRequestKind.Equipment
+            ? request.RequestedEquipmentCategory?.Trim()
+            : null;
+        entity.RequestedSpecialVehicleType = kind == ServiceRequestKind.SpecTech
+            ? request.RequestedSpecialVehicleType?.Trim()
+            : null;
+        entity.SpecOperation = kind == ServiceRequestKind.SpecTech
+            ? (string.IsNullOrWhiteSpace(request.SpecOperation) ? null : request.SpecOperation.Trim())
+            : null;
+        entity.SpecPlannedAt = kind == ServiceRequestKind.SpecTech
+            ? request.SpecPlannedAt?.ToUniversalTime()
+            : null;
+
+        // Смена типа — сбрасываем привязку единиц чужого вида.
+        if (kind != ServiceRequestKind.Equipment)
+        {
+            entity.EquipmentAssetId = null;
+        }
+
+        if (kind != ServiceRequestKind.SpecTech)
+        {
+            entity.SpecialVehicleUnitId = null;
+            entity.SpecArrivedAt = null;
+            entity.SpecReleasedAt = null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        entity.LastEditReason = reason;
+        entity.LastEditedAt = now;
+        entity.LastEditedByUserId = userId;
+        entity.LastModifiedAt = now;
+        entity.LastModifiedByUserId = userId;
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return Ok(await MapDetailAsync(entity, cancellationToken));
     }
 
     [HttpPost("{id:long}/transition")]
@@ -1263,7 +1473,7 @@ public sealed class RequestsController : ControllerBase
             Status = x.Status,
             StatusLabel = StatusLabel(x.Status),
             Kind = x.Kind,
-            KindLabel = KindLabel(x.Kind),
+            KindLabel = KindLabel(x.Kind, x.SpecOperation),
             IsUrgent = x.IsUrgent,
             Acknowledged = x.Acknowledged,
             AcknowledgedAt = x.AcknowledgedAt,
@@ -1295,6 +1505,9 @@ public sealed class RequestsController : ControllerBase
             ComplaintText = x.ComplaintText,
             ComplaintAt = x.ComplaintAt,
             ComplaintByName = x.ComplaintByName,
+            LastEditReason = x.LastEditReason,
+            LastEditedAt = x.LastEditedAt,
+            LastEditedByUserId = x.LastEditedByUserId,
             IsArchived = x.IsArchived,
             Attachments = x.Attachments
                 .OrderByDescending(a => a.UploadedAt)
@@ -1312,12 +1525,15 @@ public sealed class RequestsController : ControllerBase
 
     private async Task<string?> ValidateKindSelectionAsync(
         ServiceRequestKind kind,
-        CreateServiceRequestRequest request,
+        string? requestedEquipmentCategory,
+        string? requestedSpecialVehicleType,
+        string? _,
+        DateTimeOffset? specPlannedAt,
         CancellationToken cancellationToken)
     {
         if (kind == ServiceRequestKind.Equipment)
         {
-            var category = request.RequestedEquipmentCategory?.Trim();
+            var category = requestedEquipmentCategory?.Trim();
             if (string.IsNullOrWhiteSpace(category))
             {
                 return "Выберите категорию оборудования.";
@@ -1339,18 +1555,14 @@ public sealed class RequestsController : ControllerBase
 
         if (kind == ServiceRequestKind.SpecTech)
         {
-            var typeName = request.RequestedSpecialVehicleType?.Trim();
+            var typeName = requestedSpecialVehicleType?.Trim();
             if (string.IsNullOrWhiteSpace(typeName))
             {
                 return "Выберите тип спецтехники.";
             }
 
-            if (string.IsNullOrWhiteSpace(request.SpecOperation))
-            {
-                return "Укажите операцию для спецтехники.";
-            }
-
-            if (request.SpecPlannedAt is null)
+            // SpecOperation опционален (радио Техоперации/Переезд) — required убран.
+            if (specPlannedAt is null)
             {
                 return "Укажите плановое время для спецтехники.";
             }
@@ -1367,6 +1579,11 @@ public sealed class RequestsController : ControllerBase
 
         return null;
     }
+
+    /// <summary>Окна подачи плановой заявки бригадой: [04:00, 07:00) ∪ [15:00, 18:00).</summary>
+    private static bool IsBrigadePlannedWindow(TimeOnly t) =>
+        (t >= new TimeOnly(4, 0) && t < new TimeOnly(7, 0))
+        || (t >= new TimeOnly(15, 0) && t < new TimeOnly(18, 0));
 
     /// <summary>На accept исполнитель указывает конкретную свободную единицу нужной категории/типа.</summary>
     private async Task<string?> ApplyAssignmentOnAcceptAsync(
@@ -1466,10 +1683,20 @@ public sealed class RequestsController : ControllerBase
         _ => status.ToString()
     };
 
-    internal static string KindLabel(ServiceRequestKind kind) => kind switch
+    internal static string KindLabel(ServiceRequestKind kind, string? specOperation = null)
     {
-        ServiceRequestKind.Equipment => "Оборудование",
-        ServiceRequestKind.SpecTech => "Спецтехника",
-        _ => "Другое"
-    };
+        var label = kind switch
+        {
+            ServiceRequestKind.Equipment => "Оборудование",
+            ServiceRequestKind.SpecTech => "Спецтехника",
+            _ => "Другое"
+        };
+
+        if (kind == ServiceRequestKind.SpecTech && !string.IsNullOrWhiteSpace(specOperation))
+        {
+            return $"{label} ({specOperation.Trim()})";
+        }
+
+        return label;
+    }
 }

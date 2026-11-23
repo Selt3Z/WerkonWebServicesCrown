@@ -24,6 +24,10 @@ public sealed class ServiceRequestStatusGuardTests
         Assert.Equal(label, RequestsController.KindLabel(kind));
 
     [Fact]
+    public void KindLabel_SpecTech_AppendsOperation() =>
+        Assert.Equal("Спецтехника (Переезд)", RequestsController.KindLabel(ServiceRequestKind.SpecTech, "Переезд"));
+
+    [Fact]
     public void TryEnsureStatus_AllowsListed()
     {
         var entity = new ServiceRequest { Status = ServiceRequestStatus.Submitted };

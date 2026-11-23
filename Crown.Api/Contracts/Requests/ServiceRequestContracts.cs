@@ -65,6 +65,9 @@ public sealed class ServiceRequestDetailResponse
     public string? ComplaintText { get; set; }
     public DateTimeOffset? ComplaintAt { get; set; }
     public string? ComplaintByName { get; set; }
+    public string? LastEditReason { get; set; }
+    public DateTimeOffset? LastEditedAt { get; set; }
+    public Guid? LastEditedByUserId { get; set; }
     public bool IsArchived { get; set; }
     public List<RequestAttachmentResponse> Attachments { get; set; } = [];
 }
@@ -78,7 +81,7 @@ public sealed class RequestAttachmentResponse
     public DateTimeOffset UploadedAt { get; set; }
 }
 
-/// <summary>Активный пользователь с ролью Department — для выбора исполнителя/фильтров.</summary>
+/// <summary>Пользователь для селектов заявок (исполнитель / инициатор / фильтры).</summary>
 public sealed class RequestAssigneeResponse
 {
     public Guid Id { get; set; }
@@ -107,6 +110,25 @@ public sealed class CreateServiceRequestRequest
     public string? RequestedSpecialVehicleType { get; set; }
     public string? SpecOperation { get; set; }
     public DateTimeOffset? SpecPlannedAt { get; set; }
+}
+
+/// <summary>Ручное редактирование полей заявки (не workflow). Обязательна причина.</summary>
+public sealed class EditServiceRequestRequest
+{
+    public string Phone { get; set; } = string.Empty;
+    public DateTimeOffset DueAt { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public bool IsUrgent { get; set; }
+    public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
+    public string? RequestedEquipmentCategory { get; set; }
+    public string? RequestedSpecialVehicleType { get; set; }
+    public string? SpecOperation { get; set; }
+    public DateTimeOffset? SpecPlannedAt { get; set; }
+
+    /// <summary>Почему правят — пишется в LastEditReason.</summary>
+    public string EditReason { get; set; } = string.Empty;
+
+    public string? RowVersion { get; set; }
 }
 
 public sealed class TransitionServiceRequestRequest

@@ -24,6 +24,8 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     public DbSet<VehicleTrip> VehicleTrips => Set<VehicleTrip>();
     public DbSet<VehicleFuelRefuel> VehicleFuelRefuels => Set<VehicleFuelRefuel>();
     public DbSet<VehicleRepair> VehicleRepairs => Set<VehicleRepair>();
+    public DbSet<DocumentationLibrary> DocumentationLibraries => Set<DocumentationLibrary>();
+    public DbSet<DocumentationLibraryMember> DocumentationLibraryMembers => Set<DocumentationLibraryMember>();
     public DbSet<DocumentationFolder> DocumentationFolders => Set<DocumentationFolder>();
     public DbSet<DocumentationFile> DocumentationFiles => Set<DocumentationFile>();
     public DbSet<EquipmentAsset> EquipmentAssets => Set<EquipmentAsset>();
@@ -53,6 +55,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.ComplaintText).HasColumnType("text");
             entity.Property(x => x.ComplaintByName).HasMaxLength(200);
             entity.Property(x => x.SpecOperation).HasMaxLength(200);
+            entity.Property(x => x.LastEditReason).HasMaxLength(2000);
             entity.Property(x => x.Status).HasConversion<int>();
             entity.Property(x => x.Kind).HasConversion<int>();
             entity.Property(x => x.Xmin)
@@ -192,23 +195,51 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.BrigadeWorkshop).HasMaxLength(100);
         });
 
+        modelBuilder.Entity<DocumentationLibrary>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.InboxFolderKey).HasMaxLength(100);
+            entity.HasIndex(x => x.SortOrder);
+            entity.HasIndex(x => x.IsActive);
+            entity.HasIndex(x => x.InboxFolderKey);
+        });
+
+        modelBuilder.Entity<DocumentationLibraryMember>(entity =>
+        {
+            entity.HasIndex(x => new { x.LibraryId, x.UserId }).IsUnique();
+            entity.HasIndex(x => x.UserId);
+            entity.HasOne(x => x.Library)
+                .WithMany(x => x.Members)
+                .HasForeignKey(x => x.LibraryId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<DocumentationFolder>(entity =>
         {
             entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.HasIndex(x => x.LibraryId);
             entity.HasIndex(x => x.OwnerUserId);
             entity.HasIndex(x => x.DeletedAt);
-            // Уникальность имени только среди живых папок — в корзине могут лежать тёзки.
-            entity.HasIndex(x => new { x.OwnerUserId, x.ParentFolderId, x.Name })
+            // Уникальность имени среди живых папок внутри каталога.
+            entity.HasIndex(x => new { x.LibraryId, x.ParentFolderId, x.Name })
                 .IsUnique()
-                .HasFilter("\"DeletedAt\" IS NULL");
+                .HasFilter("\"DeletedAt\" IS NULL AND \"LibraryId\" IS NOT NULL");
             entity.HasOne(x => x.ParentFolder)
                 .WithMany(x => x.Children)
                 .HasForeignKey(x => x.ParentFolderId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<DocumentationLibrary>()
+                .WithMany()
+                .HasForeignKey(x => x.LibraryId)
+                .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<ApplicationUser>()
                 .WithMany()
                 .HasForeignKey(x => x.OwnerUserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<DocumentationFile>(entity =>
@@ -217,21 +248,26 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.ContentType).HasMaxLength(120);
             entity.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
             entity.Property(x => x.InboxSourceKey).HasMaxLength(1000);
+            entity.HasIndex(x => x.LibraryId);
             entity.HasIndex(x => x.OwnerUserId);
             entity.HasIndex(x => x.FolderId);
             entity.HasIndex(x => x.DeletedAt);
-            // Идемпотентность inbox: один живой файл на ключ источника в разделе.
-            entity.HasIndex(x => new { x.OwnerUserId, x.InboxSourceKey })
+            // Идемпотентность inbox: один живой файл на ключ источника в каталоге.
+            entity.HasIndex(x => new { x.LibraryId, x.InboxSourceKey })
                 .IsUnique()
-                .HasFilter("\"InboxSourceKey\" IS NOT NULL AND \"DeletedAt\" IS NULL");
+                .HasFilter("\"InboxSourceKey\" IS NOT NULL AND \"DeletedAt\" IS NULL AND \"LibraryId\" IS NOT NULL");
             entity.HasOne(x => x.Folder)
                 .WithMany(x => x.Files)
                 .HasForeignKey(x => x.FolderId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<DocumentationLibrary>()
+                .WithMany()
+                .HasForeignKey(x => x.LibraryId)
+                .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<ApplicationUser>()
                 .WithMany()
                 .HasForeignKey(x => x.OwnerUserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<ParkingLot>(entity =>
@@ -367,6 +403,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.MasterName).HasMaxLength(200).IsRequired();
             entity.Property(x => x.StoppedByName).HasMaxLength(300).IsRequired();
             entity.Property(x => x.WorkDescription).HasMaxLength(500);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
             entity.Property(x => x.Hours).HasPrecision(10, 2);
             entity.HasIndex(x => x.ReportDate);
             entity.HasIndex(x => x.BrigadeUserId);
@@ -453,6 +490,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.Property(x => x.FixResponsibleText).HasMaxLength(500);
             entity.Property(x => x.FixReportText).HasMaxLength(2000);
             entity.Property(x => x.FixResponsibleName).HasMaxLength(200);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
             // Номер «№» уникален внутри вида проверки.
             entity.HasIndex(x => new { x.Kind, x.SequenceNo }).IsUnique();
             entity.HasIndex(x => x.ReportDate);

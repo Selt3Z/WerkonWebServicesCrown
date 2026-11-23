@@ -158,11 +158,16 @@ public sealed class TransportController : ControllerBase
     }
 
     [HttpPost("parkings")]
-    [Authorize(Policy = AuthorizationPolicies.ManageBusinessRecords)]
     public async Task<ActionResult<ParkingLotResponse>> CreateParking(
         [FromBody] SaveParkingLotRequest request,
         CancellationToken cancellationToken)
     {
+        // Справочник стоянок: admin/dispatcher или галочка «Транспорт» в матрице.
+        if (!await CanManageFleetCatalogAsync())
+        {
+            return Forbid();
+        }
+
         var name = (request.Name ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -189,11 +194,15 @@ public sealed class TransportController : ControllerBase
     }
 
     [HttpPost("vehicles")]
-    [Authorize(Policy = AuthorizationPolicies.ManageBusinessRecords)]
     public async Task<ActionResult<VehicleResponse>> CreateVehicle(
         [FromBody] SaveVehicleRequest request,
         CancellationToken cancellationToken)
     {
+        if (!await CanManageFleetCatalogAsync())
+        {
+            return Forbid();
+        }
+
         var plate = NormalizePlate(request.PlateNumber);
         var name = (request.Name ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(plate) || string.IsNullOrWhiteSpace(name))
@@ -900,6 +909,18 @@ public sealed class TransportController : ControllerBase
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(raw, out var id) ? id : null;
+    }
+
+    /// <summary>Добавление стоянок/машин: staff или CanViewTransport из матрицы.</summary>
+    private async Task<bool> CanManageFleetCatalogAsync()
+    {
+        if (User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher))
+        {
+            return true;
+        }
+
+        var user = await _users.GetUserAsync(User);
+        return user is { IsActive: true, CanViewTransport: true };
     }
 
     private static string DisplayOf(ApplicationUser user) => UserDisplay.Format(user);

@@ -5,9 +5,8 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Crown.Web.Pages;
 
-/// <summary>Старый URL → матрица прав подразделений.</summary>
 [Authorize(Roles = AppRoles.Administrator)]
 public sealed class DocumentationSettingsModel : PageModel
 {
-    public IActionResult OnGet() => RedirectPermanent("/settings/department-permissions");
+    public IActionResult OnGet() => RedirectPermanent("/settings/documentation-access");
 }

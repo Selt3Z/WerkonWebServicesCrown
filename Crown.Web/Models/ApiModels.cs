@@ -160,6 +160,9 @@ public sealed class ServiceRequestDetail
     public string? ComplaintText { get; set; }
     public DateTimeOffset? ComplaintAt { get; set; }
     public string? ComplaintByName { get; set; }
+    public string? LastEditReason { get; set; }
+    public DateTimeOffset? LastEditedAt { get; set; }
+    public Guid? LastEditedByUserId { get; set; }
     public bool IsArchived { get; set; }
     public List<RequestAttachment> Attachments { get; set; } = [];
 }
@@ -231,6 +234,21 @@ public sealed class CreateServiceRequestRequest
     public string? RequestedSpecialVehicleType { get; set; }
     public string? SpecOperation { get; set; }
     public DateTimeOffset? SpecPlannedAt { get; set; }
+}
+
+public sealed class EditServiceRequestRequest
+{
+    public string Phone { get; set; } = string.Empty;
+    public DateTimeOffset DueAt { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public bool IsUrgent { get; set; }
+    public ServiceRequestKind Kind { get; set; } = ServiceRequestKind.Other;
+    public string? RequestedEquipmentCategory { get; set; }
+    public string? RequestedSpecialVehicleType { get; set; }
+    public string? SpecOperation { get; set; }
+    public DateTimeOffset? SpecPlannedAt { get; set; }
+    public string EditReason { get; set; } = string.Empty;
+    public string? RowVersion { get; set; }
 }
 
 public sealed class TransitionServiceRequestRequest
@@ -459,14 +477,17 @@ public sealed class UserListItem
     public DateTime? LastActivityAtUtc { get; set; }
 }
 
-public sealed class DocumentationSection
+public sealed class DocumentationLibrary
 {
-    public Guid UserId { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
     public bool CanWrite { get; set; }
+    public bool CanManageMembers { get; set; }
     public int FileCount { get; set; }
     public long TotalSizeBytes { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; }
+    public string? InboxFolderKey { get; set; }
 }
 
 public sealed class DocumentationGlobalSearch
@@ -477,8 +498,8 @@ public sealed class DocumentationGlobalSearch
 
 public sealed class DocumentationGlobalSearchHit
 {
-    public Guid OwnerUserId { get; set; }
-    public string OwnerDisplayName { get; set; } = string.Empty;
+    public Guid LibraryId { get; set; }
+    public string LibraryName { get; set; } = string.Empty;
     public bool IsFolder { get; set; }
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -510,8 +531,8 @@ public sealed class DocumentationFileItem
 
 public sealed class DocumentationBrowse
 {
-    public Guid OwnerUserId { get; set; }
-    public string OwnerDisplayName { get; set; } = string.Empty;
+    public Guid LibraryId { get; set; }
+    public string LibraryName { get; set; } = string.Empty;
     public Guid? FolderId { get; set; }
     public string? FolderName { get; set; }
     public Guid? ParentFolderId { get; set; }
@@ -536,24 +557,54 @@ public sealed class DocumentationTrashItem
 
 public sealed class DocumentationTrash
 {
-    public Guid OwnerUserId { get; set; }
-    public string OwnerDisplayName { get; set; } = string.Empty;
+    public Guid LibraryId { get; set; }
+    public string LibraryName { get; set; } = string.Empty;
     public bool CanClearTrash { get; set; }
     public int RetentionDays { get; set; }
     public List<DocumentationTrashItem> Items { get; set; } = [];
 }
 
-public sealed class DocumentationAdminUser
+public sealed class DocumentationAclUser
 {
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
-    public bool DocumentationEnabled { get; set; }
+    public bool IsActive { get; set; }
+}
+
+public sealed class DocumentationLibraryMember
+{
+    public Guid UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public bool CanWrite { get; set; }
+}
+
+public sealed class DocumentationLegacySources
+{
+    public List<DocumentationLegacySourceItem> Items { get; set; } = [];
+}
+
+public sealed class DocumentationLegacySourceItem
+{
+    public Guid OwnerUserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public int FolderCount { get; set; }
+    public int FileCount { get; set; }
+}
+
+public sealed class MigrateDocumentationResult
+{
+    public int FoldersUpdated { get; set; }
+    public int FilesUpdated { get; set; }
+    public int MembersAdded { get; set; }
+    public List<string> Messages { get; set; } = [];
 }
 
 public sealed class DocumentationInboxInfo
 {
-    public Guid OwnerUserId { get; set; }
+    public Guid LibraryId { get; set; }
     public string FolderKey { get; set; } = string.Empty;
     public string HostInboxPath { get; set; } = string.Empty;
     public string RelativeInboxPath { get; set; } = string.Empty;
@@ -563,7 +614,7 @@ public sealed class DocumentationInboxInfo
 
 public sealed class DocumentationInboxSyncResult
 {
-    public Guid? OwnerUserId { get; set; }
+    public Guid? LibraryId { get; set; }
     public string? FolderKey { get; set; }
     public string HostInboxPath { get; set; } = string.Empty;
     public int Imported { get; set; }
@@ -573,17 +624,6 @@ public sealed class DocumentationInboxSyncResult
     public int FoldersCreated { get; set; }
     public int PendingBefore { get; set; }
     public List<string> Messages { get; set; } = [];
-}
-
-public sealed class UpdateDocumentationSettingsRequest
-{
-    public List<DocumentationAdminUserToggle> Users { get; set; } = [];
-}
-
-public sealed class DocumentationAdminUserToggle
-{
-    public Guid UserId { get; set; }
-    public bool DocumentationEnabled { get; set; }
 }
 
 public sealed class DepartmentPermissionUser
@@ -642,6 +682,7 @@ public sealed class StoppageActItem
     public string Text { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public int SortOrder { get; set; }
+    public int? UsageCount { get; set; }
 }
 
 public sealed class SaveStoppageActItemRequest
@@ -732,6 +773,7 @@ public class BrigadeStoppageListItem
     public string WorkDescription { get; set; } = string.Empty;
     public Guid? WorkItemId { get; set; }
     public bool IsWorkManual { get; set; } = true;
+    public string? Notes { get; set; }
     public int RemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
 }
@@ -775,6 +817,7 @@ public sealed class SaveBrigadeStoppageRequest
     public string WorkDescription { get; set; } = string.Empty;
     public Guid? WorkItemId { get; set; }
     public bool IsWorkManual { get; set; } = true;
+    public string? Notes { get; set; }
     public List<SaveStoppageRemarkRequest> Remarks { get; set; } = [];
 }
 
@@ -789,7 +832,8 @@ public enum BrigadeInspectionKind
 {
     Supervising = 1,
     Pdk = 2,
-    Pbiot = 3
+    Pbiot = 3,
+    Ppk = 4
 }
 
 public enum BrigadeInspectionOutcome
@@ -836,6 +880,7 @@ public class BrigadeInspectionListItem
     public string? FixReportText { get; set; }
     public Guid? FixResponsiblePersonId { get; set; }
     public string? FixResponsibleName { get; set; }
+    public string? Notes { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
     public int RemarkCount { get; set; }
@@ -891,6 +936,7 @@ public sealed class SaveBrigadeInspectionRequest
     public string? FixReportText { get; set; }
     public Guid? FixResponsiblePersonId { get; set; }
     public string? FixResponsibleName { get; set; }
+    public string? Notes { get; set; }
     public List<SaveInspectionRemarkRequest> Remarks { get; set; } = [];
 }
 
@@ -916,10 +962,16 @@ public sealed class BrigadeRatingDashboard
     public decimal TotalHours { get; set; }
     public decimal ResolutionRatePercent { get; set; }
     public decimal AverageHours { get; set; }
+    public int ClaimCount { get; set; }
+    public int ResolvedClaimCount { get; set; }
+    public int UnresolvedClaimCount { get; set; }
+    public decimal ClaimResolutionRatePercent { get; set; }
+    public int InspectionCount { get; set; }
     public BrigadeRatingPeriodComparison PeriodComparison { get; set; } = new();
     public List<BrigadeDailyTrendPoint> DailyTrend { get; set; } = [];
     public List<StopperTopItem> TopStoppers { get; set; } = [];
     public List<BrigadeRankItem> BrigadeRanking { get; set; } = [];
+    public List<RemarkTopItem> TopClaims { get; set; } = [];
     public List<RemarkTopItem> TopRemarks { get; set; } = [];
     public List<WorkTopItem> TopWorks { get; set; } = [];
     public List<BrigadeStoppageListItem> Stoppages { get; set; } = [];
@@ -936,6 +988,11 @@ public sealed class BrigadeRatingPeriodComparison
     public decimal PreviousTotalHours { get; set; }
     public decimal PreviousResolutionRatePercent { get; set; }
     public decimal PreviousAverageHours { get; set; }
+    public int PreviousClaimCount { get; set; }
+    public int PreviousResolvedClaimCount { get; set; }
+    public int PreviousUnresolvedClaimCount { get; set; }
+    public decimal PreviousClaimResolutionRatePercent { get; set; }
+    public int PreviousInspectionCount { get; set; }
 }
 
 public sealed class BrigadeDailyTrendPoint
@@ -963,6 +1020,8 @@ public sealed class BrigadeRankItem
     public int StoppageCount { get; set; }
     public int RemarkCount { get; set; }
     public int UnresolvedRemarkCount { get; set; }
+    public int ClaimCount { get; set; }
+    public int UnresolvedClaimCount { get; set; }
     public decimal TotalHours { get; set; }
     public decimal Score { get; set; }
 }
@@ -1004,6 +1063,16 @@ public sealed class SpreadsheetImportCommitRequest
     public int? RestartedAtColumn { get; set; }
     public int? WorkColumn { get; set; }
     public int? RemarksColumn { get; set; }
+
+    // Проверки / ППК
+    public string? InspectionKind { get; set; }
+    public int? OutcomeColumn { get; set; }
+    public int? WellColumn { get; set; }
+    public int? CheckerColumn { get; set; }
+    public int? CheckerPositionColumn { get; set; }
+    public int? StopPointColumn { get; set; }
+    public int? HasExplanationColumn { get; set; }
+    public int? FixDateColumn { get; set; }
 }
 
 public sealed class SpreadsheetImportCommitResult

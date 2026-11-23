@@ -53,6 +53,8 @@
     var pieStyle = d is null || d.RemarkCount == 0
         ? "background: var(--r-border);"
         : $"background: conic-gradient(#2f8f5b 0% {CssPct(resolvedPct)}, #c45c26 {CssPct(resolvedPct)} 100%);";
+    var claimResolvedPct = d?.ClaimCount > 0 ? Math.Round(d.ResolvedClaimCount * 100m / d.ClaimCount, 1) : 0m;
+    var topClaims = (d?.TopClaims?.Count > 0 ? d.TopClaims : d?.TopRemarks) ?? [];
     var trendClass = Model.Period == "year"
         ? "summary-trend-chart-year"
         : (Model.Period == "month" || (d is not null && d.DailyTrend.Count > 14)
@@ -82,6 +84,7 @@
         <div class="crown-page-head-actions">
             @* Просмотр — всем с доступом к разделу; запись — только оператор (проверяется на странице/API). *@
             <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/inspections/supervising" title="Проверки бригад">Проверки</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/brigade-rating/ppk" title="Пусковая приёмная комиссия">ППК</a>
             <a class="btn btn-outline-secondary btn-sm"
                href="@UiHelpers.BuildUrl(
                    "/brigade-rating/stoppages",
@@ -194,6 +197,20 @@
                 </p>
                 <div class="summary-comparison-grid">
                     <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">Претензии</span>
+                        <span class="summary-comparison-value">@d.ClaimCount</span>
+                        <span class="@WorseClassInt(d.ClaimCount, cmp.PreviousClaimCount)">
+                            @FmtChangeInt(d.ClaimCount, cmp.PreviousClaimCount)
+                        </span>
+                    </article>
+                    <article class="summary-comparison-item">
+                        <span class="summary-comparison-label">Откр. претензии</span>
+                        <span class="summary-comparison-value">@d.UnresolvedClaimCount</span>
+                        <span class="@WorseClassInt(d.UnresolvedClaimCount, cmp.PreviousUnresolvedClaimCount)">
+                            @FmtChangeInt(d.UnresolvedClaimCount, cmp.PreviousUnresolvedClaimCount)
+                        </span>
+                    </article>
+                    <article class="summary-comparison-item">
                         <span class="summary-comparison-label">Остановки</span>
                         <span class="summary-comparison-value">@d.StoppageCount</span>
                         <span class="@WorseClassInt(d.StoppageCount, cmp.PreviousStoppageCount)">
@@ -208,31 +225,17 @@
                         </span>
                     </article>
                     <article class="summary-comparison-item">
-                        <span class="summary-comparison-label">Пункты</span>
-                        <span class="summary-comparison-value">@d.RemarkCount</span>
-                        <span class="@WorseClassInt(d.RemarkCount, cmp.PreviousRemarkCount)">
-                            @FmtChangeInt(d.RemarkCount, cmp.PreviousRemarkCount)
+                        <span class="summary-comparison-label">% устр. претензий</span>
+                        <span class="summary-comparison-value">@d.ClaimResolutionRatePercent.ToString("0.#")%</span>
+                        <span class="@BetterClass(d.ClaimResolutionRatePercent, cmp.PreviousClaimResolutionRatePercent)">
+                            @FmtPctChange(d.ClaimResolutionRatePercent, cmp.PreviousClaimResolutionRatePercent)
                         </span>
                     </article>
                     <article class="summary-comparison-item">
-                        <span class="summary-comparison-label">Открытые</span>
-                        <span class="summary-comparison-value">@d.UnresolvedRemarkCount</span>
-                        <span class="@WorseClassInt(d.UnresolvedRemarkCount, cmp.PreviousUnresolvedRemarkCount)">
-                            @FmtChangeInt(d.UnresolvedRemarkCount, cmp.PreviousUnresolvedRemarkCount)
-                        </span>
-                    </article>
-                    <article class="summary-comparison-item">
-                        <span class="summary-comparison-label">% устранения</span>
+                        <span class="summary-comparison-label">% устр. остановок</span>
                         <span class="summary-comparison-value">@d.ResolutionRatePercent.ToString("0.#")%</span>
                         <span class="@BetterClass(d.ResolutionRatePercent, cmp.PreviousResolutionRatePercent)">
                             @FmtPctChange(d.ResolutionRatePercent, cmp.PreviousResolutionRatePercent)
-                        </span>
-                    </article>
-                    <article class="summary-comparison-item">
-                        <span class="summary-comparison-label">Ср. длительность</span>
-                        <span class="summary-comparison-value">@d.AverageHours.ToString("0.##") ч</span>
-                        <span class="@WorseClass(d.AverageHours, cmp.PreviousAverageHours)">
-                            @FmtChange(d.AverageHours, cmp.PreviousAverageHours)
                         </span>
                     </article>
                 </div>
@@ -241,35 +244,34 @@
 
         <section class="summary-cards summary-cards-grid mb-3">
             <article class="summary-card summary-card-compact">
-                <div class="summary-card-label">Остановки</div>
-                <div class="summary-card-value">@d.StoppageCount</div>
+                <div class="summary-card-label">Проверки+ППК</div>
+                <div class="summary-card-value">@d.InspectionCount</div>
             </article>
             <article class="summary-card summary-card-compact">
-                <div class="summary-card-label">Пункты</div>
-                <div class="summary-card-value">@d.RemarkCount</div>
-                <div class="summary-card-meta">устр. @d.ResolvedRemarkCount / откр. @d.UnresolvedRemarkCount</div>
+                <div class="summary-card-label">Претензии</div>
+                <div class="summary-card-value">@d.ClaimCount</div>
+                <div class="summary-card-meta">устр. @d.ResolvedClaimCount / откр. @d.UnresolvedClaimCount</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">% устр. претензий</div>
+                <div class="summary-card-value">@d.ClaimResolutionRatePercent.ToString("0.#")%</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Остановки</div>
+                <div class="summary-card-value">@d.StoppageCount</div>
             </article>
             <article class="summary-card summary-card-compact">
                 <div class="summary-card-label">Часы простоя</div>
                 <div class="summary-card-value">@d.TotalHours.ToString("0.##")</div>
             </article>
-            <article class="summary-card summary-card-compact">
-                <div class="summary-card-label">% устранения</div>
-                <div class="summary-card-value">@d.ResolutionRatePercent.ToString("0.#")%</div>
-                <div class="summary-card-meta">культура закрытия пунктов</div>
-            </article>
-            <article class="summary-card summary-card-compact">
-                <div class="summary-card-label">Ср. длительность</div>
-                <div class="summary-card-value">@d.AverageHours.ToString("0.##") ч</div>
-                <div class="summary-card-meta">со временем пуска</div>
-            </article>
         </section>
 
         <section class="entity-panel mb-3">
             <h2 class="section-title">Рейтинг бригад</h2>
+            <p class="text-muted small mb-2">Скор: открытые претензии (остановки + проверки/ППК) ×10 + часы + число остановок (меньше — лучше).</p>
             @if (d.BrigadeRanking.Count == 0)
             {
-                <p class="text-muted mb-0">Нет остановок за период.</p>
+                <p class="text-muted mb-0">Нет данных за период.</p>
             }
             else
             {
@@ -290,7 +292,7 @@
                                     @row.BrigadeName
                                 </a>
                                 <span class="text-muted">@row.MasterName</span>
-                                <span class="brigade-rank-meta">@row.UnresolvedRemarkCount откр. · @row.TotalHours.ToString("0.##") ч · @row.StoppageCount ост.</span>
+                                <span class="brigade-rank-meta">@row.UnresolvedClaimCount претензий · @row.StoppageCount ост. · @row.TotalHours.ToString("0.##") ч</span>
                             </div>
                             <div class="brigade-rank-bar-track" aria-hidden="true">
                                 <div class="brigade-rank-bar" style="width:@BarWidth(row.Score)"></div>
@@ -303,15 +305,16 @@
 
         <div class="brigade-rating-split mb-3">
             <section class="entity-panel">
-                <h2 class="section-title">Топ-10 замечаний</h2>
-                @if (d.TopRemarks.Count == 0)
+                <h2 class="section-title">Топ-10 претензий</h2>
+                <p class="text-muted small mb-2">Пункты остановок + проверки + ППК.</p>
+                @if (topClaims.Count == 0)
                 {
-                    <p class="text-muted mb-0">Пока нет повторяющихся пунктов.</p>
+                    <p class="text-muted mb-0">Пока нет повторяющихся претензий.</p>
                 }
                 else
                 {
                     <ol class="brigade-top-remarks">
-                        @foreach (var r in d.TopRemarks)
+                        @foreach (var r in topClaims)
                         {
                             <li>
                                 <span>@r.Text</span>
@@ -322,6 +325,45 @@
                 }
             </section>
 
+            <section class="entity-panel">
+                <h2 class="section-title">% устранения претензий</h2>
+                <p class="text-muted small mb-2">Остановки — галочка «устранено»; проверки/ППК — дата или текст устранения.</p>
+                <div class="brigade-resolution-pie" style="@($"background: conic-gradient(#2f8f5b 0% {CssPct(claimResolvedPct)}, #c45c26 {CssPct(claimResolvedPct)} 100%);")" role="img" aria-label="Устранение претензий"></div>
+                <div class="summary-trend-legend mt-2">
+                    <span>устр. @d.ResolvedClaimCount (@claimResolvedPct.ToString("0.#")%)</span>
+                    <span>откр. @d.UnresolvedClaimCount</span>
+                </div>
+            </section>
+        </div>
+
+        <h2 class="section-title mb-2">Остановки</h2>
+        <p class="text-muted small mb-3">Только данные остановок — без смешивания с проверками/ППК.</p>
+
+        <section class="summary-cards summary-cards-grid mb-3">
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Остановки</div>
+                <div class="summary-card-value">@d.StoppageCount</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Пункты (в претензиях)</div>
+                <div class="summary-card-value">@d.RemarkCount</div>
+                <div class="summary-card-meta">устр. @d.ResolvedRemarkCount / откр. @d.UnresolvedRemarkCount</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Часы простоя</div>
+                <div class="summary-card-value">@d.TotalHours.ToString("0.##")</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">% устранения</div>
+                <div class="summary-card-value">@d.ResolutionRatePercent.ToString("0.#")%</div>
+            </article>
+            <article class="summary-card summary-card-compact">
+                <div class="summary-card-label">Ср. длительность</div>
+                <div class="summary-card-value">@d.AverageHours.ToString("0.##") ч</div>
+            </article>
+        </section>
+
+        <div class="brigade-rating-split mb-3">
             <section class="entity-panel">
                 <h2 class="section-title">Топ-10 работ с замечаниями</h2>
                 @if (d.TopWorks.Count == 0)

@@ -11,7 +11,7 @@ namespace Crown.Web.Pages;
 public sealed class DocumentationTrashModel(CrownApiClient api) : PageModel
 {
     [BindProperty(SupportsGet = true)]
-    public Guid OwnerUserId { get; set; }
+    public Guid LibraryId { get; set; }
 
     [BindProperty]
     public string? ClearConfirmation { get; set; }
@@ -28,7 +28,7 @@ public sealed class DocumentationTrashModel(CrownApiClient api) : PageModel
     public async Task<IActionResult> OnPostRestoreFolderAsync(Guid itemId)
     {
         var result = await api.PostAsync<NoContent>(
-            $"api/documentation/sections/{OwnerUserId}/trash/restore-folder/{itemId}",
+            $"api/documentation/libraries/{LibraryId}/trash/restore-folder/{itemId}",
             null,
             HttpContext.RequestAborted);
         if (result.IsUnauthorized)
@@ -44,13 +44,13 @@ public sealed class DocumentationTrashModel(CrownApiClient api) : PageModel
         }
 
         TempData["Ok"] = "Папка восстановлена.";
-        return RedirectToPage(new { OwnerUserId });
+        return RedirectToPage(new { LibraryId });
     }
 
     public async Task<IActionResult> OnPostRestoreFileAsync(Guid itemId)
     {
         var result = await api.PostAsync<NoContent>(
-            $"api/documentation/sections/{OwnerUserId}/trash/restore-file/{itemId}",
+            $"api/documentation/libraries/{LibraryId}/trash/restore-file/{itemId}",
             null,
             HttpContext.RequestAborted);
         if (result.IsUnauthorized)
@@ -66,13 +66,13 @@ public sealed class DocumentationTrashModel(CrownApiClient api) : PageModel
         }
 
         TempData["Ok"] = "Файл восстановлен.";
-        return RedirectToPage(new { OwnerUserId });
+        return RedirectToPage(new { LibraryId });
     }
 
     public async Task<IActionResult> OnPostClearAsync()
     {
         var result = await api.PostAsync<NoContent>(
-            $"api/documentation/sections/{OwnerUserId}/trash/clear",
+            $"api/documentation/libraries/{LibraryId}/trash/clear",
             new { Confirmation = ClearConfirmation },
             HttpContext.RequestAborted);
         if (result.IsUnauthorized)
@@ -88,13 +88,13 @@ public sealed class DocumentationTrashModel(CrownApiClient api) : PageModel
         }
 
         TempData["Ok"] = "Корзина очищена.";
-        return RedirectToPage(new { OwnerUserId });
+        return RedirectToPage(new { LibraryId });
     }
 
     private async Task<IActionResult> LoadAsync()
     {
         var result = await api.GetAsync<DocumentationTrash>(
-            $"api/documentation/sections/{OwnerUserId}/trash",
+            $"api/documentation/libraries/{LibraryId}/trash",
             HttpContext.RequestAborted);
         if (result.IsUnauthorized)
         {

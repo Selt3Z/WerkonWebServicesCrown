@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Crown.Domain.Entities;
@@ -11,7 +10,7 @@ namespace Crown.Infrastructure.Documentation;
 
 public sealed class DocumentationInboxSyncResult
 {
-    public Guid? OwnerUserId { get; set; }
+    public Guid? LibraryId { get; set; }
     public string? FolderKey { get; set; }
     public string HostInboxPath { get; set; } = string.Empty;
     public int Imported { get; set; }
@@ -25,7 +24,7 @@ public sealed class DocumentationInboxSyncResult
 
 public sealed class DocumentationInboxInfo
 {
-    public Guid OwnerUserId { get; set; }
+    public Guid LibraryId { get; set; }
     public string FolderKey { get; set; } = string.Empty;
     public string HostInboxPath { get; set; } = string.Empty;
     public string RelativeInboxPath { get; set; } = string.Empty;
@@ -34,13 +33,13 @@ public sealed class DocumentationInboxInfo
 }
 
 /// <summary>
-/// Импорт больших деревьев из share-папки docs-inbox/{логин}/ в раздел документации.
+/// Импорт из share-папки docs-inbox/{InboxFolderKey}/ в каталог DocumentationLibrary.
 /// После успеха исходник переносится в .processed/{stamp}/.
 /// </summary>
 public sealed class DocumentationInboxSyncService
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
-    private static readonly ConcurrentDictionary<Guid, byte> EnsuredOwners = new();
+    private static readonly ConcurrentDictionary<Guid, byte> EnsuredLibraries = new();
     private static readonly FileExtensionContentTypeProvider ContentTypes = new();
 
     private static readonly HashSet<string> ReservedDirNames = new(StringComparer.OrdinalIgnoreCase)
@@ -51,18 +50,15 @@ public sealed class DocumentationInboxSyncService
     };
 
     private readonly AppDbContext _db;
-    private readonly UserManager<ApplicationUser> _users;
     private readonly AttachmentStorageService _storage;
     private readonly ILogger<DocumentationInboxSyncService> _logger;
 
     public DocumentationInboxSyncService(
         AppDbContext db,
-        UserManager<ApplicationUser> users,
         AttachmentStorageService storage,
         ILogger<DocumentationInboxSyncService> logger)
     {
         _db = db;
-        _users = users;
         _storage = storage;
         _logger = logger;
     }
@@ -72,64 +68,74 @@ public sealed class DocumentationInboxSyncService
         var root = _storage.GetDocsInboxAbsoluteRoot();
         WriteReadmeIfMissing(root);
 
-        var departments = await _users.GetUsersInRoleAsync(AppRoles.Department);
-        foreach (var user in departments.Where(x => x.IsActive && x.DocumentationEnabled))
+        var libraries = await _db.DocumentationLibraries.AsNoTracking()
+            .Where(x => x.IsActive && x.InboxFolderKey != null && x.InboxFolderKey != "")
+            .ToListAsync(cancellationToken);
+        foreach (var library in libraries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureOwnerFolders(user);
+            EnsureLibraryFolders(library);
         }
     }
 
-    public DocumentationInboxInfo GetInboxInfo(ApplicationUser owner)
+    public DocumentationInboxInfo GetInboxInfo(DocumentationLibrary library)
     {
-        var folderKey = ResolveFolderKey(owner);
-        EnsureOwnerFolders(owner);
-        var pending = 0;
-        foreach (var dir in DistinctInboxDirs(owner, folderKey))
+        var folderKey = library.InboxFolderKey ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(folderKey))
         {
-            pending += CountPendingFiles(dir);
+            EnsureLibraryFolders(library);
+        }
+
+        var pending = 0;
+        if (!string.IsNullOrWhiteSpace(folderKey))
+        {
+            pending = CountPendingFiles(_storage.GetOwnerInboxAbsolutePath(folderKey));
         }
 
         return new DocumentationInboxInfo
         {
-            OwnerUserId = owner.Id,
+            LibraryId = library.Id,
             FolderKey = folderKey,
-            HostInboxPath = _storage.GetDocsInboxHostPath(folderKey),
-            RelativeInboxPath = $"{AttachmentStorageService.DocsInboxFolderName}/{folderKey}",
+            HostInboxPath = string.IsNullOrWhiteSpace(folderKey)
+                ? _storage.GetDocsInboxHostPath()
+                : _storage.GetDocsInboxHostPath(folderKey),
+            RelativeInboxPath = string.IsNullOrWhiteSpace(folderKey)
+                ? AttachmentStorageService.DocsInboxFolderName
+                : $"{AttachmentStorageService.DocsInboxFolderName}/{folderKey}",
             PendingFileCount = pending,
             MaxInboxFileBytes = _storage.MaxInboxFileBytes
         };
     }
 
-    public async Task<DocumentationInboxSyncResult> SyncOwnerAsync(
-        Guid ownerUserId,
+    public async Task<DocumentationInboxSyncResult> SyncLibraryAsync(
+        Guid libraryId,
         Guid? uploadedByUserId,
         CancellationToken cancellationToken)
     {
         await Gate.WaitAsync(cancellationToken);
         try
         {
-            var owner = await _users.Users.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.Id == ownerUserId, cancellationToken);
-            if (owner is null || !owner.IsActive || !owner.DocumentationEnabled)
+            var library = await _db.DocumentationLibraries.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == libraryId, cancellationToken);
+            if (library is null || !library.IsActive)
             {
                 return new DocumentationInboxSyncResult
                 {
-                    OwnerUserId = ownerUserId,
-                    Messages = ["Раздел не найден или документация выключена."]
+                    LibraryId = libraryId,
+                    Messages = ["Каталог не найден или отключён."]
                 };
             }
 
-            if (!await _users.IsInRoleAsync(owner, AppRoles.Department))
+            if (string.IsNullOrWhiteSpace(library.InboxFolderKey))
             {
                 return new DocumentationInboxSyncResult
                 {
-                    OwnerUserId = ownerUserId,
-                    Messages = ["Владелец раздела должен иметь роль Подразделение."]
+                    LibraryId = libraryId,
+                    Messages = ["У каталога не задан InboxFolderKey."]
                 };
             }
 
-            return await SyncOwnerCoreAsync(owner, uploadedByUserId, cancellationToken);
+            return await SyncLibraryCoreAsync(library, uploadedByUserId, cancellationToken);
         }
         finally
         {
@@ -143,17 +149,18 @@ public sealed class DocumentationInboxSyncService
         try
         {
             await EnsureInboxLayoutAsync(cancellationToken);
-            var departments = await _users.GetUsersInRoleAsync(AppRoles.Department);
-            var owners = departments.Where(x => x.IsActive && x.DocumentationEnabled).ToList();
+            var libraries = await _db.DocumentationLibraries.AsNoTracking()
+                .Where(x => x.IsActive && x.InboxFolderKey != null && x.InboxFolderKey != "")
+                .ToListAsync(cancellationToken);
             var aggregate = new DocumentationInboxSyncResult
             {
                 HostInboxPath = _storage.GetDocsInboxHostPath()
             };
 
-            foreach (var owner in owners)
+            foreach (var library in libraries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var one = await SyncOwnerCoreAsync(owner, uploadedByUserId: null, cancellationToken);
+                var one = await SyncLibraryCoreAsync(library, uploadedByUserId: null, cancellationToken);
                 aggregate.Imported += one.Imported;
                 aggregate.Updated += one.Updated;
                 aggregate.Skipped += one.Skipped;
@@ -174,28 +181,24 @@ public sealed class DocumentationInboxSyncService
         }
     }
 
-    private async Task<DocumentationInboxSyncResult> SyncOwnerCoreAsync(
-        ApplicationUser owner,
+    private async Task<DocumentationInboxSyncResult> SyncLibraryCoreAsync(
+        DocumentationLibrary library,
         Guid? uploadedByUserId,
         CancellationToken cancellationToken)
     {
-        var folderKey = ResolveFolderKey(owner);
-        EnsureOwnerFolders(owner);
+        var folderKey = library.InboxFolderKey!;
+        EnsureLibraryFolders(library);
         var result = new DocumentationInboxSyncResult
         {
-            OwnerUserId = owner.Id,
+            LibraryId = library.Id,
             FolderKey = folderKey,
             HostInboxPath = _storage.GetDocsInboxHostPath(folderKey)
         };
 
-        var inboxDirs = DistinctInboxDirs(owner, folderKey);
+        var inboxRoot = _storage.GetOwnerInboxAbsolutePath(folderKey);
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
         var files = new List<(string InboxRoot, string AbsolutePath, string RelativeKey)>();
-
-        foreach (var inboxRoot in inboxDirs)
-        {
-            CollectPendingFiles(inboxRoot, inboxRoot, files);
-        }
+        CollectPendingFiles(inboxRoot, inboxRoot, files);
 
         result.PendingBefore = files.Count;
         if (files.Count == 0)
@@ -204,9 +207,7 @@ public sealed class DocumentationInboxSyncService
             return result;
         }
 
-        // Кэш папок: относительный путь "a/b" → FolderId
         var folderCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        // Один SaveChanges на пачку — не N round-trips на файл.
         const int commitEvery = 40;
         var pendingMoves = new List<(string InboxRoot, string AbsolutePath, string RelativeKey)>();
         var dirty = 0;
@@ -227,7 +228,7 @@ public sealed class DocumentationInboxSyncService
             pendingMoves.Clear();
         }
 
-        foreach (var (inboxRoot, absolutePath, relativeKey) in files)
+        foreach (var (inboxRootPath, absolutePath, relativeKey) in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -243,14 +244,14 @@ public sealed class DocumentationInboxSyncService
                 {
                     result.Failed++;
                     result.Messages.Add($"Слишком большой: {relativeKey} ({fileInfo.Length} байт).");
-                    MoveToBucket(inboxRoot, absolutePath, relativeKey, ".errors", stamp);
+                    MoveToBucket(inboxRootPath, absolutePath, relativeKey, ".errors", stamp);
                     continue;
                 }
 
                 if (fileInfo.Length <= 0)
                 {
                     result.Skipped++;
-                    MoveToBucket(inboxRoot, absolutePath, relativeKey, ".processed", stamp);
+                    MoveToBucket(inboxRootPath, absolutePath, relativeKey, ".processed", stamp);
                     continue;
                 }
 
@@ -259,7 +260,7 @@ public sealed class DocumentationInboxSyncService
                 if (!string.IsNullOrWhiteSpace(dirKey))
                 {
                     folderId = await EnsureFolderPathAsync(
-                        owner.Id,
+                        library.Id,
                         dirKey,
                         folderCache,
                         result,
@@ -268,7 +269,7 @@ public sealed class DocumentationInboxSyncService
 
                 var existing = await _db.DocumentationFiles
                     .FirstOrDefaultAsync(
-                        x => x.OwnerUserId == owner.Id
+                        x => x.LibraryId == library.Id
                              && x.InboxSourceKey == relativeKey
                              && x.DeletedAt == null,
                         cancellationToken);
@@ -276,14 +277,14 @@ public sealed class DocumentationInboxSyncService
                 if (existing is not null && existing.SizeBytes == fileInfo.Length)
                 {
                     result.Skipped++;
-                    MoveToBucket(inboxRoot, absolutePath, relativeKey, ".processed", stamp);
+                    MoveToBucket(inboxRootPath, absolutePath, relativeKey, ".processed", stamp);
                     continue;
                 }
 
                 await using (var stream = File.OpenRead(absolutePath))
                 {
                     var (relativeStorage, size) = await _storage.SaveDocumentationAsync(
-                        owner.Id,
+                        library.Id,
                         folderId,
                         Path.GetFileName(absolutePath),
                         stream,
@@ -307,7 +308,7 @@ public sealed class DocumentationInboxSyncService
                         _db.DocumentationFiles.Add(new DocumentationFile
                         {
                             Id = Guid.NewGuid(),
-                            OwnerUserId = owner.Id,
+                            LibraryId = library.Id,
                             FolderId = folderId,
                             FileName = AttachmentStorageService.SanitizeFileNamePublic(Path.GetFileName(absolutePath)),
                             ContentType = contentType,
@@ -322,7 +323,7 @@ public sealed class DocumentationInboxSyncService
                 }
 
                 dirty++;
-                pendingMoves.Add((inboxRoot, absolutePath, relativeKey));
+                pendingMoves.Add((inboxRootPath, absolutePath, relativeKey));
                 if (dirty >= commitEvery)
                 {
                     await FlushAsync();
@@ -330,7 +331,6 @@ public sealed class DocumentationInboxSyncService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Откатываем незакоммиченный трекер, чтобы один битый файл не сорвал пачку.
                 foreach (var entry in _db.ChangeTracker.Entries().ToList())
                 {
                     entry.State = EntityState.Detached;
@@ -340,10 +340,10 @@ public sealed class DocumentationInboxSyncService
                 pendingMoves.Clear();
                 result.Failed++;
                 result.Messages.Add($"{relativeKey}: {ex.Message}");
-                _logger.LogWarning(ex, "Inbox import failed for {Owner} / {Key}", owner.Id, relativeKey);
+                _logger.LogWarning(ex, "Inbox import failed for library {LibraryId} / {Key}", library.Id, relativeKey);
                 try
                 {
-                    MoveToBucket(inboxRoot, absolutePath, relativeKey, ".errors", stamp);
+                    MoveToBucket(inboxRootPath, absolutePath, relativeKey, ".errors", stamp);
                 }
                 catch (Exception moveEx)
                 {
@@ -357,7 +357,7 @@ public sealed class DocumentationInboxSyncService
     }
 
     private async Task<Guid> EnsureFolderPathAsync(
-        Guid ownerUserId,
+        Guid libraryId,
         string relativeDirKey,
         Dictionary<string, Guid> cache,
         DocumentationInboxSyncResult result,
@@ -389,7 +389,7 @@ public sealed class DocumentationInboxSyncService
 
             var folder = await _db.DocumentationFolders
                 .FirstOrDefaultAsync(
-                    x => x.OwnerUserId == ownerUserId
+                    x => x.LibraryId == libraryId
                          && x.ParentFolderId == parentId
                          && x.Name == segment
                          && x.DeletedAt == null,
@@ -400,13 +400,12 @@ public sealed class DocumentationInboxSyncService
                 folder = new DocumentationFolder
                 {
                     Id = Guid.NewGuid(),
-                    OwnerUserId = ownerUserId,
+                    LibraryId = libraryId,
                     ParentFolderId = parentId,
                     Name = segment,
                     CreatedAt = DateTimeOffset.UtcNow
                 };
                 _db.DocumentationFolders.Add(folder);
-                // Папку нужно зафиксировать до уникального FK/поиска детей в той же пачке.
                 await _db.SaveChangesAsync(cancellationToken);
                 result.FoldersCreated++;
             }
@@ -424,29 +423,18 @@ public sealed class DocumentationInboxSyncService
         return parentId.Value;
     }
 
-    private List<string> DistinctInboxDirs(ApplicationUser owner, string folderKey)
+    private void EnsureLibraryFolders(DocumentationLibrary library)
     {
-        var list = new List<string>
+        if (string.IsNullOrWhiteSpace(library.InboxFolderKey))
         {
-            _storage.GetOwnerInboxAbsolutePath(folderKey)
-        };
-        var byId = _storage.GetOwnerInboxAbsolutePath(owner.Id.ToString("N"));
-        if (!string.Equals(Path.GetFullPath(list[0]), Path.GetFullPath(byId), StringComparison.OrdinalIgnoreCase))
-        {
-            list.Add(byId);
+            return;
         }
 
-        return list;
+        EnsuredLibraries.TryAdd(library.Id, 0);
+        _storage.GetOwnerInboxAbsolutePath(library.InboxFolderKey);
     }
 
-    private void EnsureOwnerFolders(ApplicationUser owner)
-    {
-        EnsuredOwners.TryAdd(owner.Id, 0);
-        var key = ResolveFolderKey(owner);
-        _storage.GetOwnerInboxAbsolutePath(key);
-        _storage.GetOwnerInboxAbsolutePath(owner.Id.ToString("N"));
-    }
-
+    /// <summary>Ключ inbox из логина пользователя (для миграции legacy → library).</summary>
     public static string ResolveFolderKey(ApplicationUser owner)
     {
         var login = AttachmentStorageService.SanitizeFolderSegment(owner.UserName ?? string.Empty);
@@ -528,8 +516,6 @@ public sealed class DocumentationInboxSyncService
         }
 
         File.Move(absolutePath, target);
-
-        // Чистим пустые каталоги вверх до корня inbox (не трогаем .processed/.errors).
         TryDeleteEmptyParents(Path.GetDirectoryName(absolutePath), inboxRoot);
     }
 
@@ -591,7 +577,7 @@ public sealed class DocumentationInboxSyncService
             """
             Crown — inbox документации (share)
             ==================================
-            Кладёте файлы/папки в подкаталог подразделения (логин или Guid N),
+            Кладёте файлы/папки в подкаталог каталога (InboxFolderKey),
             API подхватывает их (фон ~5 мин или кнопка «Импорт из inbox» в UI).
 
             После импорта исходники уезжают в .processed/{дата_время}/.

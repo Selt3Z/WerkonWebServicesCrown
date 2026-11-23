@@ -203,14 +203,19 @@ document.addEventListener('keydown', function (e) {
     }
 })();
 
-// Фильтры: select/checkbox — сразу submit, поиск по тексту остаётся на «Найти»/Enter.
+// Фильтры (GET): select/checkbox — сразу submit. POST-формы с list-filters не трогаем.
 document.addEventListener('change', function (e) {
     var el = e.target;
     if (!el || (el.tagName !== 'SELECT' && el.type !== 'checkbox')) {
         return;
     }
     var form = el.closest('form.list-filters');
-    if (form) {
-        form.requestSubmit();
+    if (!form) {
+        return;
     }
+    var method = (form.getAttribute('method') || 'get').toLowerCase();
+    if (method !== 'get') {
+        return;
+    }
+    form.requestSubmit();
 });

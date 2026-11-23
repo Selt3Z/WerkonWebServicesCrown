@@ -1,14 +1,14 @@
-@page "/documentation/{ownerUserId:guid}/trash"
+@page "/documentation/{libraryId:guid}/trash"
 @model DocumentationTrashModel
 @inject AppTime Time
 @{
-    ViewData["Title"] = "Корзина — " + (Model.Trash?.OwnerDisplayName ?? "Документация");
+    ViewData["Title"] = "Корзина — " + (Model.Trash?.LibraryName ?? "Документация");
     var t = Model.Trash;
 }
 
 <div class="crown-page-head">
-    <h1 class="section-title">Корзина@(t is null ? "" : $" — {t.OwnerDisplayName}")</h1>
-    <a class="btn btn-outline-secondary" href="/documentation/@Model.OwnerUserId">К разделу</a>
+    <h1 class="section-title">Корзина@(t is null ? "" : $" — {t.LibraryName}")</h1>
+    <a class="btn btn-outline-secondary" href="/documentation/@Model.LibraryId">К каталогу</a>
 </div>
 
 @* Ok/Warn уже в _Layout через TempData *@
@@ -27,7 +27,7 @@
     @if (t.CanClearTrash)
     {
         <form method="post" asp-page-handler="Clear" class="list-filters mb-3">
-            <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+            <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
             <div class="filter-field filter-field-inline">
                 <label class="form-label" for="trash-confirm">Очистить корзину</label>
                 <div class="d-flex gap-2 flex-wrap align-items-center">
@@ -76,7 +76,7 @@
                         @if (item.IsFolder)
                         {
                             <form method="post" asp-page-handler="RestoreFolder" class="d-inline">
-                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                                 <input type="hidden" name="itemId" value="@item.Id" />
                                 <button type="submit" class="btn btn-outline-primary btn-sm"
                                         data-confirm="Восстановить папку «@item.Name»?">Восстановить</button>
@@ -85,7 +85,7 @@
                         else
                         {
                             <form method="post" asp-page-handler="RestoreFile" class="d-inline">
-                                <input type="hidden" name="OwnerUserId" value="@Model.OwnerUserId" />
+                                <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
                                 <input type="hidden" name="itemId" value="@item.Id" />
                                 <button type="submit" class="btn btn-outline-primary btn-sm"
                                         data-confirm="Восстановить файл «@item.Name»?">Восстановить</button>

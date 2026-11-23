@@ -8,6 +8,10 @@
 
 <div class="crown-page-head">
     <h1 class="section-title">Документация</h1>
+    @if (Model.IsAdmin)
+    {
+        <a class="btn btn-outline-secondary" href="/settings/documentation-access">Доступ к каталогам</a>
+    }
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
@@ -17,7 +21,7 @@
 
 <form method="get" class="list-filters clients-filters mb-3">
     <div class="filter-field filter-field-inline filter-field-search">
-        <label class="form-label" for="doc-global-q">Поиск по всем подразделениям</label>
+        <label class="form-label" for="doc-global-q">Поиск по всем каталогам</label>
         <input id="doc-global-q" class="form-control" type="search" name="q" value="@Model.Q"
                placeholder="имя файла или папки…" />
     </div>
@@ -28,6 +32,23 @@
     }
 </form>
 
+@if (Model.IsAdmin && !isSearch)
+{
+    <form method="post" asp-page-handler="CreateLibrary" class="list-filters mb-3">
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="new-lib-name">Новый каталог</label>
+            <input id="new-lib-name" class="form-control" name="NewLibraryName" required maxlength="200"
+                   placeholder="Название" />
+        </div>
+        <div class="filter-field filter-field-inline">
+            <label class="form-label" for="new-lib-inbox">Inbox key</label>
+            <input id="new-lib-inbox" class="form-control" name="NewInboxFolderKey" maxlength="100"
+                   placeholder="опционально" />
+        </div>
+        <button type="submit" class="btn btn-primary">Создать</button>
+    </form>
+}
+
 @if (isSearch)
 {
     <p class="text-muted mb-2">Поиск: «@Model.Search!.Query» · найдено @Model.Search.Hits.Count</p>
@@ -36,7 +57,7 @@
             <thead>
             <tr>
                 <th>Имя</th>
-                <th>Подразделение</th>
+                <th>Каталог</th>
                 <th>Путь</th>
                 <th class="col-date">Размер</th>
                 <th class="col-date">Дата</th>
@@ -50,7 +71,7 @@
             @foreach (var hit in Model.Search.Hits)
             {
                 var href = hit.IsFolder
-                    ? $"/documentation/{hit.OwnerUserId}?folderId={hit.Id}"
+                    ? $"/documentation/{hit.LibraryId}?folderId={hit.Id}"
                     : $"/documentation/preview?fileId={hit.Id}&back={Uri.EscapeDataString("/documentation?q=" + Uri.EscapeDataString(Model.Q ?? ""))}";
                 <tr class="table-row-action" data-href="@href" tabindex="0" role="link"
                     aria-label="@(hit.IsFolder ? "Папка" : "Файл"): @hit.Name">
@@ -62,11 +83,11 @@
                         @if (!hit.IsFolder)
                         {
                             <a class="ms-2 text-muted"
-                               href="/documentation/@hit.OwnerUserId?handler=Download&amp;fileId=@hit.Id"
+                               href="/documentation/@hit.LibraryId?handler=Download&amp;fileId=@hit.Id"
                                download title="Скачать">↓</a>
                         }
                     </td>
-                    <td>@hit.OwnerDisplayName</td>
+                    <td>@hit.LibraryName</td>
                     <td class="text-muted">@(hit.PathLabel ?? "Корень")</td>
                     <td class="col-date nowrap">@(hit.IsFolder || hit.SizeBytes is null ? "—" : UiHelpers.FormatBytes(hit.SizeBytes.Value))</td>
                     <td class="col-date">@(hit.At is DateTimeOffset at ? Time.Format(at) : "—")</td>
@@ -76,9 +97,9 @@
         </table>
     </div>
 }
-else if (Model.Sections.Count == 0 && string.IsNullOrEmpty(Model.Error))
+else if (Model.Libraries.Count == 0 && string.IsNullOrEmpty(Model.Error))
 {
-    <p class="text-muted">Нет доступных подразделений в документации.</p>
+    <p class="text-muted">Нет доступных каталогов.</p>
 }
 else if (!isSearch)
 {
@@ -86,21 +107,21 @@ else if (!isSearch)
         <table class="table crown-table">
             <thead>
             <tr>
-                <th>Подразделение</th>
+                <th>Каталог</th>
                 <th class="num">Файлов</th>
                 <th class="num">Объём</th>
             </tr>
             </thead>
             <tbody>
-            @foreach (var s in Model.Sections)
+            @foreach (var s in Model.Libraries)
             {
-                <tr class="table-row-action" data-href="/documentation/@s.UserId" tabindex="0" role="link"
-                    aria-label="Документация: @s.DisplayName">
+                <tr class="table-row-action" data-href="/documentation/@s.Id" tabindex="0" role="link"
+                    aria-label="Документация: @s.Name">
                     <td>
-                        @s.DisplayName
-                        @if (User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value == s.UserId.ToString())
+                        @s.Name
+                        @if (s.CanWrite)
                         {
-                            <span class="badge text-bg-secondary ms-1">ваше</span>
+                            <span class="badge text-bg-secondary ms-1">запись</span>
                         }
                     </td>
                     <td class="num">@s.FileCount</td>

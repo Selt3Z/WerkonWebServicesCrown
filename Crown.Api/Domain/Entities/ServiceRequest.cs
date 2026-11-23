@@ -55,6 +55,12 @@ public sealed class ServiceRequest
     public Guid? CreatedByUserId { get; set; }
     public Guid? LastModifiedByUserId { get; set; }
     public DateTimeOffset? LastModifiedAt { get; set; }
+
+    /// <summary>Причина последнего ручного редактирования полей заявки.</summary>
+    public string? LastEditReason { get; set; }
+    public DateTimeOffset? LastEditedAt { get; set; }
+    public Guid? LastEditedByUserId { get; set; }
+
     public bool IsArchived { get; set; }
 
     /// <summary>Системный xmin Postgres — optimistic concurrency.</summary>

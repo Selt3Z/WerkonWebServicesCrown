@@ -1,7 +1,9 @@
 using ClosedXML.Excel;
 using Crown.Contracts.BrigadeRating;
 using Crown.Contracts.Common;
+using Crown.Contracts.Import;
 using Crown.Domain.Entities;
+using Crown.Infrastructure.Api;
 using Crown.Infrastructure.Identity;
 using Crown.Infrastructure.Import;
 using Crown.Infrastructure.Persistence;
@@ -25,9 +27,68 @@ namespace Crown.Features.BrigadeRating;
 public sealed class InspectionsController(
     AppDbContext db,
     UserManager<ApplicationUser> users,
-    AppTimeZone time) : ControllerBase
+    AppTimeZone time,
+    BrigadeInspectionImportService inspectionImport) : ControllerBase
 {
     private const int MaxSequenceRetries = 3;
+
+    // ---------- Import ----------
+
+    [HttpPost("import/preview")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(SpreadsheetImportFileHelper.MaxFileBytes + 1024 * 1024)]
+    public async Task<ActionResult<SpreadsheetImportPreviewResponse>> PreviewImport(
+        IFormFile? file,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync())
+        {
+            return Forbid();
+        }
+
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.SpreadsheetImportInvalidFile));
+        }
+
+        if (file.Length > SpreadsheetImportFileHelper.MaxFileBytes)
+        {
+            return BadRequest(ApiErrors.FromCode(ApiErrorCodes.SpreadsheetImportFileTooLarge));
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            using var buffer = new MemoryStream((int)file.Length);
+            await stream.CopyToAsync(buffer, cancellationToken);
+            return Ok(inspectionImport.Preview(buffer.ToArray(), file.FileName));
+        }
+        catch (SpreadsheetImportException ex)
+        {
+            return BadRequest(ApiErrors.FromCode(ex.Code));
+        }
+    }
+
+    [HttpPost("import/commit")]
+    [RequestSizeLimit(8 * 1024 * 1024)]
+    public async Task<ActionResult<SpreadsheetImportCommitResponse>> CommitImport(
+        [FromBody] SpreadsheetImportCommitRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await CanOperateAsync())
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            return Ok(await inspectionImport.CommitAsync(request, cancellationToken));
+        }
+        catch (SpreadsheetImportException ex)
+        {
+            return BadRequest(ApiErrors.FromCode(ex.Code));
+        }
+    }
 
     // ---------- CRUD ----------
 
@@ -78,9 +139,12 @@ public sealed class InspectionsController(
         }
 
         var live = await LoadBrigadeSnapshotsAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
+        var livePeople = await LoadPersonnelLiveAsync(
+            rows.SelectMany(x => new Guid?[] { x.MasterPersonId, x.CheckerPersonId, x.FixResponsiblePersonId }),
+            cancellationToken);
         return Ok(new BrigadeInspectionsPageResponse
         {
-            Items = rows.Select(x => MapListItem(x, live)).ToList(),
+            Items = rows.Select(x => MapListItem(x, live, livePeople)).ToList(),
             HasMore = hasMore,
             Period = periodKey,
             PeriodStart = start,
@@ -89,11 +153,12 @@ public sealed class InspectionsController(
         });
     }
 
-    /// <summary>Один xlsx: три вкладки (Супервайзинг / ПДК / ПБиОТ) за период.</summary>
+    /// <summary>Xlsx за период. Без kind — три листа «Проверки»; с kind — один лист (в т.ч. ППК).</summary>
     [HttpGet("export.xlsx")]
     public async Task<IActionResult> ExportXlsx(
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to = null,
+        [FromQuery] BrigadeInspectionKind? kind = null,
         CancellationToken cancellationToken = default)
     {
         if (!await CanViewAsync())
@@ -101,38 +166,57 @@ public sealed class InspectionsController(
             return Forbid();
         }
 
+        if (kind is BrigadeInspectionKind bad && !Enum.IsDefined(bad))
+        {
+            return BadRequest(new { error = "kind_invalid" });
+        }
+
         var (start, end) = ResolveFromTo(from, to);
-        var rows = await db.BrigadeInspections.AsNoTracking()
+        var query = db.BrigadeInspections.AsNoTracking()
             .Include(x => x.Remarks)
-            .Where(x => x.ReportDate >= start && x.ReportDate <= end)
+            .Where(x => x.ReportDate >= start && x.ReportDate <= end);
+        if (kind is BrigadeInspectionKind onlyKind)
+        {
+            query = query.Where(x => x.Kind == onlyKind);
+        }
+
+        var rows = await query
             .OrderBy(x => x.Kind)
             .ThenBy(x => x.ReportDate)
             .ThenBy(x => x.SequenceNo)
             .ToListAsync(cancellationToken);
 
         var live = await LoadBrigadeSnapshotsAsync(rows.Select(x => x.BrigadeUserId), cancellationToken);
-        var mapped = rows.Select(x => MapListItem(x, live)).ToList();
+        var livePeople = await LoadPersonnelLiveAsync(
+            rows.SelectMany(x => new Guid?[] { x.MasterPersonId, x.CheckerPersonId, x.FixResponsiblePersonId }),
+            cancellationToken);
+        var mapped = rows.Select(x => MapListItem(x, live, livePeople)).ToList();
+
+        BrigadeInspectionKind[] kinds = kind is BrigadeInspectionKind single
+            ? [single]
+            :
+            [
+                BrigadeInspectionKind.Supervising,
+                BrigadeInspectionKind.Pdk,
+                BrigadeInspectionKind.Pbiot
+            ];
 
         using var workbook = new XLWorkbook();
-        foreach (var kind in new[]
-                 {
-                     BrigadeInspectionKind.Supervising,
-                     BrigadeInspectionKind.Pdk,
-                     BrigadeInspectionKind.Pbiot
-                 })
+        foreach (var sheetKind in kinds)
         {
-            var sheetName = kind switch
+            var sheetName = sheetKind switch
             {
                 BrigadeInspectionKind.Pdk => "ПДК",
                 BrigadeInspectionKind.Pbiot => "ПБиОТ",
+                BrigadeInspectionKind.Ppk => "ППК",
                 _ => "Супервайзинг"
             };
             var ws = workbook.Worksheets.Add(sheetName);
-            WriteExportHeader(ws, kind);
-            var kindRows = mapped.Where(x => x.Kind == kind).ToList();
+            WriteExportHeader(ws, sheetKind);
+            var kindRows = mapped.Where(x => x.Kind == sheetKind).ToList();
             for (var i = 0; i < kindRows.Count; i++)
             {
-                WriteExportRow(ws, kind, i + 2, kindRows[i]);
+                WriteExportRow(ws, sheetKind, i + 2, kindRows[i]);
             }
 
             ws.Columns().AdjustToContents(1, 40);
@@ -140,9 +224,10 @@ public sealed class InspectionsController(
 
         await using var stream = new MemoryStream();
         workbook.SaveAs(stream);
+        var label = kind is BrigadeInspectionKind.Ppk ? "ППК" : "Проверки";
         var fileName = start == end
-            ? $"Проверки {start:dd.MM.yyyy}.xlsx"
-            : $"Проверки {start:dd.MM.yyyy}-{end:dd.MM.yyyy}.xlsx";
+            ? $"{label} {start:dd.MM.yyyy}.xlsx"
+            : $"{label} {start:dd.MM.yyyy}-{end:dd.MM.yyyy}.xlsx";
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
     }
 
@@ -165,7 +250,10 @@ public sealed class InspectionsController(
         }
 
         var live = await LoadBrigadeSnapshotsAsync([entity.BrigadeUserId], cancellationToken);
-        return Ok(MapDetail(entity, live));
+        var livePeople = await LoadPersonnelLiveAsync(
+            [entity.MasterPersonId, entity.CheckerPersonId, entity.FixResponsiblePersonId],
+            cancellationToken);
+        return Ok(MapDetail(entity, live, livePeople));
     }
 
     [HttpPost]
@@ -225,7 +313,10 @@ public sealed class InspectionsController(
         }
 
         var createdLive = await LoadBrigadeSnapshotsAsync([entity.BrigadeUserId], cancellationToken);
-        return CreatedAtAction(nameof(Get), new { id = entity.Id }, MapDetail(entity, createdLive));
+        var createdPeople = await LoadPersonnelLiveAsync(
+            [entity.MasterPersonId, entity.CheckerPersonId, entity.FixResponsiblePersonId],
+            cancellationToken);
+        return CreatedAtAction(nameof(Get), new { id = entity.Id }, MapDetail(entity, createdLive, createdPeople));
     }
 
     [HttpPut("{id:guid}")]
@@ -279,7 +370,10 @@ public sealed class InspectionsController(
             .Include(x => x.Remarks)
             .FirstAsync(x => x.Id == id, cancellationToken);
         var savedLive = await LoadBrigadeSnapshotsAsync([saved.BrigadeUserId], cancellationToken);
-        return Ok(MapDetail(saved, savedLive));
+        var savedPeople = await LoadPersonnelLiveAsync(
+            [saved.MasterPersonId, saved.CheckerPersonId, saved.FixResponsiblePersonId],
+            cancellationToken);
+        return Ok(MapDetail(saved, savedLive, savedPeople));
     }
 
     [HttpDelete("{id:guid}")]
@@ -429,11 +523,6 @@ public sealed class InspectionsController(
             masterName = Clean(request.MasterName) ?? string.Empty;
         }
 
-        if (kind == BrigadeInspectionKind.Supervising && masterName.Length == 0)
-        {
-            return BuildResult.Fail("master_required", "Укажите мастера.");
-        }
-
         // ----- Подразделение проверяющего -----
         Guid? departmentUserId = null;
         string? departmentName = null;
@@ -527,6 +616,7 @@ public sealed class InspectionsController(
         switch (kind)
         {
             case BrigadeInspectionKind.Supervising:
+            case BrigadeInspectionKind.Ppk:
                 if (request.Outcome is not BrigadeInspectionOutcome o || !Enum.IsDefined(o))
                 {
                     return BuildResult.Fail("outcome_required", "Укажите: предписание, замечание или остановка.");
@@ -608,6 +698,7 @@ public sealed class InspectionsController(
         entity.FixReportText = fixReportText;
         entity.FixResponsiblePersonId = fixResponsiblePersonId;
         entity.FixResponsibleName = fixResponsibleName;
+        entity.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         if (existing is not null)
         {
             entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -811,7 +902,8 @@ public sealed class InspectionsController(
             (r.FixDateManualText, 200, "Дата устранения (текст)"),
             (r.FixResponsibleText, 500, "Ответственный за устранение"),
             (r.FixReportText, 2000, "Отчёт об устранении"),
-            (r.FixResponsibleName, 200, "Ответственный за устранение")
+            (r.FixResponsibleName, 200, "Ответственный за устранение"),
+            (r.Notes, 2000, "Заметка")
         ];
 
         foreach (var (value, max, label) in fields)
@@ -851,11 +943,12 @@ public sealed class InspectionsController(
 
     private static BrigadeInspectionListItemResponse MapListItem(
         BrigadeInspection x,
-        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null)
+        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople = null)
     {
         var remarks = x.Remarks.OrderBy(r => r.SortOrder).ThenBy(r => r.Text).ToList();
         var item = new BrigadeInspectionListItemResponse();
-        FillCommon(item, x, live);
+        FillCommon(item, x, live, livePeople);
         item.RemarkCount = remarks.Count;
         item.RemarkTexts = remarks.Select(FormatRemark).ToList();
         return item;
@@ -863,11 +956,12 @@ public sealed class InspectionsController(
 
     private static BrigadeInspectionDetailResponse MapDetail(
         BrigadeInspection x,
-        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null)
+        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople = null)
     {
         var remarks = x.Remarks.OrderBy(r => r.SortOrder).ThenBy(r => r.Text).ToList();
         var item = new BrigadeInspectionDetailResponse();
-        FillCommon(item, x, live);
+        FillCommon(item, x, live, livePeople);
         item.RemarkCount = remarks.Count;
         item.RemarkTexts = remarks.Select(FormatRemark).ToList();
         item.Remarks = remarks.Select(r => new BrigadeInspectionRemarkResponse
@@ -882,10 +976,68 @@ public sealed class InspectionsController(
         return item;
     }
 
+    private sealed record PersonnelLive(string FullName, string? Position);
+
+    private async Task<Dictionary<Guid, PersonnelLive>> LoadPersonnelLiveAsync(
+        IEnumerable<Guid?> personIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = personIds
+            .Where(x => x is Guid g && g != Guid.Empty)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, PersonnelLive>();
+        }
+
+        var rows = await db.PersonnelPeople.AsNoTracking()
+            .Where(x => ids.Contains(x.Id))
+            .Select(x => new { x.Id, x.FullName, x.Position })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(
+            x => x.Id,
+            x => new PersonnelLive(x.FullName, x.Position));
+    }
+
+    private static string ResolvePersonName(
+        Guid? personId,
+        string snapshot,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople)
+    {
+        if (personId is Guid id
+            && livePeople is not null
+            && livePeople.TryGetValue(id, out var live)
+            && !string.IsNullOrWhiteSpace(live.FullName))
+        {
+            return live.FullName.Trim();
+        }
+
+        return snapshot;
+    }
+
+    private static string? ResolvePersonPosition(
+        Guid? personId,
+        string? snapshot,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople)
+    {
+        if (personId is Guid id
+            && livePeople is not null
+            && livePeople.TryGetValue(id, out var live))
+        {
+            return string.IsNullOrWhiteSpace(live.Position) ? null : live.Position.Trim();
+        }
+
+        return snapshot;
+    }
+
     private static void FillCommon(
         BrigadeInspectionListItemResponse t,
         BrigadeInspection x,
-        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null)
+        IReadOnlyDictionary<Guid, (string DisplayName, string Number)>? live = null,
+        IReadOnlyDictionary<Guid, PersonnelLive>? livePeople = null)
     {
         t.Id = x.Id;
         t.Kind = x.Kind;
@@ -900,11 +1052,11 @@ public sealed class InspectionsController(
             ? snap.Number
             : x.BrigadeNumberSnapshot;
         t.MasterPersonId = x.MasterPersonId;
-        t.MasterName = x.MasterName;
+        t.MasterName = ResolvePersonName(x.MasterPersonId, x.MasterName, livePeople);
         t.Well = x.Well;
         t.CheckerPersonId = x.CheckerPersonId;
-        t.CheckerName = x.CheckerName;
-        t.CheckerPosition = x.CheckerPosition;
+        t.CheckerName = ResolvePersonName(x.CheckerPersonId, x.CheckerName, livePeople);
+        t.CheckerPosition = ResolvePersonPosition(x.CheckerPersonId, x.CheckerPosition, livePeople);
         t.FixDate = x.FixDate;
         t.FixDateIsManual = x.FixDateIsManual;
         t.FixDateManualText = x.FixDateManualText;
@@ -916,7 +1068,16 @@ public sealed class InspectionsController(
         t.FixResponsibleText = x.FixResponsibleText;
         t.FixReportText = x.FixReportText;
         t.FixResponsiblePersonId = x.FixResponsiblePersonId;
-        t.FixResponsibleName = x.FixResponsibleName;
+        t.FixResponsibleName = ResolvePersonName(
+            x.FixResponsiblePersonId,
+            x.FixResponsibleName ?? string.Empty,
+            livePeople);
+        if (string.IsNullOrWhiteSpace(t.FixResponsibleName))
+        {
+            t.FixResponsibleName = null;
+        }
+
+        t.Notes = x.Notes;
         t.CreatedAt = x.CreatedAt;
         t.UpdatedAt = x.UpdatedAt;
     }
@@ -1087,6 +1248,10 @@ public sealed class InspectionsController(
 
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>Супервайзинг и ППК — один профиль полей.</summary>
+    private static bool IsSupervisingProfile(BrigadeInspectionKind kind) =>
+        kind is BrigadeInspectionKind.Supervising or BrigadeInspectionKind.Ppk;
 
     private static bool IsSameWorkshop(string? a, string? b)
     {
