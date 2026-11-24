@@ -1322,17 +1322,9 @@ public sealed class RequestsController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Архив: инициатор заявки или админ/диспетчер.</summary>
-    private bool CanArchive(ServiceRequest entity)
-    {
-        if (User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher))
-        {
-            return true;
-        }
-
-        var userId = GetUserId();
-        return userId is not null && entity.InitiatorUserId == userId;
-    }
+    /// <summary>Архив: только админ/диспетчер.</summary>
+    private bool CanArchive(ServiceRequest entity) =>
+        User.IsInRole(AppRoles.Administrator) || User.IsInRole(AppRoles.Dispatcher);
 
     private async Task<ApplicationUser?> ResolveActiveInitiatorAsync(
         Guid userId,

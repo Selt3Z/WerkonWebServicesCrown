@@ -67,11 +67,10 @@ public sealed class DetailsModel(CrownApiClient api, AppTime time) : PageModel
     /// <summary>Ручной toggle «Ознак.» — только администратор.</summary>
     public bool CanToggleAck => User.IsInRole(AppRoles.Administrator);
 
-    /// <summary>Архив: инициатор своей заявки или админ/диспетчер.</summary>
+    /// <summary>Архив: только админ/диспетчер.</summary>
     public bool CanArchive =>
         Item is not null
-        && (IsInitiatorOfItem
-            || User.IsInRole(AppRoles.Administrator)
+        && (User.IsInRole(AppRoles.Administrator)
             || User.IsInRole(AppRoles.Dispatcher));
 
     /// <summary>Удаление безвозвратно: админ; диспетчер — по галочке в настройках.</summary>

@@ -118,11 +118,22 @@ else if (!isSearch)
                 <tr class="table-row-action" data-href="/documentation/@s.Id" tabindex="0" role="link"
                     aria-label="Документация: @s.Name">
                     <td>
-                        @s.Name
-                        @if (s.CanWrite)
-                        {
-                            <span class="badge text-bg-secondary ms-1">запись</span>
-                        }
+                        <span class="doc-lib-name">
+                            @if (s.CanWrite)
+                            {
+                                <span class="doc-lib-write-icon" title="Можно загружать и править" aria-label="Можно загружать и править">
+                                    @* Открытый замок — право менять каталог, не «редактировать строку» *@
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                                        <path fill="currentColor" d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5V3a3 3 0 0 1 6 0v4a.5.5 0 0 1-1 0V3a2 2 0 0 0-2-2zM3 8a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H3z"/>
+                                    </svg>
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="doc-lib-write-icon doc-lib-write-icon-spacer" aria-hidden="true"></span>
+                            }
+                            <span>@s.Name</span>
+                        </span>
                     </td>
                     <td class="num">@s.FileCount</td>
                     <td class="num">@(s.FileCount == 0 ? "—" : UiHelpers.FormatBytes(s.TotalSizeBytes))</td>

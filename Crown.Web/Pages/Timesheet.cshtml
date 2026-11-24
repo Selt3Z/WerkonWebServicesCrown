@@ -1,10 +1,314 @@
 @page "/timesheet"
 @model TimesheetModel
 @{
-    ViewData["Title"] = "Табель";
+    ViewData["Title"] = "Табель (Демо)";
+    var year = Model.Year;
+    var month = Model.Month;
+    var days = Model.DaysInMonth;
+    var monthStart = new DateOnly(year, month, 1);
+    var prev = monthStart.AddMonths(-1);
+    var next = monthStart.AddMonths(1);
+    var monthLabel = monthStart.ToString("MMMM yyyy", new System.Globalization.CultureInfo("ru-RU"));
+    monthLabel = char.ToUpper(monthLabel[0]) + monthLabel[1..];
+
+    string PeriodHref(int y, int m, Guid? owner)
+    {
+        var q = $"?year={y}&month={m}";
+        if (owner is Guid oid)
+        {
+            q += $"&ownerUserId={oid}";
+        }
+
+        return q;
+    }
 }
 
-<div class="crown-stub">
-    <span class="bi bi-calendar-week-nav-menu crown-stub-icon" aria-hidden="true"></span>
-    <p class="crown-stub-text">В разработке</p>
+<div class="crown-page-head">
+    <h1 class="section-title">Табель (Демо)</h1>
+    <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-secondary" id="ts-fill-52" title="Витрина: заполнить ячейки локально">Заполнить 5/2</button>
+        <button type="button" class="btn btn-outline-secondary" id="ts-clear">Очистить</button>
+        <button type="button" class="btn btn-outline-secondary" id="ts-excel" disabled title="Позже">Excel</button>
+        <button type="button" class="btn btn-primary" id="ts-save">Сохранить</button>
+    </div>
 </div>
+
+<p id="ts-flash" class="text-muted small" hidden aria-live="polite"></p>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="get" class="list-filters mb-3" id="ts-filters">
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="ts-year">Год</label>
+        <select id="ts-year" class="form-select" name="year" onchange="this.form.requestSubmit()">
+            @for (var y = year - 2; y <= year + 1; y++)
+            {
+                if (y == year)
+                {
+                    <option value="@y" selected>@y</option>
+                }
+                else
+                {
+                    <option value="@y">@y</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="filter-field filter-field-inline">
+        <label class="form-label" for="ts-month">Месяц</label>
+        <select id="ts-month" class="form-select" name="month" onchange="this.form.requestSubmit()">
+            @for (var m = 1; m <= 12; m++)
+            {
+                var name = new DateOnly(2000, m, 1).ToString("MMMM", new System.Globalization.CultureInfo("ru-RU"));
+                name = char.ToUpper(name[0]) + name[1..];
+                if (m == month)
+                {
+                    <option value="@m" selected>@name</option>
+                }
+                else
+                {
+                    <option value="@m">@name</option>
+                }
+            }
+        </select>
+    </div>
+    @if (Model.IsStaff)
+    {
+        <div class="filter-field filter-field-inline filter-field-grow">
+            <label class="form-label" for="ts-owner">Подразделение</label>
+            <select id="ts-owner" class="form-select" name="ownerUserId" onchange="this.form.requestSubmit()">
+                <option value="">— выберите —</option>
+                @foreach (var u in Model.Owners)
+                {
+                    if (Model.OwnerUserId == u.Id)
+                    {
+                        <option value="@u.Id" selected>@u.DisplayName (@u.UserName)</option>
+                    }
+                    else
+                    {
+                        <option value="@u.Id">@u.DisplayName (@u.UserName)</option>
+                    }
+                }
+            </select>
+        </div>
+    }
+    <div class="filter-field filter-field-inline d-flex align-items-end gap-1">
+        <a class="btn btn-outline-secondary" href="@PeriodHref(prev.Year, prev.Month, Model.OwnerUserId)">←</a>
+        <span class="align-self-center text-muted small px-1">@monthLabel</span>
+        <a class="btn btn-outline-secondary" href="@PeriodHref(next.Year, next.Month, Model.OwnerUserId)">→</a>
+    </div>
+</form>
+
+@if (Model.IsStaff && Model.OwnerUserId is null)
+{
+    <p class="text-muted">Выберите подразделение — в строках будет его активный персонал.</p>
+}
+else if (Model.People.Count == 0)
+{
+    <p class="text-muted">Нет активного персонала. Добавьте сотрудников в разделе «Персонал» или смотрите демо-кнопки на пустой сетке ниже.</p>
+}
+
+@{
+    // Если людей нет — демо-строки, чтобы витрина не была пустой.
+    var rows = Model.People.Count > 0
+        ? Model.People.Select(p => (Id: p.Id.ToString(), Name: p.FullName, Pos: p.Position ?? "")).ToList()
+        : new List<(string Id, string Name, string Pos)>
+        {
+            ("demo-1", "Иванов И. И.", "мастер"),
+            ("demo-2", "Петров П. П.", "слесарь"),
+            ("demo-3", "Сидорова А. В.", "инженер")
+        };
+    var useDemo = Model.People.Count == 0;
+}
+
+@if (useDemo && !(Model.IsStaff && Model.OwnerUserId is null))
+{
+    <p class="text-muted small">Демо-строки (персонал пуст) — только для показа сетки.</p>
+}
+
+@if (!(Model.IsStaff && Model.OwnerUserId is null))
+{
+    <div class="timesheet-legend mb-2">
+        <span class="text-muted small me-2">Клик по ячейке — цикл кодов:</span>
+        <span class="timesheet-chip" data-code="Я">Я явка</span>
+        <span class="timesheet-chip" data-code="В">В выходной</span>
+        <span class="timesheet-chip" data-code="Б">Б больничный</span>
+        <span class="timesheet-chip" data-code="ОТ">ОТ отпуск</span>
+        <span class="timesheet-chip" data-code="К">К командировка</span>
+        <span class="timesheet-chip" data-code="">пусто</span>
+    </div>
+
+    <div class="crown-table-wrap timesheet-wrap">
+        <table class="table crown-table timesheet-grid" id="timesheet-grid"
+               data-year="@year" data-month="@month" data-days="@days">
+            <thead>
+            <tr>
+                <th class="timesheet-name-col">Сотрудник</th>
+                @for (var d = 1; d <= days; d++)
+                {
+                    var date = new DateOnly(year, month, d);
+                    var dow = (int)date.DayOfWeek; // 0=вс
+                    var weekend = dow is 0 or 6;
+                    <th class="timesheet-day @(weekend ? "timesheet-weekend" : null)"
+                        title="@date.ToString("dddd", new System.Globalization.CultureInfo("ru-RU"))">
+                        <span class="timesheet-day-num">@d</span>
+                        <span class="timesheet-day-dow">@date.ToString("ddd", new System.Globalization.CultureInfo("ru-RU"))</span>
+                    </th>
+                }
+                <th class="timesheet-sum">Дни</th>
+                <th class="timesheet-sum">Часы</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var r in rows)
+            {
+                <tr data-person-id="@r.Id">
+                    <td class="timesheet-name-col">
+                        <div class="timesheet-person-name">@r.Name</div>
+                        @if (!string.IsNullOrWhiteSpace(r.Pos))
+                        {
+                            <div class="timesheet-person-pos text-muted">@r.Pos</div>
+                        }
+                    </td>
+                    @for (var d = 1; d <= days; d++)
+                    {
+                        var date = new DateOnly(year, month, d);
+                        var dow = (int)date.DayOfWeek;
+                        var weekend = dow is 0 or 6;
+                        <td class="timesheet-cell @(weekend ? "timesheet-weekend" : null)"
+                            data-day="@d" tabindex="0" role="button" aria-label="@r.Name, день @d"></td>
+                    }
+                    <td class="timesheet-sum timesheet-sum-days">0</td>
+                    <td class="timesheet-sum timesheet-sum-hours">0</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+<script>
+(function () {
+  var grid = document.getElementById('timesheet-grid');
+  if (!grid) return;
+
+  // Цикл кодов: пусто → Я(8) → В → Б → ОТ → К → пусто
+  var CYCLE = [
+    { code: '', hours: null },
+    { code: 'Я', hours: 8 },
+    { code: 'В', hours: null },
+    { code: 'Б', hours: null },
+    { code: 'ОТ', hours: null },
+    { code: 'К', hours: null }
+  ];
+
+  var flashTimer;
+  function toast(msg) {
+    var el = document.getElementById('ts-flash');
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = msg;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { el.hidden = true; }, 2800);
+  }
+
+  function paint(cell) {
+    var code = cell.dataset.code || '';
+    var hours = cell.dataset.hours;
+    cell.classList.toggle('timesheet-has', !!code);
+    cell.classList.toggle('timesheet-code-ya', code === 'Я');
+    cell.classList.toggle('timesheet-code-off', code === 'В' || code === 'Б' || code === 'ОТ' || code === 'К');
+    if (!code) {
+      cell.innerHTML = '';
+      return;
+    }
+    var h = hours && code === 'Я' ? '<span class="timesheet-h">' + hours + '</span>' : '';
+    cell.innerHTML = '<span class="timesheet-c">' + code + '</span>' + h;
+  }
+
+  function setCell(cell, code, hours) {
+    cell.dataset.code = code || '';
+    if (hours == null || hours === '') delete cell.dataset.hours;
+    else cell.dataset.hours = String(hours);
+    paint(cell);
+  }
+
+  function nextState(cell) {
+    var code = cell.dataset.code || '';
+    var i = 0;
+    for (var n = 0; n < CYCLE.length; n++) {
+      if (CYCLE[n].code === code) { i = n; break; }
+    }
+    var n2 = CYCLE[(i + 1) % CYCLE.length];
+    setCell(cell, n2.code, n2.hours);
+  }
+
+  function recount(row) {
+    var days = 0, hours = 0;
+    row.querySelectorAll('.timesheet-cell').forEach(function (c) {
+      var code = c.dataset.code || '';
+      if (code === 'Я') {
+        days++;
+        hours += parseFloat(c.dataset.hours || '0') || 0;
+      }
+    });
+    var dEl = row.querySelector('.timesheet-sum-days');
+    var hEl = row.querySelector('.timesheet-sum-hours');
+    if (dEl) dEl.textContent = String(days);
+    if (hEl) hEl.textContent = String(hours);
+  }
+
+  function recountAll() {
+    grid.querySelectorAll('tbody tr').forEach(recount);
+  }
+
+  grid.addEventListener('click', function (e) {
+    var cell = e.target.closest('.timesheet-cell');
+    if (!cell || !grid.contains(cell)) return;
+    nextState(cell);
+    recount(cell.closest('tr'));
+  });
+
+  grid.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var cell = e.target.closest('.timesheet-cell');
+    if (!cell) return;
+    e.preventDefault();
+    nextState(cell);
+    recount(cell.closest('tr'));
+  });
+
+  // Заполнить 5/2: будни Я/8, сб-вс В — только локально
+  document.getElementById('ts-fill-52')?.addEventListener('click', function () {
+    var year = +grid.dataset.year;
+    var month = +grid.dataset.month;
+    grid.querySelectorAll('tbody tr').forEach(function (row) {
+      row.querySelectorAll('.timesheet-cell').forEach(function (cell) {
+        var d = +cell.dataset.day;
+        var dow = new Date(year, month - 1, d).getDay(); // 0 вс
+        if (dow === 0 || dow === 6) setCell(cell, 'В', null);
+        else setCell(cell, 'Я', 8);
+      });
+      recount(row);
+    });
+    toast('Заполнено по 5/2 (только в браузере).');
+  });
+
+  document.getElementById('ts-clear')?.addEventListener('click', function () {
+    grid.querySelectorAll('.timesheet-cell').forEach(function (cell) {
+      setCell(cell, '', null);
+    });
+    recountAll();
+    toast('Очищено (только в браузере).');
+  });
+
+  document.getElementById('ts-save')?.addEventListener('click', function () {
+    toast('Витрина: сохранение в БД пока отключено.');
+  });
+
+  recountAll();
+})();
+</script>

@@ -26,6 +26,11 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
 
     public bool CanPickInitiator => User.IsInRole(AppRoles.Administrator);
 
+    public bool IsAdmin => User.IsInRole(AppRoles.Administrator);
+
+    /// <summary>СТ/оборудование временно только админу; остальным радио disabled.</summary>
+    public bool CanPickSpecAndEquipmentKinds => IsAdmin;
+
     public bool CanCreateTransport =>
         User.IsInRole(AppRoles.Administrator)
         || User.IsInRole(AppRoles.Dispatcher)
@@ -114,8 +119,9 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
             return redirect;
         }
 
-        // СТ / оборудование временно заблокированы в UI — с сервера тоже не принимаем.
-        if (Input.Kind is ServiceRequestKind.SpecTech or ServiceRequestKind.Equipment)
+        // СТ / оборудование временно только админу — чужой POST с этими Kind сбрасываем.
+        if (!CanPickSpecAndEquipmentKinds
+            && Input.Kind is ServiceRequestKind.SpecTech or ServiceRequestKind.Equipment)
         {
             Input.Kind = ServiceRequestKind.Other;
         }

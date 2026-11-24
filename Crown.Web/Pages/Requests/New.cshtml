@@ -19,21 +19,24 @@
             {
                 <div class="form-check">
                     <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.SpecTech)" id="kind-spec"
-                           disabled />
-                    <label class="form-check-label text-muted" for="kind-spec">Запрос спецтехники</label>
+                           disabled="@(!Model.CanPickSpecAndEquipmentKinds)" />
+                    <label class="form-check-label @(Model.CanPickSpecAndEquipmentKinds ? null : "text-muted")" for="kind-spec">Запрос спецтехники</label>
                 </div>
             }
             <div class="form-check">
                 <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Equipment)" id="kind-eq"
-                       disabled />
-                <label class="form-check-label text-muted" for="kind-eq">Запрос оборудования</label>
+                       disabled="@(!Model.CanPickSpecAndEquipmentKinds)" />
+                <label class="form-check-label @(Model.CanPickSpecAndEquipmentKinds ? null : "text-muted")" for="kind-eq">Запрос оборудования</label>
             </div>
             <div class="form-check">
                 <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Other)" id="kind-other" />
                 <label class="form-check-label" for="kind-other">Другое</label>
             </div>
         </div>
-        <div class="form-text">Типы «спецтехника» и «оборудование» временно недоступны.</div>
+        @if (!Model.CanPickSpecAndEquipmentKinds)
+        {
+            <div class="form-text">Типы «спецтехника» и «оборудование» временно недоступны.</div>
+        }
     </div>
 
     <div class="mb-3">
@@ -182,7 +185,7 @@
 
     <div class="crown-form-actions">
         <button type="submit" class="btn btn-save btn-lg">СОХРАНИТЬ</button>
-        <a class="btn btn-outline-secondary btn-lg" href="/">Отмена</a>
+        <a class="btn btn-outline-secondary btn-lg" href="/">Отменить</a>
     </div>
 </form>
 
