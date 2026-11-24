@@ -306,7 +306,7 @@
         <div class="brigade-rating-split mb-3">
             <section class="entity-panel">
                 <h2 class="section-title">Топ-10 претензий</h2>
-                <p class="text-muted small mb-2">Пункты остановок + проверки + ППК.</p>
+                <p class="text-muted small mb-2">Пункты остановок + проверки + ППК. Клик по числу — список записей.</p>
                 @if (topClaims.Count == 0)
                 {
                     <p class="text-muted mb-0">Пока нет повторяющихся претензий.</p>
@@ -318,7 +318,9 @@
                         {
                             <li>
                                 <span>@r.Text</span>
-                                <span class="brigade-top-count">@r.Count</span>
+                                <button type="button" class="brigade-top-count brigade-top-open"
+                                        data-top-kind="claim" data-top-key="@r.Text"
+                                        title="Показать связанные записи">@r.Count</button>
                             </li>
                         }
                     </ol>
@@ -327,7 +329,7 @@
 
             <section class="entity-panel">
                 <h2 class="section-title">% устранения претензий</h2>
-                <p class="text-muted small mb-2">Остановки — галочка «устранено»; проверки/ППК — дата или текст устранения.</p>
+                <p class="text-muted small mb-2">Остановки — галочка на пункте; проверки/ППК — заполнены дата устранения или текст вместо даты.</p>
                 <div class="brigade-resolution-pie" style="@($"background: conic-gradient(#2f8f5b 0% {CssPct(claimResolvedPct)}, #c45c26 {CssPct(claimResolvedPct)} 100%);")" role="img" aria-label="Устранение претензий"></div>
                 <div class="summary-trend-legend mt-2">
                     <span>устр. @d.ResolvedClaimCount (@claimResolvedPct.ToString("0.#")%)</span>
@@ -366,6 +368,7 @@
         <div class="brigade-rating-split mb-3">
             <section class="entity-panel">
                 <h2 class="section-title">Топ-10 работ с замечаниями</h2>
+                <p class="text-muted small mb-2">По числу остановок с этой работой.</p>
                 @if (d.TopWorks.Count == 0)
                 {
                     <p class="text-muted mb-0">Работы в остановках не указаны.</p>
@@ -377,7 +380,32 @@
                         {
                             <li>
                                 <span>@w.Text</span>
-                                <span class="brigade-top-count">@w.Count</span>
+                                <button type="button" class="brigade-top-count brigade-top-open"
+                                        data-top-kind="work" data-top-key="@w.Text"
+                                        title="Показать остановки">@w.Count</button>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+
+            <section class="entity-panel">
+                <h2 class="section-title">Топ-10 работ по часам простоя</h2>
+                <p class="text-muted small mb-2">Сумма часов остановок с этой работой.</p>
+                @if (d.TopWorksByHours.Count == 0)
+                {
+                    <p class="text-muted mb-0">Работы в остановках не указаны.</p>
+                }
+                else
+                {
+                    <ol class="brigade-top-remarks">
+                        @foreach (var w in d.TopWorksByHours)
+                        {
+                            <li>
+                                <span>@w.Text</span>
+                                <button type="button" class="brigade-top-count brigade-top-open"
+                                        data-top-kind="workHours" data-top-key="@w.Text"
+                                        title="Показать остановки">@w.TotalHours.ToString("0.##") ч · @w.Count</button>
                             </li>
                         }
                     </ol>
@@ -485,7 +513,9 @@
                             <li>
                                 <div class="brigade-metric-head">
                                     <span>@s.Name</span>
-                                    <strong>@s.StoppageCount · @s.TotalHours.ToString("0.##") ч</strong>
+                                    <button type="button" class="brigade-top-count brigade-top-open"
+                                            data-top-kind="stopper" data-top-key="@s.Name"
+                                            title="Показать остановки">@s.StoppageCount · @s.TotalHours.ToString("0.##") ч</button>
                                 </div>
                                 <div class="brigade-rank-bar-track" aria-hidden="true">
                                     <div class="brigade-metric-bar brigade-metric-bar-stopper" style="width:@CountBar(s.StoppageCount, maxStopper)"></div>
@@ -524,4 +554,111 @@
 
     }
 </div>
+
+<div class="brigade-remarks-overlay d-none" id="brigadeTopOverlay" hidden>
+    <div class="brigade-remarks-panel" role="dialog" aria-modal="true" aria-labelledby="brigadeTopModalLabel">
+        <div class="brigade-remarks-panel-head">
+            <h2 class="section-title mb-0" id="brigadeTopModalLabel">Связанные записи</h2>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="brigadeTopClose" aria-label="Закрыть">✕</button>
+        </div>
+        <p class="text-muted mb-2" id="brigadeTopMeta"></p>
+        <div id="brigadeTopList" class="brigade-remarks-list"></div>
+        <p class="text-danger d-none" id="brigadeTopError"></p>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const period = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Period));
+    const from = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.From?.ToString("yyyy-MM-dd")));
+    const to = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.To?.ToString("yyyy-MM-dd")));
+    const year = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Year?.ToString()));
+    const month = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Month?.ToString()));
+    const overlay = document.getElementById('brigadeTopOverlay');
+    const list = document.getElementById('brigadeTopList');
+    const meta = document.getElementById('brigadeTopMeta');
+    const title = document.getElementById('brigadeTopModalLabel');
+    const err = document.getElementById('brigadeTopError');
+
+    function openOverlay() {
+        overlay.classList.remove('d-none');
+        overlay.hidden = false;
+    }
+    function closeOverlay() {
+        overlay.classList.add('d-none');
+        overlay.hidden = true;
+    }
+    document.getElementById('brigadeTopClose')?.addEventListener('click', closeOverlay);
+    overlay?.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(); });
+
+    function itemHref(it) {
+        if (it.source === 'inspection') {
+            return `/brigade-rating/stoppage?inspectionId=${encodeURIComponent(it.id)}`;
+        }
+        return `/brigade-rating/stoppage/${encodeURIComponent(it.id)}`;
+    }
+
+    function fmtDate(d) {
+        if (!d) return '';
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+        return m ? `${m[3]}.${m[2]}.${m[1]}` : d;
+    }
+
+    async function openTop(kind, key) {
+        list.innerHTML = '<p class="text-muted">Загрузка…</p>';
+        err.classList.add('d-none');
+        meta.textContent = key || '';
+        title.textContent = kind === 'claim' ? 'Претензия'
+            : kind === 'stopper' ? 'Кто остановил'
+            : kind === 'workHours' ? 'Работа (часы)'
+            : 'Работа';
+        openOverlay();
+        try {
+            const q = new URLSearchParams({
+                handler: 'TopDetails',
+                kind: kind || '',
+                key: key || '',
+                period: period || 'month'
+            });
+            if (from) q.set('from', from);
+            if (to) q.set('to', to);
+            if (year) q.set('year', year);
+            if (month) q.set('month', month);
+            const res = await fetch(`/brigade-rating?${q.toString()}`);
+            if (!res.ok) throw new Error('load_failed');
+            const data = await res.json();
+            if (!data.items?.length) {
+                list.innerHTML = '<p class="text-muted">Записей нет.</p>';
+                return;
+            }
+            list.innerHTML = '';
+            data.items.forEach((it) => {
+                const row = document.createElement('a');
+                row.className = 'brigade-remark-row brigade-top-detail-link';
+                row.href = itemHref(it);
+                const left = document.createElement('div');
+                left.className = 'brigade-remark-text';
+                const hours = it.hours != null ? ` · ${Number(it.hours).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ч` : '';
+                const summary = it.summary ? ` · ${it.summary}` : '';
+                left.textContent = `${fmtDate(it.reportDate)} · ${it.brigadeName}${hours}${summary}`;
+                row.appendChild(left);
+                list.appendChild(row);
+            });
+        } catch {
+            list.innerHTML = '';
+            err.textContent = 'Не удалось загрузить записи.';
+            err.classList.remove('d-none');
+        }
+    }
+
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.brigade-top-open');
+        if (!btn) return;
+        e.preventDefault();
+        openTop(btn.getAttribute('data-top-kind'), btn.getAttribute('data-top-key'));
+    });
+})();
+</script>
+}
 

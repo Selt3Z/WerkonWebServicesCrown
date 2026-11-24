@@ -1,0 +1,57 @@
+@page "/admin/feedback"
+@model AdminFeedbackModel
+@{
+    ViewData["Title"] = "Обращения";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Обращения</h1>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="get" class="list-filters clients-filters mb-3">
+    <div class="filter-field filter-field-inline filter-field-search">
+        <label class="form-label" for="q">Поиск</label>
+        <input id="q" class="form-control" type="search" name="q" value="@Model.Q"
+               placeholder="Автор, текст, раздел" />
+    </div>
+    <button type="submit" class="btn btn-outline-secondary">Найти</button>
+</form>
+
+@if (Model.Items.Count == 0)
+{
+    <p class="text-muted">Обращений пока нет.</p>
+}
+else
+{
+    <div class="crown-table-wrap">
+        <table class="table crown-table">
+            <thead>
+            <tr>
+                <th>Когда</th>
+                <th>Кто</th>
+                <th>Раздел</th>
+                <th>Сообщение</th>
+                <th class="num">Файлы</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model.Items)
+            {
+                <tr class="crown-row-link" data-href="/admin/feedback/@item.Id" style="cursor:pointer"
+                    onclick="if(!event.target.closest('a,button')) location.href=this.dataset.href">
+                    <td class="col-date">@Model.FmtWhen(item.CreatedAt)</td>
+                    <td>@item.DisplayName</td>
+                    <td>@(string.IsNullOrEmpty(item.SectionLabel) ? "—" : item.SectionLabel)</td>
+                    <td>@item.BodyPreview</td>
+                    <td class="num">@(item.AttachmentCount > 0 ? item.AttachmentCount.ToString() : "—")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

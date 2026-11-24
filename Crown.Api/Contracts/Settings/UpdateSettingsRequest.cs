@@ -22,4 +22,9 @@ public sealed class UpdateSettingsRequest
 
     /// <summary>standard | custom</summary>
     public string? BrandLogoMode { get; set; }
+
+    public string? BrigadeMorningWindowStart { get; set; }
+    public string? BrigadeMorningWindowEnd { get; set; }
+    public string? BrigadeEveningWindowStart { get; set; }
+    public string? BrigadeEveningWindowEnd { get; set; }
 }

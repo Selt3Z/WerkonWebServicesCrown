@@ -18,19 +18,22 @@
             @if (Model.CanCreateTransport)
             {
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.SpecTech)" id="kind-spec" />
-                    <label class="form-check-label" for="kind-spec">Запрос спецтехники</label>
+                    <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.SpecTech)" id="kind-spec"
+                           disabled />
+                    <label class="form-check-label text-muted" for="kind-spec">Запрос спецтехники</label>
                 </div>
             }
             <div class="form-check">
-                <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Equipment)" id="kind-eq" />
-                <label class="form-check-label" for="kind-eq">Запрос оборудования</label>
+                <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Equipment)" id="kind-eq"
+                       disabled />
+                <label class="form-check-label text-muted" for="kind-eq">Запрос оборудования</label>
             </div>
             <div class="form-check">
                 <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Other)" id="kind-other" />
                 <label class="form-check-label" for="kind-other">Другое</label>
             </div>
         </div>
+        <div class="form-text">Типы «спецтехника» и «оборудование» временно недоступны.</div>
     </div>
 
     <div class="mb-3">
@@ -45,9 +48,9 @@
                 <label class="form-check-label" for="urg-fast">Срочная</label>
             </div>
         </div>
-        @if (User.IsInRole(AppRoles.Brigade))
+        @if (User.IsInRole(AppRoles.Brigade) && !string.IsNullOrEmpty(Model.BrigadeWindowHint))
         {
-            <div class="form-text">Плановые заявки бригада подаёт только с 04:00 до 07:00 и с 15:00 до 18:00. Срочные — в любое время.</div>
+            <div class="form-text">@Model.BrigadeWindowHint</div>
         }
     </div>
 
@@ -146,6 +149,7 @@
         <div class="mb-3">
             <label class="form-label" asp-for="Input.SpecPlannedAt">Плановое время <span class="crown-req">*</span></label>
             <input class="form-control" type="datetime-local" asp-for="Input.SpecPlannedAt" />
+            <div class="form-text">Когда нужна спецтехника на объекте (не путать со сроком исполнения заявки).</div>
         </div>
     </div>
 

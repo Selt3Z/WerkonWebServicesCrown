@@ -215,6 +215,10 @@ public sealed class BrigadeRatingDashboardResponse
     public List<RemarkTopItemResponse> TopRemarks { get; set; } = [];
 
     public List<WorkTopItemResponse> TopWorks { get; set; } = [];
+
+    /// <summary>Топ работ по сумме часов простоя (остановки).</summary>
+    public List<WorkTopItemResponse> TopWorksByHours { get; set; } = [];
+
     public List<BrigadeStoppageListItemResponse> Stoppages { get; set; } = [];
 }
 
@@ -283,4 +287,27 @@ public sealed class WorkTopItemResponse
 {
     public string Text { get; set; } = string.Empty;
     public int Count { get; set; }
+    /// <summary>Сумма часов простоя по этой работе (для TopWorksByHours).</summary>
+    public decimal TotalHours { get; set; }
+}
+
+/// <summary>Детали строки топа (связанные остановки/проверки).</summary>
+public sealed class BrigadeTopDetailsResponse
+{
+    public string Kind { get; set; } = string.Empty;
+    public string Key { get; set; } = string.Empty;
+    public List<BrigadeTopDetailItemResponse> Items { get; set; } = [];
+}
+
+public sealed class BrigadeTopDetailItemResponse
+{
+    /// <summary>stoppage | inspection</summary>
+    public string Source { get; set; } = string.Empty;
+    public Guid Id { get; set; }
+    public DateOnly ReportDate { get; set; }
+    public string BrigadeName { get; set; } = string.Empty;
+    public decimal? Hours { get; set; }
+    public string? Summary { get; set; }
+    /// <summary>Вид проверки: Supervising / Pdk / Pbiot / Ppk.</summary>
+    public string? InspectionKind { get; set; }
 }

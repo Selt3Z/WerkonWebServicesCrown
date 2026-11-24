@@ -85,7 +85,11 @@ public sealed class SettingsModel(CrownApiClient api, AppTime appTime) : PageMod
                 AuditRetentionDays = Input.AuditRetentionDays,
                 DocumentationTrashRetentionDays = Input.DocumentationTrashRetentionDays,
                 ListPageSize = Input.ListPageSize,
-                BrandLogoMode = mode
+                BrandLogoMode = mode,
+                BrigadeMorningWindowStart = Input.BrigadeMorningWindowStart,
+                BrigadeMorningWindowEnd = Input.BrigadeMorningWindowEnd,
+                BrigadeEveningWindowStart = Input.BrigadeEveningWindowStart,
+                BrigadeEveningWindowEnd = Input.BrigadeEveningWindowEnd
             },
             HttpContext.RequestAborted);
 

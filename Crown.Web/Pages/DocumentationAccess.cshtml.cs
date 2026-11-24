@@ -14,26 +14,29 @@ public sealed class DocumentationAccessModel(CrownApiClient api) : PageModel
 
     public List<DocumentationAclUser> Users { get; private set; } = [];
 
-    public List<DocumentationLibraryMember> Members { get; private set; } = [];
+    /// <summary>Строки UI: цеха (бригады) + остальные пользователи поштучно.</summary>
+    public List<AclRow> Rows { get; private set; } = [];
 
-    public DocumentationLegacySources? Legacy { get; private set; }
+    public List<DocumentationLibraryMember> Members { get; private set; } = [];
 
     [BindProperty(SupportsGet = true)]
     public Guid? LibraryId { get; set; }
 
-    [BindProperty]
-    public Guid? MigrateOwnerUserId { get; set; }
-
-    [BindProperty]
-    public Guid? MigrateLibraryId { get; set; }
-
-    /// <summary>Форма: UserId отмеченных участников.</summary>
+    /// <summary>Форма: UserId отмеченных участников (не-бригады + развёрнутые цеха).</summary>
     [BindProperty]
     public List<Guid> MemberUserIds { get; set; } = [];
 
     /// <summary>Форма: UserId с правом записи.</summary>
     [BindProperty]
     public List<Guid> WriteUserIds { get; set; } = [];
+
+    /// <summary>Ключи цехов с чтением (нормализованное имя цеха).</summary>
+    [BindProperty]
+    public List<string> MemberWorkshopKeys { get; set; } = [];
+
+    /// <summary>Ключи цехов с записью.</summary>
+    [BindProperty]
+    public List<string> WriteWorkshopKeys { get; set; } = [];
 
     public string? Error { get; private set; }
 
@@ -51,12 +54,57 @@ public sealed class DocumentationAccessModel(CrownApiClient api) : PageModel
             return Page();
         }
 
-        var members = MemberUserIds
+        // Сначала подгружаем пользователей, чтобы развернуть цеха → UserId.
+        var usersResult = await api.GetAsync<List<DocumentationAclUser>>(
+            "api/documentation/admin/users",
+            HttpContext.RequestAborted);
+        if (!usersResult.Ok || usersResult.Data is null)
+        {
+            Error = usersResult.Error ?? "Не удалось загрузить пользователей.";
+            await LoadAsync();
+            return Page();
+        }
+
+        Users = usersResult.Data;
+        var workshopRead = MemberWorkshopKeys
+            .Select(NormalizeWorkshop)
+            .Where(x => x.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var workshopWrite = WriteWorkshopKeys
+            .Select(NormalizeWorkshop)
+            .Where(x => x.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var fromWorkshops = Users
+            .Where(u => IsBrigade(u)
+                        && !string.IsNullOrWhiteSpace(u.BrigadeWorkshop)
+                        && workshopRead.Contains(NormalizeWorkshop(u.BrigadeWorkshop)))
+            .Select(u => u.UserId)
+            .ToList();
+
+        var writeFromWorkshops = Users
+            .Where(u => IsBrigade(u)
+                        && !string.IsNullOrWhiteSpace(u.BrigadeWorkshop)
+                        && workshopWrite.Contains(NormalizeWorkshop(u.BrigadeWorkshop)))
+            .Select(u => u.UserId)
+            .ToHashSet();
+
+        var memberIds = MemberUserIds
+            .Concat(fromWorkshops)
             .Distinct()
+            .ToList();
+
+        var writeIds = WriteUserIds
+            .Concat(writeFromWorkshops)
+            .Where(memberIds.Contains)
+            .Distinct()
+            .ToHashSet();
+
+        var members = memberIds
             .Select(id => new
             {
                 UserId = id,
-                CanWrite = WriteUserIds.Contains(id)
+                CanWrite = writeIds.Contains(id)
             })
             .ToList();
 
@@ -77,43 +125,6 @@ public sealed class DocumentationAccessModel(CrownApiClient api) : PageModel
         }
 
         TempData["Ok"] = "Участники сохранены.";
-        return RedirectToPage(new { LibraryId });
-    }
-
-    public async Task<IActionResult> OnPostMigrateAsync()
-    {
-        if (MigrateOwnerUserId is null || MigrateLibraryId is null)
-        {
-            Error = "Выберите источник и каталог для переноса.";
-            await LoadAsync();
-            return Page();
-        }
-
-        var result = await api.PostAsync<MigrateDocumentationResult>(
-            "api/documentation/admin/migrate",
-            new
-            {
-                Items = new[]
-                {
-                    new { OwnerUserId = MigrateOwnerUserId.Value, LibraryId = MigrateLibraryId.Value }
-                }
-            },
-            HttpContext.RequestAborted);
-        if (result.IsUnauthorized)
-        {
-            return Challenge();
-        }
-
-        if (!result.Ok || result.Data is null)
-        {
-            Error = result.Error ?? "Перенос не выполнен.";
-            await LoadAsync();
-            return Page();
-        }
-
-        var r = result.Data;
-        TempData["Ok"] =
-            $"Перенесено: папок {r.FoldersUpdated}, файлов {r.FilesUpdated}, участников +{r.MembersAdded}.";
         return RedirectToPage(new { LibraryId });
     }
 
@@ -158,14 +169,62 @@ public sealed class DocumentationAccessModel(CrownApiClient api) : PageModel
             }
         }
 
-        var legacy = await api.GetAsync<DocumentationLegacySources>(
-            "api/documentation/admin/legacy-sources",
-            HttpContext.RequestAborted);
-        if (legacy.Ok)
+        Rows = BuildRows(Users);
+        return Page();
+    }
+
+    private static List<AclRow> BuildRows(List<DocumentationAclUser> users)
+    {
+        var rows = new List<AclRow>();
+
+        var brigadesWithWorkshop = users
+            .Where(u => IsBrigade(u) && !string.IsNullOrWhiteSpace(u.BrigadeWorkshop))
+            .GroupBy(u => NormalizeWorkshop(u.BrigadeWorkshop), StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var g in brigadesWithWorkshop)
         {
-            Legacy = legacy.Data;
+            var ids = g.Select(x => x.UserId).ToList();
+            rows.Add(new AclRow
+            {
+                IsWorkshop = true,
+                WorkshopKey = g.Key,
+                Label = $"Цех {g.First().BrigadeWorkshop!.Trim()}",
+                SubLabel = $"бригад: {ids.Count}",
+                UserIds = ids
+            });
         }
 
-        return Page();
+        // Не-бригады + бригады без цеха — поштучно.
+        foreach (var u in users
+                     .Where(u => !IsBrigade(u) || string.IsNullOrWhiteSpace(u.BrigadeWorkshop))
+                     .OrderBy(u => u.DisplayName)
+                     .ThenBy(u => u.UserName))
+        {
+            rows.Add(new AclRow
+            {
+                IsWorkshop = false,
+                Label = u.DisplayName,
+                SubLabel = u.UserName,
+                UserIds = [u.UserId]
+            });
+        }
+
+        return rows;
+    }
+
+    private static bool IsBrigade(DocumentationAclUser u) =>
+        string.Equals(u.Role, AppRoles.Brigade, StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeWorkshop(string? value) =>
+        (value ?? string.Empty).Trim();
+
+    public sealed class AclRow
+    {
+        public bool IsWorkshop { get; set; }
+        public string? WorkshopKey { get; set; }
+        public string Label { get; set; } = string.Empty;
+        public string SubLabel { get; set; } = string.Empty;
+        public List<Guid> UserIds { get; set; } = [];
     }
 }

@@ -5,8 +5,6 @@ public sealed class UserListItemResponse
     public Guid Id { get; set; }
     public string UserName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
-    /// <summary>Заголовок раздела документации; null/пусто — в UI показываем DisplayName.</summary>
-    public string? DocumentationTitle { get; set; }
     /// <summary>Номер бригады (только роль Brigade).</summary>
     public string? BrigadeNumber { get; set; }
     /// <summary>Цех бригады (только роль Brigade).</summary>

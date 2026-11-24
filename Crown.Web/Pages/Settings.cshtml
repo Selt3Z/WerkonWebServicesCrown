@@ -76,6 +76,35 @@
                 <div class="form-text">Файлы и папки, удалённые подразделением или диспетчером, хранятся в корзине столько дней, затем удаляются автоматически. Админ удаляет сразу.</div>
             </div>
 
+            <div class="settings-field">
+                <label class="form-label">Подача плановых заявок бригадой</label>
+                <div class="settings-field-inline-pair">
+                    <div class="settings-field">
+                        <label class="form-label" for="brigade-morning-start">Утро с</label>
+                        <input id="brigade-morning-start" class="form-control" type="time"
+                               name="Input.BrigadeMorningWindowStart" value="@Model.Input.BrigadeMorningWindowStart" required />
+                    </div>
+                    <div class="settings-field">
+                        <label class="form-label" for="brigade-morning-end">до</label>
+                        <input id="brigade-morning-end" class="form-control" type="time"
+                               name="Input.BrigadeMorningWindowEnd" value="@Model.Input.BrigadeMorningWindowEnd" required />
+                    </div>
+                </div>
+                <div class="settings-field-inline-pair mt-2">
+                    <div class="settings-field">
+                        <label class="form-label" for="brigade-evening-start">Вечер с</label>
+                        <input id="brigade-evening-start" class="form-control" type="time"
+                               name="Input.BrigadeEveningWindowStart" value="@Model.Input.BrigadeEveningWindowStart" required />
+                    </div>
+                    <div class="settings-field">
+                        <label class="form-label" for="brigade-evening-end">до</label>
+                        <input id="brigade-evening-end" class="form-control" type="time"
+                               name="Input.BrigadeEveningWindowEnd" value="@Model.Input.BrigadeEveningWindowEnd" required />
+                    </div>
+                </div>
+                <div class="form-text">Полуоткрытые интервалы [начало, конец). Срочные заявки не ограничиваются.</div>
+            </div>
+
             <div class="settings-field settings-field-check">
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" asp-for="Input.DispatcherCanHardDelete" id="dispatcherCanHardDelete" />

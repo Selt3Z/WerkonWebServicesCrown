@@ -443,12 +443,17 @@ public sealed class RequestsController : ControllerBase
         if (User.IsInRole(AppRoles.Brigade) && !request.IsUrgent)
         {
             var localTime = _time.GetNowLocal().Time;
-            if (!IsBrigadePlannedWindow(localTime))
+            var windows = await _settings.GetBrigadePlannedWindowsAsync(cancellationToken);
+            if (!IsBrigadePlannedWindow(localTime, windows))
             {
+                var m0 = windows.MorningStart.ToString("HH:mm");
+                var m1 = windows.MorningEnd.ToString("HH:mm");
+                var e0 = windows.EveningStart.ToString("HH:mm");
+                var e1 = windows.EveningEnd.ToString("HH:mm");
                 return BadRequest(new
                 {
                     error = "brigade_planned_window",
-                    message = "Плановые заявки бригада может подавать только с 04:00 до 07:00 и с 15:00 до 18:00."
+                    message = $"Плановые заявки бригада может подавать только с {m0} до {m1} и с {e0} до {e1}."
                 });
             }
         }
@@ -1580,10 +1585,12 @@ public sealed class RequestsController : ControllerBase
         return null;
     }
 
-    /// <summary>Окна подачи плановой заявки бригадой: [04:00, 07:00) ∪ [15:00, 18:00).</summary>
-    private static bool IsBrigadePlannedWindow(TimeOnly t) =>
-        (t >= new TimeOnly(4, 0) && t < new TimeOnly(7, 0))
-        || (t >= new TimeOnly(15, 0) && t < new TimeOnly(18, 0));
+    /// <summary>Окна подачи плановой заявки бригадой: [morning) ∪ [evening).</summary>
+    private static bool IsBrigadePlannedWindow(
+        TimeOnly t,
+        (TimeOnly MorningStart, TimeOnly MorningEnd, TimeOnly EveningStart, TimeOnly EveningEnd) w) =>
+        (t >= w.MorningStart && t < w.MorningEnd)
+        || (t >= w.EveningStart && t < w.EveningEnd);
 
     /// <summary>На accept исполнитель указывает конкретную свободную единицу нужной категории/типа.</summary>
     private async Task<string?> ApplyAssignmentOnAcceptAsync(

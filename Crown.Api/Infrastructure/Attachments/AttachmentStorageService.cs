@@ -81,6 +81,25 @@ public sealed class AttachmentStorageService(IOptions<AttachmentStorageOptions> 
         return (relative.Replace('\\', '/'), size);
     }
 
+    /// <summary>Обращения: feedback/{reportId}/{guid}_{name}.</summary>
+    public async Task<(string RelativePath, long Size)> SaveFeedbackAsync(
+        Guid reportId,
+        string originalFileName,
+        Stream content,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_options.RootPath);
+        var safeName = SanitizeFileName(originalFileName);
+        var relative = Path.Combine("feedback", reportId.ToString("N"), $"{Guid.NewGuid():N}_{safeName}");
+        var absolute = GetAbsolutePath(relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
+
+        await using var fs = File.Create(absolute);
+        await content.CopyToAsync(fs, cancellationToken);
+        var size = fs.Length;
+        return (relative.Replace('\\', '/'), size);
+    }
+
     /// <summary>Документация: docs/{libraryId}/{folderOrRoot}/{guid}_{name}.</summary>
     public async Task<(string RelativePath, long Size)> SaveDocumentationAsync(
         Guid libraryId,

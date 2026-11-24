@@ -1,0 +1,61 @@
+@page "/admin/feedback/{id:guid}"
+@model AdminFeedbackDetailModel
+@{
+    ViewData["Title"] = "Обращение";
+    var item = Model.Item;
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Обращение</h1>
+    <a class="btn btn-outline-secondary" href="/admin/feedback">К списку</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+else if (item is not null)
+{
+    <section class="entity-panel">
+        <dl class="entity-meta">
+            <div class="entity-meta-item">
+                <dt>Когда</dt>
+                <dd>@Model.FmtWhen(item.CreatedAt)</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Кто</dt>
+                <dd>@item.DisplayName</dd>
+            </div>
+            <div class="entity-meta-item">
+                <dt>Раздел</dt>
+                <dd>@(string.IsNullOrEmpty(item.SectionLabel) ? "—" : item.SectionLabel)</dd>
+            </div>
+        </dl>
+
+        <h2 class="h6 mt-3">Сообщение</h2>
+        <div class="mb-3" style="white-space: pre-wrap;">@item.Body</div>
+
+        @if (item.Attachments.Count > 0)
+        {
+            <h2 class="h6">Вложения</h2>
+            <ul class="mb-0">
+                @foreach (var a in item.Attachments)
+                {
+                    <li>
+                        <a href="/admin/feedback/@item.Id?handler=Download&amp;attachmentId=@a.Id">@a.FileName</a>
+                        <span class="text-muted">(@FormatBytes(a.SizeBytes))</span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@functions {
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} Б";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} КБ";
+        return $"{bytes / (1024.0 * 1024.0):0.#} МБ";
+    }
+}

@@ -1238,15 +1238,26 @@ public sealed class BrigadeRatingController(
             .ToList();
 
         // Топ по тексту работы; пустые (не указана) пропускаем.
-        var topWorks = rows
+        var workGroups = rows
             .Where(x => !string.IsNullOrWhiteSpace(x.WorkDescription))
             .GroupBy(x => x.WorkDescription.Trim(), StringComparer.OrdinalIgnoreCase)
             .Select(g => new WorkTopItemResponse
             {
                 Text = g.First().WorkDescription.Trim(),
-                Count = g.Count()
+                Count = g.Count(),
+                TotalHours = g.Sum(x => x.Hours)
             })
+            .ToList();
+
+        var topWorks = workGroups
             .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Text)
+            .Take(10)
+            .ToList();
+
+        var topWorksByHours = workGroups
+            .OrderByDescending(x => x.TotalHours)
+            .ThenByDescending(x => x.Count)
             .ThenBy(x => x.Text)
             .Take(10)
             .ToList();
@@ -1306,10 +1317,169 @@ public sealed class BrigadeRatingController(
             TopClaims = topClaims,
             TopRemarks = topClaims,
             TopWorks = topWorks,
+            TopWorksByHours = topWorksByHours,
             // Список остановок — отдельная страница /brigade-rating/stoppages.
             Stoppages = []
         });
     }
+
+    /// <summary>
+    /// Связанные записи для строки топа: kind=claim|work|workHours|stopper, key=текст.
+    /// </summary>
+    [HttpGet("dashboard/top-details")]
+    public async Task<ActionResult<BrigadeTopDetailsResponse>> TopDetails(
+        [FromQuery] string kind,
+        [FromQuery] string key,
+        [FromQuery] string? period = null,
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        [FromQuery] int? year = null,
+        [FromQuery] int? month = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanViewAsync(cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var kindKey = (kind ?? string.Empty).Trim().ToLowerInvariant();
+        if (kindKey is not ("claim" or "work" or "workhours" or "stopper"))
+        {
+            return BadRequest(new { error = "kind_invalid", message = "kind: claim|work|workHours|stopper." });
+        }
+
+        var matchKey = (key ?? string.Empty).Trim();
+        if (matchKey.Length == 0)
+        {
+            return BadRequest(new { error = "key_required", message = "Укажите key." });
+        }
+
+        var (_, start, end) = ResolveDashboardPeriod(period, from, to, year, month);
+        var seeAll = true;
+
+        var stoppages = await ScopeStoppages(db.BrigadeStoppages.AsNoTracking()
+                .Include(x => x.Remarks)
+                .Where(x => x.ReportDate >= start && x.ReportDate <= end), seeAll)
+            .ToListAsync(cancellationToken);
+
+        var liveNames = await LoadBrigadeDisplayNamesAsync(
+            stoppages.Select(x => x.BrigadeUserId),
+            cancellationToken);
+
+        var items = new List<BrigadeTopDetailItemResponse>();
+
+        if (kindKey is "work" or "workhours")
+        {
+            foreach (var s in stoppages
+                .Where(x => string.Equals(x.WorkDescription.Trim(), matchKey, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(x => x.ReportDate)
+                .ThenByDescending(x => x.Hours))
+            {
+                items.Add(new BrigadeTopDetailItemResponse
+                {
+                    Source = "stoppage",
+                    Id = s.Id,
+                    ReportDate = s.ReportDate,
+                    BrigadeName = ResolveBrigadeDisplayName(s.BrigadeUserId, s.BrigadeName, liveNames),
+                    Hours = s.Hours,
+                    Summary = string.IsNullOrWhiteSpace(s.StoppedByName) ? null : s.StoppedByName.Trim()
+                });
+            }
+        }
+        else if (kindKey == "stopper")
+        {
+            var stopperName = string.Equals(matchKey, "—", StringComparison.Ordinal) ? string.Empty : matchKey;
+            foreach (var s in stoppages
+                .Where(x =>
+                {
+                    var n = string.IsNullOrWhiteSpace(x.StoppedByName) ? string.Empty : x.StoppedByName.Trim();
+                    return string.Equals(n, stopperName, StringComparison.OrdinalIgnoreCase)
+                        || (stopperName.Length == 0 && n.Length == 0);
+                })
+                .OrderByDescending(x => x.ReportDate)
+                .ThenByDescending(x => x.Hours))
+            {
+                items.Add(new BrigadeTopDetailItemResponse
+                {
+                    Source = "stoppage",
+                    Id = s.Id,
+                    ReportDate = s.ReportDate,
+                    BrigadeName = ResolveBrigadeDisplayName(s.BrigadeUserId, s.BrigadeName, liveNames),
+                    Hours = s.Hours,
+                    Summary = string.IsNullOrWhiteSpace(s.WorkDescription) ? null : s.WorkDescription.Trim()
+                });
+            }
+        }
+        else // claim
+        {
+            foreach (var s in stoppages
+                .Where(x => x.Remarks.Any(r =>
+                    string.Equals(r.Text.Trim(), matchKey, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(x => x.ReportDate))
+            {
+                items.Add(new BrigadeTopDetailItemResponse
+                {
+                    Source = "stoppage",
+                    Id = s.Id,
+                    ReportDate = s.ReportDate,
+                    BrigadeName = ResolveBrigadeDisplayName(s.BrigadeUserId, s.BrigadeName, liveNames),
+                    Hours = s.Hours,
+                    Summary = "Остановка"
+                });
+            }
+
+            var inspections = await db.BrigadeInspections.AsNoTracking()
+                .Include(x => x.Remarks)
+                .Where(x => x.ReportDate >= start && x.ReportDate <= end)
+                .ToListAsync(cancellationToken);
+
+            var inspIds = inspections.Select(x => x.BrigadeUserId);
+            var inspNames = await LoadBrigadeDisplayNamesAsync(
+                stoppages.Select(x => x.BrigadeUserId).Concat(inspIds),
+                cancellationToken);
+
+            foreach (var insp in inspections
+                .Where(x => x.Remarks.Any(r =>
+                    string.Equals(r.Text.Trim(), matchKey, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(x => x.ReportDate))
+            {
+                var snap = string.IsNullOrWhiteSpace(insp.BrigadeNumberSnapshot)
+                    ? string.Empty
+                    : insp.BrigadeNumberSnapshot;
+                items.Add(new BrigadeTopDetailItemResponse
+                {
+                    Source = "inspection",
+                    Id = insp.Id,
+                    ReportDate = insp.ReportDate,
+                    BrigadeName = ResolveBrigadeDisplayName(insp.BrigadeUserId, snap, inspNames),
+                    Hours = null,
+                    Summary = InspectionKindLabel(insp.Kind),
+                    InspectionKind = insp.Kind.ToString()
+                });
+            }
+
+            items = items
+                .OrderByDescending(x => x.ReportDate)
+                .ThenBy(x => x.Source)
+                .ToList();
+        }
+
+        return Ok(new BrigadeTopDetailsResponse
+        {
+            Kind = kindKey,
+            Key = matchKey,
+            Items = items
+        });
+    }
+
+    private static string InspectionKindLabel(BrigadeInspectionKind kind) => kind switch
+    {
+        BrigadeInspectionKind.Supervising => "Надзор",
+        BrigadeInspectionKind.Pdk => "ПДК",
+        BrigadeInspectionKind.Pbiot => "ПБиОТ",
+        BrigadeInspectionKind.Ppk => "ППК",
+        _ => kind.ToString()
+    };
 
     [HttpGet("export.xlsx")]
     public async Task<IActionResult> ExportXlsx(

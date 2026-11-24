@@ -131,10 +131,6 @@ public sealed class UsersController : ControllerBase
             Id = Guid.NewGuid(),
             UserName = request.UserName.Trim(),
             DisplayName = request.DisplayName.Trim(),
-            // Заголовок раздела — только у роли Department (у остальных нет своего раздела).
-            DocumentationTitle = IsDepartmentRole(role)
-                ? NormalizeDocumentationTitle(request.DocumentationTitle)
-                : null,
             // Номер/цех — только у роли Brigade.
             BrigadeNumber = IsBrigadeRole(role) ? NormalizeBrigadeField(request.BrigadeNumber) : null,
             BrigadeWorkshop = IsBrigadeRole(role) ? NormalizeBrigadeField(request.BrigadeWorkshop) : null,
@@ -228,11 +224,7 @@ public sealed class UsersController : ControllerBase
         }
 
         user.DisplayName = request.DisplayName.Trim();
-        // Поля зависят от НОВОЙ роли: при уходе с Department/Brigade значения очищаются,
-        // при входе в роль берутся из запроса.
-        user.DocumentationTitle = IsDepartmentRole(newRole)
-            ? NormalizeDocumentationTitle(request.DocumentationTitle)
-            : null;
+        // При уходе с Brigade номер/цех очищаются; при входе берутся из запроса.
         user.BrigadeNumber = IsBrigadeRole(newRole) ? NormalizeBrigadeField(request.BrigadeNumber) : null;
         user.BrigadeWorkshop = IsBrigadeRole(newRole) ? NormalizeBrigadeField(request.BrigadeWorkshop) : null;
         // Seed admin нельзя деактивировать из UI/API — иначе потеряем вход в систему.
@@ -380,11 +372,6 @@ public sealed class UsersController : ControllerBase
         }
 
         user.DisplayName = request.DisplayName.Trim();
-        // Self: только Department может менять заголовок раздела документации.
-        if (await _userManager.IsInRoleAsync(user, AppRoles.Department))
-        {
-            user.DocumentationTitle = NormalizeDocumentationTitle(request.DocumentationTitle);
-        }
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -529,7 +516,6 @@ public sealed class UsersController : ControllerBase
             DisplayName = forDisplay
                 ? UserDisplay.FormatUserDisplay(user, isBrigade)
                 : (user.DisplayName ?? string.Empty),
-            DocumentationTitle = user.DocumentationTitle,
             BrigadeNumber = user.BrigadeNumber,
             BrigadeWorkshop = user.BrigadeWorkshop,
             Role = role,
@@ -537,15 +523,6 @@ public sealed class UsersController : ControllerBase
             LastActivityAtUtc = user.LastActivityAtUtc
         };
     }
-
-    private static string? NormalizeDocumentationTitle(string? value)
-    {
-        var trimmed = (value ?? string.Empty).Trim();
-        return trimmed.Length == 0 ? null : trimmed;
-    }
-
-    private static bool IsDepartmentRole(string? role) =>
-        string.Equals(role, AppRoles.Department, StringComparison.Ordinal);
 
     private static bool IsBrigadeRole(string? role) =>
         string.Equals(role, AppRoles.Brigade, StringComparison.Ordinal);

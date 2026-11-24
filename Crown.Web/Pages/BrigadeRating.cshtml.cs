@@ -147,6 +147,49 @@ public sealed class BrigadeRatingModel(CrownApiClient api, AppTime time) : PageM
         return File(stream, contentType, fileName);
     }
 
+    /// <summary>JSON для модалки топа: связанные остановки/проверки.</summary>
+    public async Task<IActionResult> OnGetTopDetailsAsync(
+        string kind,
+        string key,
+        string? period,
+        DateOnly? from,
+        DateOnly? to,
+        int? year,
+        int? month)
+    {
+        if (!CanAccess)
+        {
+            return Forbid();
+        }
+
+        var periodKey = NormalizePeriod(period ?? Period);
+        var url = UiHelpers.BuildUrl(
+            "api/brigade-rating/dashboard/top-details",
+            ("kind", kind),
+            ("key", key),
+            ("period", periodKey == "custom" ? null : periodKey),
+            ("from", periodKey == "custom" ? from?.ToString("yyyy-MM-dd") : null),
+            ("to", periodKey == "custom" ? to?.ToString("yyyy-MM-dd") : null),
+            ("year", periodKey is "month" or "year" ? year?.ToString() : null),
+            ("month", periodKey == "month" ? month?.ToString() : null));
+
+        var result = await api.GetAsync<BrigadeTopDetails>(url, HttpContext.RequestAborted);
+        if (result.IsUnauthorized)
+        {
+            return Challenge();
+        }
+
+        if (!result.Ok || result.Data is null)
+        {
+            return new JsonResult(new { error = result.Error ?? "load_failed" })
+            {
+                StatusCode = result.Status is >= 400 and < 600 ? result.Status : 502
+            };
+        }
+
+        return new JsonResult(result.Data, CrownApiClient.JsonOptions);
+    }
+
     private static string NormalizePeriod(string? period) =>
         (period ?? "month").Trim().ToLowerInvariant() switch
         {

@@ -157,6 +157,26 @@ public sealed class IdentitySeedHostedService : IHostedService
             AppSettingsDefaults.DocumentationTrashRetentionDays.ToString(),
             cancellationToken);
         await SeedSettingIfMissingAsync(dbContext, AppSettingKeys.ListPageSize, AppSettingsDefaults.ListPageSize.ToString(), cancellationToken);
+        await SeedSettingIfMissingAsync(
+            dbContext,
+            AppSettingKeys.BrigadeMorningWindowStart,
+            AppSettingsDefaults.BrigadeMorningWindowStart.ToString("HH:mm"),
+            cancellationToken);
+        await SeedSettingIfMissingAsync(
+            dbContext,
+            AppSettingKeys.BrigadeMorningWindowEnd,
+            AppSettingsDefaults.BrigadeMorningWindowEnd.ToString("HH:mm"),
+            cancellationToken);
+        await SeedSettingIfMissingAsync(
+            dbContext,
+            AppSettingKeys.BrigadeEveningWindowStart,
+            AppSettingsDefaults.BrigadeEveningWindowStart.ToString("HH:mm"),
+            cancellationToken);
+        await SeedSettingIfMissingAsync(
+            dbContext,
+            AppSettingKeys.BrigadeEveningWindowEnd,
+            AppSettingsDefaults.BrigadeEveningWindowEnd.ToString("HH:mm"),
+            cancellationToken);
         var appTimeZone = scope.ServiceProvider.GetRequiredService<AppTimeZone>();
         appTimeZone.SetTimeZoneId(timeZoneSetting.Value);
     }

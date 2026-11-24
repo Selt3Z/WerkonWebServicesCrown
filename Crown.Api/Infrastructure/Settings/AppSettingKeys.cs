@@ -27,4 +27,12 @@ public static class AppSettingKeys
     public const string DocumentationTrashRetentionDays = "DocumentationTrashRetentionDays";
 
     public const string ListPageSize = "ListPageSize";
+
+    /// <summary>Утреннее окно подачи плановых заявок бригадой (TimeOnly HH:mm).</summary>
+    public const string BrigadeMorningWindowStart = "BrigadeMorningWindowStart";
+    public const string BrigadeMorningWindowEnd = "BrigadeMorningWindowEnd";
+
+    /// <summary>Вечернее окно подачи плановых заявок бригадой (TimeOnly HH:mm).</summary>
+    public const string BrigadeEveningWindowStart = "BrigadeEveningWindowStart";
+    public const string BrigadeEveningWindowEnd = "BrigadeEveningWindowEnd";
 }

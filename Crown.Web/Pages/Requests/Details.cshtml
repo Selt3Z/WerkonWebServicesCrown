@@ -59,6 +59,10 @@
                             </button>
                         </form>
                     }
+                    @if (Model.CanEdit)
+                    {
+                        <a class="btn btn-sm btn-outline-primary" href="/requests/@item.Id/edit">Редактировать</a>
+                    }
                     <a class="btn btn-sm btn-outline-secondary" href="/">&larr; К списку</a>
                 </div>
             </div>
@@ -152,7 +156,7 @@
                         <dd>@(item.SpecOperation ?? "—")</dd>
                     </div>
                     <div class="entity-meta-item">
-                        <dt>План</dt>
+                        <dt title="Когда нужна спецтехника на объекте">Плановое время</dt>
                         <dd>@Time.Format(item.SpecPlannedAt)</dd>
                     </div>
                     <div class="entity-meta-item">
@@ -388,117 +392,6 @@
             <button type="submit" class="btn btn-act btn-act-complaint">Подать жалобу</button>
             <a class="btn btn-secondary" href="/requests/@item.Id">Отмена</a>
         </form>
-    }
-
-    @if (Model.CanEdit)
-    {
-        <section class="page-section">
-            <h3 class="section-title">Редактировать заявку</h3>
-            @if (!string.IsNullOrWhiteSpace(item.LastEditReason))
-            {
-                <p class="text-muted small mb-2">
-                    Последняя правка: @Time.Format(item.LastEditedAt) — @item.LastEditReason
-                </p>
-            }
-            <form method="post" asp-page-handler="Edit" asp-route-id="@item.Id" class="form-panel crown-entity-form">
-                <div class="mb-2">
-                    <label class="form-label" asp-for="EditInput.Phone">Телефон <span class="crown-req">*</span></label>
-                    <input class="form-control" asp-for="EditInput.Phone" required />
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" asp-for="EditInput.DueAt">Срок <span class="crown-req">*</span></label>
-                    <input class="form-control" type="datetime-local" asp-for="EditInput.DueAt" required />
-                </div>
-                <div class="mb-2">
-                    <label class="form-label">Срочность</label>
-                    <div class="d-flex flex-wrap gap-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="EditInput.IsUrgent" value="false" id="edit-urg-plan"
-                                   checked="@(!Model.EditInput.IsUrgent)" />
-                            <label class="form-check-label" for="edit-urg-plan">Плановая</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="EditInput.IsUrgent" value="true" id="edit-urg-fast"
-                                   checked="@Model.EditInput.IsUrgent" />
-                            <label class="form-check-label" for="edit-urg-fast">Срочная</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label">Тип</label>
-                    <div class="d-flex flex-wrap gap-3">
-                        @if (Model.CanCreateTransport || item.Kind == ServiceRequestKind.SpecTech)
-                        {
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" asp-for="EditInput.Kind" value="@((int)ServiceRequestKind.SpecTech)" id="edit-kind-spec" />
-                                <label class="form-check-label" for="edit-kind-spec">Спецтехника</label>
-                            </div>
-                        }
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" asp-for="EditInput.Kind" value="@((int)ServiceRequestKind.Equipment)" id="edit-kind-eq" />
-                            <label class="form-check-label" for="edit-kind-eq">Оборудование</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" asp-for="EditInput.Kind" value="@((int)ServiceRequestKind.Other)" id="edit-kind-other" />
-                            <label class="form-check-label" for="edit-kind-other">Другое</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" asp-for="EditInput.RequestedEquipmentCategory">Категория оборудования</label>
-                    <select class="form-select" asp-for="EditInput.RequestedEquipmentCategory">
-                        <option value="">—</option>
-                        @foreach (var c in Model.EquipmentCategories)
-                        {
-                            <option value="@c.Name">@c.Name</option>
-                        }
-                    </select>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" asp-for="EditInput.RequestedSpecialVehicleType">Тип спецтехники</label>
-                    <select class="form-select" asp-for="EditInput.RequestedSpecialVehicleType">
-                        <option value="">—</option>
-                        @foreach (var t in Model.SpecTypeAvailability)
-                        {
-                            <option value="@t.Name">@t.Name</option>
-                        }
-                    </select>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label">Операция</label>
-                    <div class="d-flex flex-wrap gap-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="EditInput.SpecOperation" value="" id="edit-spec-op-none"
-                                   checked="@(string.IsNullOrEmpty(Model.EditInput.SpecOperation))" />
-                            <label class="form-check-label" for="edit-spec-op-none">— не указано —</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="EditInput.SpecOperation" value="Техоперации" id="edit-spec-op-tech"
-                                   checked="@(Model.EditInput.SpecOperation == "Техоперации")" />
-                            <label class="form-check-label" for="edit-spec-op-tech">Техоперации</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="EditInput.SpecOperation" value="Переезд" id="edit-spec-op-move"
-                                   checked="@(Model.EditInput.SpecOperation == "Переезд")" />
-                            <label class="form-check-label" for="edit-spec-op-move">Переезд</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" asp-for="EditInput.SpecPlannedAt">Плановое время</label>
-                    <input class="form-control" type="datetime-local" asp-for="EditInput.SpecPlannedAt" />
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" asp-for="EditInput.Body">Текст <span class="crown-req">*</span></label>
-                    <textarea class="form-control" asp-for="EditInput.Body" rows="5" required></textarea>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" asp-for="EditInput.EditReason">Причина правки <span class="crown-req">*</span></label>
-                    <textarea class="form-control" asp-for="EditInput.EditReason" rows="2" maxlength="2000" required></textarea>
-                </div>
-                <button type="submit" class="btn btn-save">Сохранить правки</button>
-            </form>
-        </section>
     }
 
     @* Блок вложений — как ServiceItems / AddServiceItem на карточке сделки. *@

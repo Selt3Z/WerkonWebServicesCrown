@@ -1044,6 +1044,31 @@ a.history-user-link:hover {
     color: var(--r-brand, #d6007f);
 }
 
+button.brigade-top-count {
+    border: 0;
+    background: transparent;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    line-height: inherit;
+    font: inherit;
+}
+
+button.brigade-top-count:hover {
+    background: rgba(214, 0, 127, 0.1);
+    text-decoration: underline;
+}
+
+a.brigade-top-detail-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+}
+
+a.brigade-top-detail-link:hover {
+    background: rgba(70, 130, 220, 0.08);
+}
+
 /* Мобильный скролл только у «Остановки за период». */
 @media (max-width: 900px) {
     .brigade-stoppages-period-wrap {

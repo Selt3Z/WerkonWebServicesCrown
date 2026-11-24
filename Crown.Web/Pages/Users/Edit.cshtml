@@ -79,15 +79,8 @@
 
     @{
         var effectiveRole = Model.Input.Role ?? AppRoles.Department;
-        var showDocTitle = effectiveRole == AppRoles.Department;
         var showBrigade = effectiveRole == AppRoles.Brigade;
     }
-    <div class="mb-3 @(showDocTitle ? null : "d-none")" id="user-doc-title-wrap">
-        <label class="form-label" asp-for="Input.DocumentationTitle">Заголовок в документации</label>
-        <input class="form-control" asp-for="Input.DocumentationTitle" maxlength="200" />
-        <div class="form-text">Только для роли «Подразделение». Если пусто — в документации показывается имя.</div>
-    </div>
-
     <div class="@(showBrigade ? null : "d-none")" id="user-brigade-wrap">
         <div class="mb-3">
             <label class="form-label" asp-for="Input.BrigadeNumber">Номер бригады</label>
@@ -153,16 +146,13 @@
     <script>
     (() => {
         const role = document.getElementById('user-role');
-        const docWrap = document.getElementById('user-doc-title-wrap');
         const brigadeWrap = document.getElementById('user-brigade-wrap');
         const brigadeNumber = document.getElementById('user-brigade-number');
         const brigadeWorkshop = document.getElementById('user-brigade-workshop');
-        if (!role || !docWrap || !brigadeWrap) return;
-        const departmentRole = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(AppRoles.Department));
+        if (!role || !brigadeWrap) return;
         const brigadeRole = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(AppRoles.Brigade));
         const sync = () => {
             const isBrigade = role.value === brigadeRole;
-            docWrap.classList.toggle('d-none', role.value !== departmentRole);
             brigadeWrap.classList.toggle('d-none', !isBrigade);
             // required только когда поля видны (иначе браузер блокирует submit скрытых полей).
             if (brigadeNumber) brigadeNumber.required = isBrigade;

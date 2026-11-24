@@ -18,6 +18,7 @@
 
 <p class="text-muted mb-3">
     Членство = чтение каталога. Галочка «Запись» — загрузка/правка/корзина.
+    Бригады выдаются по цехам (всем бригадам цеха сразу).
     Общий вход в раздел включается матрицей прав (Документация).
 </p>
 
@@ -47,22 +48,41 @@
                 </tr>
                 </thead>
                 <tbody>
-                @foreach (var u in Model.Users)
+                @foreach (var row in Model.Rows)
                 {
-                    var isMember = memberSet.Contains(u.UserId);
-                    var canWrite = writeSet.Contains(u.UserId);
+                    var allRead = row.UserIds.Count > 0 && row.UserIds.All(memberSet.Contains);
+                    var allWrite = row.UserIds.Count > 0 && row.UserIds.All(writeSet.Contains);
                     <tr>
                         <td>
-                            @u.DisplayName
-                            <span class="text-muted">(@u.UserName)</span>
+                            @row.Label
+                            @if (!string.IsNullOrWhiteSpace(row.SubLabel))
+                            {
+                                <span class="text-muted">(@row.SubLabel)</span>
+                            }
                         </td>
                         <td class="num">
-                            <input class="form-check-input" type="checkbox" name="MemberUserIds" value="@u.UserId"
-                                   @(isMember ? "checked" : null) />
+                            @if (row.IsWorkshop)
+                            {
+                                <input class="form-check-input" type="checkbox" name="MemberWorkshopKeys" value="@row.WorkshopKey"
+                                       @(allRead ? "checked" : null) />
+                            }
+                            else
+                            {
+                                <input class="form-check-input" type="checkbox" name="MemberUserIds" value="@row.UserIds[0]"
+                                       @(allRead ? "checked" : null) />
+                            }
                         </td>
                         <td class="num">
-                            <input class="form-check-input" type="checkbox" name="WriteUserIds" value="@u.UserId"
-                                   @(canWrite ? "checked" : null) />
+                            @if (row.IsWorkshop)
+                            {
+                                <input class="form-check-input" type="checkbox" name="WriteWorkshopKeys" value="@row.WorkshopKey"
+                                       @(allWrite ? "checked" : null) />
+                            }
+                            else
+                            {
+                                <input class="form-check-input" type="checkbox" name="WriteUserIds" value="@row.UserIds[0]"
+                                       @(allWrite ? "checked" : null) />
+                            }
                         </td>
                     </tr>
                 }
@@ -72,45 +92,3 @@
         <button type="submit" class="btn btn-primary mt-2">Сохранить участников</button>
     </form>
 }
-
-<section class="mb-4">
-    <h2 class="h5">Перенос старых разделов</h2>
-    <p class="text-muted">
-        Файлы/папки без LibraryId (бывший OwnerUserId) → выбранный каталог.
-        Владельцу добавляется CanWrite; InboxFolderKey берётся из логина, если пуст.
-    </p>
-    @if (Model.Legacy is null || Model.Legacy.Items.Count == 0)
-    {
-        <p class="text-muted">Неперенесённых источников нет.</p>
-    }
-    else
-    {
-        <form method="post" asp-page-handler="Migrate" class="d-flex flex-wrap gap-2 align-items-end">
-            <input type="hidden" name="LibraryId" value="@Model.LibraryId" />
-            <div class="filter-field filter-field-inline">
-                <label class="form-label" for="mig-owner">Источник</label>
-                <select id="mig-owner" class="form-select" name="MigrateOwnerUserId" required>
-                    <option value="">— выберите —</option>
-                    @foreach (var src in Model.Legacy.Items)
-                    {
-                        <option value="@src.OwnerUserId">
-                            @src.DisplayName (@src.UserName) — папок @src.FolderCount, файлов @src.FileCount
-                        </option>
-                    }
-                </select>
-            </div>
-            <div class="filter-field filter-field-inline">
-                <label class="form-label" for="mig-lib">Каталог</label>
-                <select id="mig-lib" class="form-select" name="MigrateLibraryId" required>
-                    <option value="">— выберите —</option>
-                    @foreach (var lib in Model.Libraries)
-                    {
-                        <option value="@lib.Id">@lib.Name</option>
-                    }
-                </select>
-            </div>
-            <button type="submit" class="btn btn-warning"
-                    data-confirm="Перенести все файлы/папки выбранного владельца в каталог?">Перенести</button>
-        </form>
-    }
-</section>

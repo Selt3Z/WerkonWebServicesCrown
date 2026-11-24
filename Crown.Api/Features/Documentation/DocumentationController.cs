@@ -278,137 +278,6 @@ public sealed class DocumentationController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Владельцы старых разделов без LibraryId (для one-shot переноса).</summary>
-    [HttpGet("admin/legacy-sources")]
-    [Authorize(Roles = AppRoles.Administrator)]
-    public async Task<ActionResult<DocumentationLegacySourcesResponse>> ListLegacySources(
-        CancellationToken cancellationToken)
-    {
-        var folderOwners = await _db.DocumentationFolders.AsNoTracking()
-            .Where(x => x.LibraryId == null && x.OwnerUserId != null)
-            .GroupBy(x => x.OwnerUserId!.Value)
-            .Select(g => new { OwnerUserId = g.Key, FolderCount = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        var fileOwners = await _db.DocumentationFiles.AsNoTracking()
-            .Where(x => x.LibraryId == null && x.OwnerUserId != null)
-            .GroupBy(x => x.OwnerUserId!.Value)
-            .Select(g => new { OwnerUserId = g.Key, FileCount = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        var ownerIds = folderOwners.Select(x => x.OwnerUserId)
-            .Concat(fileOwners.Select(x => x.OwnerUserId))
-            .Distinct()
-            .ToList();
-
-        var users = await _users.Users.AsNoTracking()
-            .Where(x => ownerIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, cancellationToken);
-
-        var folderMap = folderOwners.ToDictionary(x => x.OwnerUserId, x => x.FolderCount);
-        var fileMap = fileOwners.ToDictionary(x => x.OwnerUserId, x => x.FileCount);
-
-        var items = ownerIds.Select(id =>
-        {
-            users.TryGetValue(id, out var u);
-            return new DocumentationLegacySourceItem
-            {
-                OwnerUserId = id,
-                DisplayName = u is null
-                    ? id.ToString("N")
-                    : UserDisplay.Format(u.DisplayName, u.UserName, u.BrigadeNumber),
-                UserName = u?.UserName ?? string.Empty,
-                FolderCount = folderMap.GetValueOrDefault(id),
-                FileCount = fileMap.GetValueOrDefault(id)
-            };
-        })
-        .OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-        .ToList();
-
-        return Ok(new DocumentationLegacySourcesResponse { Items = items });
-    }
-
-    [HttpPost("admin/migrate")]
-    [Authorize(Roles = AppRoles.Administrator)]
-    public async Task<ActionResult<MigrateDocumentationResponse>> Migrate(
-        [FromBody] MigrateDocumentationRequest request,
-        CancellationToken cancellationToken)
-    {
-        var response = new MigrateDocumentationResponse();
-        if (request.Items.Count == 0)
-        {
-            return Ok(response);
-        }
-
-        foreach (var item in request.Items)
-        {
-            var library = await _db.DocumentationLibraries
-                .SingleOrDefaultAsync(x => x.Id == item.LibraryId, cancellationToken);
-            if (library is null)
-            {
-                response.Messages.Add($"Каталог {item.LibraryId:N} не найден.");
-                continue;
-            }
-
-            var folders = await _db.DocumentationFolders
-                .Where(x => x.OwnerUserId == item.OwnerUserId && x.LibraryId == null)
-                .ToListAsync(cancellationToken);
-            foreach (var folder in folders)
-            {
-                folder.LibraryId = item.LibraryId;
-            }
-
-            var files = await _db.DocumentationFiles
-                .Where(x => x.OwnerUserId == item.OwnerUserId && x.LibraryId == null)
-                .ToListAsync(cancellationToken);
-            foreach (var file in files)
-            {
-                file.LibraryId = item.LibraryId;
-            }
-
-            response.FoldersUpdated += folders.Count;
-            response.FilesUpdated += files.Count;
-
-            // Inbox key из логина владельца, если у каталога ещё нет.
-            if (string.IsNullOrWhiteSpace(library.InboxFolderKey))
-            {
-                var owner = await _users.Users.AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == item.OwnerUserId, cancellationToken);
-                if (owner is not null)
-                {
-                    var key = Crown.Infrastructure.Documentation.DocumentationInboxSyncService
-                        .ResolveFolderKey(owner);
-                    if (!string.IsNullOrWhiteSpace(key))
-                    {
-                        library.InboxFolderKey = key;
-                    }
-                }
-            }
-
-            var memberExists = await _db.DocumentationLibraryMembers.AnyAsync(
-                x => x.LibraryId == item.LibraryId && x.UserId == item.OwnerUserId,
-                cancellationToken);
-            if (!memberExists)
-            {
-                _db.DocumentationLibraryMembers.Add(new DocumentationLibraryMember
-                {
-                    Id = Guid.NewGuid(),
-                    LibraryId = item.LibraryId,
-                    UserId = item.OwnerUserId,
-                    CanWrite = true,
-                    CreatedAt = DateTimeOffset.UtcNow
-                });
-                response.MembersAdded++;
-            }
-
-            await _db.SaveChangesAsync(cancellationToken);
-            response.Messages.Add(
-                $"Owner {item.OwnerUserId:N} → {library.Name}: папок {folders.Count}, файлов {files.Count}.");
-        }
-
-        return Ok(response);
-    }
-
     /// <summary>Кандидаты для ACL (активные пользователи).</summary>
     [HttpGet("admin/users")]
     [Authorize(Policy = AuthorizationPolicies.ManageUsers)]
@@ -425,16 +294,40 @@ public sealed class DocumentationController : ControllerBase
                 x.DisplayName,
                 x.UserName,
                 x.BrigadeNumber,
+                x.BrigadeWorkshop,
                 x.IsActive
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(rows.Select(x => new DocumentationAclUserResponse
+        var userIds = rows.Select(x => x.Id).ToList();
+        var roleByUser = await (
+                from ur in _db.UserRoles
+                join r in _db.Roles on ur.RoleId equals r.Id
+                where userIds.Contains(ur.UserId)
+                select new { ur.UserId, r.Name })
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var primaryRole = roleByUser
+            .GroupBy(x => x.UserId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.Name).OrderBy(x => x).FirstOrDefault() ?? string.Empty);
+
+        return Ok(rows.Select(x =>
         {
-            UserId = x.Id,
-            DisplayName = UserDisplay.Format(x.DisplayName, x.UserName, x.BrigadeNumber),
-            UserName = x.UserName ?? string.Empty,
-            IsActive = x.IsActive
+            primaryRole.TryGetValue(x.Id, out var role);
+            return new DocumentationAclUserResponse
+            {
+                UserId = x.Id,
+                DisplayName = UserDisplay.Format(x.DisplayName, x.UserName, x.BrigadeNumber),
+                UserName = x.UserName ?? string.Empty,
+                Role = role ?? string.Empty,
+                BrigadeWorkshop = string.IsNullOrWhiteSpace(x.BrigadeWorkshop)
+                    ? null
+                    : x.BrigadeWorkshop.Trim(),
+                IsActive = x.IsActive
+            };
         }).ToList());
     }
 

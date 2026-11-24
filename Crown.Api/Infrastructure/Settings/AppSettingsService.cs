@@ -79,6 +79,8 @@ public sealed class AppSettingsService
             logoDataUrl = $"data:{logo.ContentType};base64,{logo.DataBase64}";
         }
 
+        var windows = await GetBrigadePlannedWindowsAsync(cancellationToken);
+
         return new SettingsResponse
         {
             TimeZoneId = await GetTimeZoneIdAsync(cancellationToken),
@@ -97,7 +99,11 @@ public sealed class AppSettingsService
             AttachmentsHostPath = hostPath,
             AttachmentsContainerPath = _attachments.RootPath,
             AttachmentsLegacyHostPath = legacyHost,
-            AttachmentsLegacyActive = legacyActive
+            AttachmentsLegacyActive = legacyActive,
+            BrigadeMorningWindowStart = FormatTime(windows.MorningStart),
+            BrigadeMorningWindowEnd = FormatTime(windows.MorningEnd),
+            BrigadeEveningWindowStart = FormatTime(windows.EveningStart),
+            BrigadeEveningWindowEnd = FormatTime(windows.EveningEnd)
         };
     }
 
@@ -154,8 +160,104 @@ public sealed class AppSettingsService
             await SetBrandLogoModeAsync(request.BrandLogoMode, cancellationToken);
         }
 
+        var hasAnyWindow =
+            request.BrigadeMorningWindowStart is not null
+            || request.BrigadeMorningWindowEnd is not null
+            || request.BrigadeEveningWindowStart is not null
+            || request.BrigadeEveningWindowEnd is not null;
+        if (hasAnyWindow)
+        {
+            var current = await GetBrigadePlannedWindowsAsync(cancellationToken);
+            var morningStart = ParseTimeOrDefault(
+                request.BrigadeMorningWindowStart, current.MorningStart);
+            var morningEnd = ParseTimeOrDefault(
+                request.BrigadeMorningWindowEnd, current.MorningEnd);
+            var eveningStart = ParseTimeOrDefault(
+                request.BrigadeEveningWindowStart, current.EveningStart);
+            var eveningEnd = ParseTimeOrDefault(
+                request.BrigadeEveningWindowEnd, current.EveningEnd);
+            await SetBrigadePlannedWindowsAsync(
+                morningStart, morningEnd, eveningStart, eveningEnd, cancellationToken);
+        }
+
         return await GetSettingsAsync(cancellationToken);
     }
+
+    /// <summary>Окна подачи плановых заявок бригадой (локальное AppTimeZone).</summary>
+    public async Task<(TimeOnly MorningStart, TimeOnly MorningEnd, TimeOnly EveningStart, TimeOnly EveningEnd)>
+        GetBrigadePlannedWindowsAsync(CancellationToken cancellationToken = default)
+    {
+        var morningStart = await GetTimeOnlyAsync(
+            AppSettingKeys.BrigadeMorningWindowStart,
+            AppSettingsDefaults.BrigadeMorningWindowStart,
+            cancellationToken);
+        var morningEnd = await GetTimeOnlyAsync(
+            AppSettingKeys.BrigadeMorningWindowEnd,
+            AppSettingsDefaults.BrigadeMorningWindowEnd,
+            cancellationToken);
+        var eveningStart = await GetTimeOnlyAsync(
+            AppSettingKeys.BrigadeEveningWindowStart,
+            AppSettingsDefaults.BrigadeEveningWindowStart,
+            cancellationToken);
+        var eveningEnd = await GetTimeOnlyAsync(
+            AppSettingKeys.BrigadeEveningWindowEnd,
+            AppSettingsDefaults.BrigadeEveningWindowEnd,
+            cancellationToken);
+        return (morningStart, morningEnd, eveningStart, eveningEnd);
+    }
+
+    public async Task SetBrigadePlannedWindowsAsync(
+        TimeOnly morningStart,
+        TimeOnly morningEnd,
+        TimeOnly eveningStart,
+        TimeOnly eveningEnd,
+        CancellationToken cancellationToken = default)
+    {
+        if (morningStart >= morningEnd)
+        {
+            throw new ArgumentException("Утреннее окно: начало должно быть раньше конца.");
+        }
+
+        if (eveningStart >= eveningEnd)
+        {
+            throw new ArgumentException("Вечернее окно: начало должно быть раньше конца.");
+        }
+
+        await SaveSettingAsync(AppSettingKeys.BrigadeMorningWindowStart, FormatTime(morningStart), cancellationToken);
+        await SaveSettingAsync(AppSettingKeys.BrigadeMorningWindowEnd, FormatTime(morningEnd), cancellationToken);
+        await SaveSettingAsync(AppSettingKeys.BrigadeEveningWindowStart, FormatTime(eveningStart), cancellationToken);
+        await SaveSettingAsync(AppSettingKeys.BrigadeEveningWindowEnd, FormatTime(eveningEnd), cancellationToken);
+    }
+
+    private async Task<TimeOnly> GetTimeOnlyAsync(
+        string key,
+        TimeOnly defaultValue,
+        CancellationToken cancellationToken)
+    {
+        var stored = await GetSettingValueAsync(key, cancellationToken);
+        return ParseTimeOrDefault(stored, defaultValue);
+    }
+
+    private static TimeOnly ParseTimeOrDefault(string? value, TimeOnly defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultValue;
+        }
+
+        var trimmed = value.Trim();
+        if (TimeOnly.TryParseExact(trimmed, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t)
+            || TimeOnly.TryParseExact(trimmed, "H:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out t)
+            || TimeOnly.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out t))
+        {
+            return t;
+        }
+
+        throw new ArgumentException($"Некорректное время «{trimmed}». Ожидается ЧЧ:ММ.");
+    }
+
+    private static string FormatTime(TimeOnly value) =>
+        value.ToString("HH:mm", CultureInfo.InvariantCulture);
 
     public async Task<string> GetBrandLogoModeAsync(CancellationToken cancellationToken = default)
     {

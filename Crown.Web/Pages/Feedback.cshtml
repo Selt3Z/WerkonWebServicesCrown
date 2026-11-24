@@ -1,0 +1,47 @@
+@page "/feedback"
+@model FeedbackModel
+@{
+    ViewData["Title"] = "Сообщить об ошибке";
+}
+
+<div class="crown-page-head">
+    <h1 class="section-title">Сообщить об ошибке</h1>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<p class="text-muted mb-3">
+    Опишите проблему. При желании укажите раздел и приложите скриншоты.
+</p>
+
+<form method="post" enctype="multipart/form-data" class="crown-form form-panel" style="max-width: 40rem;">
+    <div class="mb-3">
+        <label class="form-label" for="fb-section">Раздел</label>
+        <select id="fb-section" class="form-select" name="SectionKey">
+            <option value="">— не указан —</option>
+            @foreach (var s in Model.AvailableSections)
+            {
+                <option value="@s.Key" selected="@(s.Key == Model.SectionKey)">@s.Label</option>
+            }
+        </select>
+        <div class="form-text">Необязательно. Список — разделы, доступные вам в меню.</div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="fb-body">Сообщение <span class="crown-req">*</span></label>
+        <textarea id="fb-body" class="form-control" name="Body" rows="6" required maxlength="8000">@Model.Body</textarea>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="fb-files">Вложения</label>
+        <input id="fb-files" class="form-control" type="file" name="Files" multiple />
+        <div class="form-text">Скриншоты, логи — по желанию.</div>
+    </div>
+
+    <div class="crown-form-actions">
+        <button type="submit" class="btn btn-primary">Отправить</button>
+    </div>
+</form>

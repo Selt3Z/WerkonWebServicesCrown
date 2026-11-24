@@ -752,6 +752,84 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("PersonnelPeople");
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.FeedbackAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid>("FeedbackReportId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UploadedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeedbackReportId");
+
+                    b.ToTable("FeedbackAttachments");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.FeedbackReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SectionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SectionLabel")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("FeedbackReports");
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.RequestAttachment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1867,6 +1945,17 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Crown.Domain.Entities.FeedbackAttachment", b =>
+                {
+                    b.HasOne("Crown.Domain.Entities.FeedbackReport", "FeedbackReport")
+                        .WithMany("Attachments")
+                        .HasForeignKey("FeedbackReportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FeedbackReport");
+                });
+
             modelBuilder.Entity("Crown.Domain.Entities.RequestAttachment", b =>
                 {
                     b.HasOne("Crown.Domain.Entities.ServiceRequest", "ServiceRequest")
@@ -2058,6 +2147,11 @@ namespace Crown.Api.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Crown.Domain.Entities.EquipmentAsset", b =>
                 {
                     b.Navigation("Movements");
+                });
+
+            modelBuilder.Entity("Crown.Domain.Entities.FeedbackReport", b =>
+                {
+                    b.Navigation("Attachments");
                 });
 
             modelBuilder.Entity("Crown.Domain.Entities.ServiceRequest", b =>

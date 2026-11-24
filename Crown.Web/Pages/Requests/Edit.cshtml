@@ -1,0 +1,169 @@
+@page "/requests/{id:long}/edit"
+@model Crown.Web.Pages.Requests.EditModel
+@inject AppTime Time
+@{
+    var item = Model.Item;
+    ViewData["Title"] = item is null ? "Правка заявки" : $"Правка заявки № {item.Id}";
+    var kindsLocked = EditModel.SpecAndEquipmentKindsLocked;
+}
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (item is null)
+{
+    <a class="btn btn-outline-secondary" href="/">&larr; К списку</a>
+    return;
+}
+
+<div class="detail-page">
+    <div class="crown-page-head mb-3">
+        <h1 class="section-title">Правка заявки № @item.Id</h1>
+        <a class="btn btn-outline-secondary" href="/requests/@item.Id">&larr; К заявке</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(item.LastEditReason))
+    {
+        <p class="text-muted small mb-2">
+            Последняя правка: @Time.Format(item.LastEditedAt) — @item.LastEditReason
+        </p>
+    }
+
+    <form method="post" class="form-panel crown-form">
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.Phone">Телефон <span class="crown-req">*</span></label>
+            <input class="form-control" asp-for="Input.Phone" required />
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.DueAt">Срок исполнения <span class="crown-req">*</span></label>
+            <input class="form-control" type="datetime-local" asp-for="Input.DueAt" required />
+        </div>
+        <div class="mb-2">
+            <label class="form-label">Срочность</label>
+            <div class="d-flex flex-wrap gap-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="Input.IsUrgent" value="false" id="edit-urg-plan"
+                           checked="@(!Model.Input.IsUrgent)" />
+                    <label class="form-check-label" for="edit-urg-plan">Плановая</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="Input.IsUrgent" value="true" id="edit-urg-fast"
+                           checked="@Model.Input.IsUrgent" />
+                    <label class="form-check-label" for="edit-urg-fast">Срочная</label>
+                </div>
+            </div>
+        </div>
+        <div class="mb-2">
+            <label class="form-label">Тип заявки</label>
+            <div class="d-flex flex-wrap gap-3">
+                @if (Model.CanCreateTransport || item.Kind == ServiceRequestKind.SpecTech)
+                {
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.SpecTech)" id="edit-kind-spec"
+                               disabled="@(kindsLocked && item.Kind != ServiceRequestKind.SpecTech)" />
+                        <label class="form-check-label" for="edit-kind-spec">Запрос спецтехники</label>
+                    </div>
+                }
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Equipment)" id="edit-kind-eq"
+                           disabled="@(kindsLocked && item.Kind != ServiceRequestKind.Equipment)" />
+                    <label class="form-check-label" for="edit-kind-eq">Запрос оборудования</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" asp-for="Input.Kind" value="@((int)ServiceRequestKind.Other)" id="edit-kind-other" />
+                    <label class="form-check-label" for="edit-kind-other">Другое</label>
+                </div>
+            </div>
+            @if (kindsLocked)
+            {
+                <div class="form-text">Типы «спецтехника» и «оборудование» временно недоступны для выбора.</div>
+            }
+        </div>
+
+        <div class="mb-2" id="equipment-wrap" hidden>
+            <label class="form-label" asp-for="Input.RequestedEquipmentCategory">Категория оборудования</label>
+            <select class="form-select" asp-for="Input.RequestedEquipmentCategory">
+                <option value="">—</option>
+                @foreach (var c in Model.EquipmentCategories)
+                {
+                    <option value="@c.Name">@c.Name</option>
+                }
+            </select>
+        </div>
+
+        <div id="spectech-wrap" hidden>
+            <div class="mb-2">
+                <label class="form-label" asp-for="Input.RequestedSpecialVehicleType">Тип спецтехники</label>
+                <select class="form-select" asp-for="Input.RequestedSpecialVehicleType">
+                    <option value="">—</option>
+                    @foreach (var t in Model.SpecTypeAvailability)
+                    {
+                        <option value="@t.Name">@t.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label">Операция</label>
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="Input.SpecOperation" value="" id="edit-spec-op-none"
+                               checked="@(string.IsNullOrEmpty(Model.Input.SpecOperation))" />
+                        <label class="form-check-label" for="edit-spec-op-none">— не указано —</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="Input.SpecOperation" value="Техоперации" id="edit-spec-op-tech"
+                               checked="@(Model.Input.SpecOperation == "Техоперации")" />
+                        <label class="form-check-label" for="edit-spec-op-tech">Техоперации</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="Input.SpecOperation" value="Переезд" id="edit-spec-op-move"
+                               checked="@(Model.Input.SpecOperation == "Переезд")" />
+                        <label class="form-check-label" for="edit-spec-op-move">Переезд</label>
+                    </div>
+                </div>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" asp-for="Input.SpecPlannedAt">Плановое время <span class="crown-req">*</span></label>
+                <input class="form-control" type="datetime-local" asp-for="Input.SpecPlannedAt" />
+                <div class="form-text">Когда нужна спецтехника на объекте (не путать со сроком исполнения заявки).</div>
+            </div>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.Body">Текст <span class="crown-req">*</span></label>
+            <textarea class="form-control" asp-for="Input.Body" rows="5" required></textarea>
+        </div>
+        <div class="mb-2">
+            <label class="form-label" asp-for="Input.EditReason">Причина правки <span class="crown-req">*</span></label>
+            <textarea class="form-control" asp-for="Input.EditReason" rows="2" maxlength="2000" required></textarea>
+        </div>
+        <div class="crown-form-actions">
+            <button type="submit" class="btn btn-save btn-lg">Сохранить</button>
+            <a class="btn btn-outline-secondary btn-lg" href="/requests/@item.Id">Отмена</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+  var eqWrap = document.getElementById('equipment-wrap');
+  var specWrap = document.getElementById('spectech-wrap');
+  function kindValue() {
+    var checked = document.querySelector('input[name="Input.Kind"]:checked');
+    if (checked) return checked.value;
+    var hidden = document.querySelector('input[type="hidden"][name="Input.Kind"]');
+    return hidden ? hidden.value : '0';
+  }
+  function syncKind() {
+    var k = kindValue();
+    eqWrap.hidden = k !== '1';
+    specWrap.hidden = k !== '2';
+  }
+  document.querySelectorAll('input[name="Input.Kind"]').forEach(function (el) {
+    el.addEventListener('change', syncKind);
+  });
+  syncKind();
+})();
+</script>

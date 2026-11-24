@@ -19,6 +19,8 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
     public DbSet<WarehouseStockMovement> WarehouseStockMovements => Set<WarehouseStockMovement>();
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
     public DbSet<RequestAttachment> RequestAttachments => Set<RequestAttachment>();
+    public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
+    public DbSet<FeedbackAttachment> FeedbackAttachments => Set<FeedbackAttachment>();
     public DbSet<ParkingLot> ParkingLots => Set<ParkingLot>();
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<VehicleTrip> VehicleTrips => Set<VehicleTrip>();
@@ -101,6 +103,28 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             entity.HasOne(x => x.ServiceRequest)
                 .WithMany(x => x.Attachments)
                 .HasForeignKey(x => x.ServiceRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FeedbackReport>(entity =>
+        {
+            entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.SectionKey).HasMaxLength(64);
+            entity.Property(x => x.SectionLabel).HasMaxLength(120);
+            entity.Property(x => x.Body).HasColumnType("text").IsRequired();
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => x.UserId);
+        });
+
+        modelBuilder.Entity<FeedbackAttachment>(entity =>
+        {
+            entity.Property(x => x.FileName).HasMaxLength(260).IsRequired();
+            entity.Property(x => x.ContentType).HasMaxLength(120);
+            entity.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
+            entity.HasIndex(x => x.FeedbackReportId);
+            entity.HasOne(x => x.FeedbackReport)
+                .WithMany(x => x.Attachments)
+                .HasForeignKey(x => x.FeedbackReportId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

@@ -150,7 +150,7 @@
                 </div>
                 <div class="nav-item">
                     <a class="nav-link @Active("/timesheet")" href="/timesheet">
-                        <span class="bi bi-calendar-week-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                        <span class="bi bi-table-nav-menu nav-menu-icon" aria-hidden="true"></span>
                         <span class="nav-menu-text">Табель</span>
                     </a>
                 </div>
@@ -169,6 +169,15 @@
                         <a class="nav-link @Active("/brigade-rating")" href="/brigade-rating">
                             <span class="bi bi-trophy-nav-menu nav-menu-icon" aria-hidden="true"></span>
                             <span class="nav-menu-text">Рейтинг бригад</span>
+                        </a>
+                    </div>
+                }
+                @if (!isAdmin)
+                {
+                    <div class="nav-item">
+                        <a class="nav-link @Active("/feedback")" href="/feedback">
+                            <span class="bi bi-chat-dots-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                            <span class="nav-menu-text">Сообщить об ошибке</span>
                         </a>
                     </div>
                 }
@@ -198,6 +207,12 @@
                             <a class="nav-link @Active("/users")" href="/users">
                                 <span class="bi bi-users-nav-menu nav-menu-icon" aria-hidden="true"></span>
                                 <span class="nav-menu-text">Пользователи</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a class="nav-link @(path.StartsWith("/admin/feedback", StringComparison.Ordinal) ? "active" : "")" href="/admin/feedback">
+                                <span class="bi bi-inbox-nav-menu nav-menu-icon" aria-hidden="true"></span>
+                                <span class="nav-menu-text">Обращения</span>
                             </a>
                         </div>
                         <div class="nav-item">

@@ -37,6 +37,9 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
 
     public string? Error { get; private set; }
 
+    /// <summary>Подсказка по окнам подачи для бригады (из настроек).</summary>
+    public string? BrigadeWindowHint { get; private set; }
+
     public sealed class InputModel
     {
         public string? Phone { get; set; }
@@ -109,6 +112,12 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         if (redirect is not null)
         {
             return redirect;
+        }
+
+        // СТ / оборудование временно заблокированы в UI — с сервера тоже не принимаем.
+        if (Input.Kind is ServiceRequestKind.SpecTech or ServiceRequestKind.Equipment)
+        {
+            Input.Kind = ServiceRequestKind.Other;
         }
 
         if (string.IsNullOrWhiteSpace(Input.Phone))
@@ -333,6 +342,22 @@ public sealed class NewModel(CrownApiClient api, AppTime time) : PageModel
         if (avail.Ok && avail.Data is not null)
         {
             SpecTypeAvailability = avail.Data.Types;
+        }
+
+        if (User.IsInRole(AppRoles.Brigade))
+        {
+            var settings = await api.GetAsync<SettingsResponse>("api/settings", HttpContext.RequestAborted);
+            if (settings.Ok && settings.Data is not null)
+            {
+                var s = settings.Data;
+                BrigadeWindowHint =
+                    $"Плановые заявки бригада подаёт только с {s.BrigadeMorningWindowStart} до {s.BrigadeMorningWindowEnd} и с {s.BrigadeEveningWindowStart} до {s.BrigadeEveningWindowEnd}. Срочные — в любое время.";
+            }
+            else
+            {
+                BrigadeWindowHint =
+                    "Плановые заявки бригада подаёт только в утреннее и вечернее окна (см. настройки). Срочные — в любое время.";
+            }
         }
 
         return null;

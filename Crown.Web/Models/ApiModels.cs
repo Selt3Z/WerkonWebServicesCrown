@@ -469,7 +469,6 @@ public sealed class UserListItem
     public Guid Id { get; set; }
     public string UserName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
-    public string? DocumentationTitle { get; set; }
     public string? BrigadeNumber { get; set; }
     public string? BrigadeWorkshop { get; set; }
     public string Role { get; set; } = string.Empty;
@@ -569,6 +568,8 @@ public sealed class DocumentationAclUser
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string? BrigadeWorkshop { get; set; }
     public bool IsActive { get; set; }
 }
 
@@ -578,28 +579,6 @@ public sealed class DocumentationLibraryMember
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
     public bool CanWrite { get; set; }
-}
-
-public sealed class DocumentationLegacySources
-{
-    public List<DocumentationLegacySourceItem> Items { get; set; } = [];
-}
-
-public sealed class DocumentationLegacySourceItem
-{
-    public Guid OwnerUserId { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
-    public int FolderCount { get; set; }
-    public int FileCount { get; set; }
-}
-
-public sealed class MigrateDocumentationResult
-{
-    public int FoldersUpdated { get; set; }
-    public int FilesUpdated { get; set; }
-    public int MembersAdded { get; set; }
-    public List<string> Messages { get; set; } = [];
 }
 
 public sealed class DocumentationInboxInfo
@@ -974,6 +953,7 @@ public sealed class BrigadeRatingDashboard
     public List<RemarkTopItem> TopClaims { get; set; } = [];
     public List<RemarkTopItem> TopRemarks { get; set; } = [];
     public List<WorkTopItem> TopWorks { get; set; } = [];
+    public List<WorkTopItem> TopWorksByHours { get; set; } = [];
     public List<BrigadeStoppageListItem> Stoppages { get; set; } = [];
 }
 
@@ -1036,6 +1016,25 @@ public sealed class WorkTopItem
 {
     public string Text { get; set; } = string.Empty;
     public int Count { get; set; }
+    public decimal TotalHours { get; set; }
+}
+
+public sealed class BrigadeTopDetails
+{
+    public string Kind { get; set; } = string.Empty;
+    public string Key { get; set; } = string.Empty;
+    public List<BrigadeTopDetailItem> Items { get; set; } = [];
+}
+
+public sealed class BrigadeTopDetailItem
+{
+    public string Source { get; set; } = string.Empty;
+    public Guid Id { get; set; }
+    public DateOnly ReportDate { get; set; }
+    public string BrigadeName { get; set; } = string.Empty;
+    public decimal? Hours { get; set; }
+    public string? Summary { get; set; }
+    public string? InspectionKind { get; set; }
 }
 
 public sealed class SpreadsheetImportPreview
@@ -1095,11 +1094,42 @@ public sealed class SaveUserRequest
     public string? Password { get; set; }
     public string? CurrentPassword { get; set; }
     public string DisplayName { get; set; } = string.Empty;
-    public string? DocumentationTitle { get; set; }
     public string? BrigadeNumber { get; set; }
     public string? BrigadeWorkshop { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+}
+
+public sealed class FeedbackListItem
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public Guid UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string? SectionKey { get; set; }
+    public string? SectionLabel { get; set; }
+    public string BodyPreview { get; set; } = string.Empty;
+    public int AttachmentCount { get; set; }
+}
+
+public sealed class FeedbackDetail
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public Guid UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string? SectionKey { get; set; }
+    public string? SectionLabel { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public List<FeedbackAttachmentItem> Attachments { get; set; } = [];
+}
+
+public sealed class FeedbackAttachmentItem
+{
+    public Guid Id { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
 }
 
 public sealed class SettingsResponse
@@ -1121,6 +1151,10 @@ public sealed class SettingsResponse
     public string AttachmentsContainerPath { get; set; } = "/data/attachments";
     public string? AttachmentsLegacyHostPath { get; set; }
     public bool AttachmentsLegacyActive { get; set; }
+    public string BrigadeMorningWindowStart { get; set; } = "04:00";
+    public string BrigadeMorningWindowEnd { get; set; } = "07:00";
+    public string BrigadeEveningWindowStart { get; set; } = "15:00";
+    public string BrigadeEveningWindowEnd { get; set; } = "18:00";
 }
 
 public sealed class UpdateSettingsRequest
@@ -1135,6 +1169,10 @@ public sealed class UpdateSettingsRequest
     public int? DocumentationTrashRetentionDays { get; set; }
     public int? ListPageSize { get; set; }
     public string? BrandLogoMode { get; set; }
+    public string? BrigadeMorningWindowStart { get; set; }
+    public string? BrigadeMorningWindowEnd { get; set; }
+    public string? BrigadeEveningWindowStart { get; set; }
+    public string? BrigadeEveningWindowEnd { get; set; }
 }
 
 public sealed class UploadOrganizationLogoRequest

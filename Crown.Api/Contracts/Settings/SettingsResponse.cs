@@ -42,4 +42,16 @@ public sealed class SettingsResponse
 
     /// <summary>true, если legacy-диск реально отличается от основного.</summary>
     public bool AttachmentsLegacyActive { get; set; }
+
+    /// <summary>Утро: начало окна подачи плановых заявок бригадой (HH:mm).</summary>
+    public string BrigadeMorningWindowStart { get; set; } = "04:00";
+
+    /// <summary>Утро: конец окна (не включая).</summary>
+    public string BrigadeMorningWindowEnd { get; set; } = "07:00";
+
+    /// <summary>Вечер: начало окна.</summary>
+    public string BrigadeEveningWindowStart { get; set; } = "15:00";
+
+    /// <summary>Вечер: конец окна (не включая).</summary>
+    public string BrigadeEveningWindowEnd { get; set; } = "18:00";
 }

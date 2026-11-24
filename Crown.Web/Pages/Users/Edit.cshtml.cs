@@ -36,7 +36,6 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
     {
         public string? UserName { get; set; }
         public string? DisplayName { get; set; }
-        public string? DocumentationTitle { get; set; }
         public string? BrigadeNumber { get; set; }
         public string? BrigadeWorkshop { get; set; }
         public string? Role { get; set; }
@@ -137,9 +136,6 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
         {
             UserName = Input.UserName.Trim(),
             DisplayName = Input.DisplayName.Trim(),
-            DocumentationTitle = string.IsNullOrWhiteSpace(Input.DocumentationTitle)
-                ? null
-                : Input.DocumentationTitle.Trim(),
             BrigadeNumber = isBrigade ? Input.BrigadeNumber?.Trim() : null,
             BrigadeWorkshop = isBrigade ? Input.BrigadeWorkshop?.Trim() : null,
             Role = Input.Role,
@@ -176,7 +172,6 @@ public sealed class UserEditModel(CrownApiClient api) : PageModel
         {
             UserName = user.UserName,
             DisplayName = user.DisplayName,
-            DocumentationTitle = user.DocumentationTitle,
             BrigadeNumber = user.BrigadeNumber,
             BrigadeWorkshop = user.BrigadeWorkshop,
             Role = user.Role,

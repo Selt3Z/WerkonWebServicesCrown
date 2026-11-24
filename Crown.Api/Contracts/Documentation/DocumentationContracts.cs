@@ -47,39 +47,6 @@ public sealed class LibraryMemberToggle
     public bool CanWrite { get; set; }
 }
 
-public sealed class MigrateDocumentationRequest
-{
-    public List<MigrateDocumentationItem> Items { get; set; } = [];
-}
-
-public sealed class MigrateDocumentationItem
-{
-    public Guid OwnerUserId { get; set; }
-    public Guid LibraryId { get; set; }
-}
-
-public sealed class DocumentationLegacySourcesResponse
-{
-    public List<DocumentationLegacySourceItem> Items { get; set; } = [];
-}
-
-public sealed class DocumentationLegacySourceItem
-{
-    public Guid OwnerUserId { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
-    public int FolderCount { get; set; }
-    public int FileCount { get; set; }
-}
-
-public sealed class MigrateDocumentationResponse
-{
-    public int FoldersUpdated { get; set; }
-    public int FilesUpdated { get; set; }
-    public int MembersAdded { get; set; }
-    public List<string> Messages { get; set; } = [];
-}
-
 /// <summary>Глобальный поиск по файлам/папкам доступных каталогов.</summary>
 public sealed class DocumentationGlobalSearchResponse
 {
@@ -191,6 +158,8 @@ public sealed class DocumentationAclUserResponse
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string? BrigadeWorkshop { get; set; }
     public bool IsActive { get; set; }
 }
 
